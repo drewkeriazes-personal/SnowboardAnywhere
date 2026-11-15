@@ -103,6 +103,8 @@ fs.writeFileSync(path.join(STAGE, 'README.txt'), MAC ? [
   '2. The game opens in your browser on the main menu: Ride. More resorts: Change resort > Download (kept in the packs folder).',
   '3. Close the small window to quit.',
   '',
+  'The first launch asks which browser to open the game in. To change it later: run SnowboardAnywhere.exe --pick-browser, or Settings > Launcher > Browser in the game.',
+  '',
   'Windows may say "Windows protected your PC" the first time: the exe is not code-signed (that costs money).',
   'Click More info, then Run anyway.',
   '',

@@ -14,6 +14,8 @@ Nothing to install and no commands. You need about 1 GB of free space.
 
 Leave the black window open while you play. **Close it to quit.** More resorts: **Change resort** on the main menu.
 
+The first launch also asks which browser to open the game in: type its number and press Enter (Enter alone keeps the Windows default). It remembers the answer. To change it, run `SnowboardAnywhere.exe --pick-browser`, or in the game open **Settings > Launcher > Browser** (it takes effect next launch). Settings and best times are kept by each browser, so a different browser starts fresh.
+
 **Playing again later:** double-click `SnowboardAnywhere.exe`. It starts straight away.
 
 **Updating:** download the newest zip from the same page and extract it. Copy the `packs` folder from your old `SnowboardAnywhere-win` folder into the new one (replace the empty one), so you don't download your resorts again. Or close the black window and extract the new zip over the old folder. Settings and best times are kept by the browser, so they carry over.

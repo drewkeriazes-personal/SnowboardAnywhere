@@ -4,7 +4,7 @@
 // No Vite here: the game is already built. The pack routes are tools/pack_routes.mjs, the same handlers the dev
 // server and `npm run host` mount, and the folders come from tools/paths.mjs (next to the exe when bundled).
 //
-//   SnowboardAnywhere.exe [--lan] [--port N] [--no-open] [--version]
+//   SnowboardAnywhere.exe [--lan] [--port N] [--no-open] [--pick-browser] [--version]
 //   node tools/launcher.mjs [...]   the same from the repo: serves game/dist (npx vite build first) and ../packs
 //
 // It listens on loopback only (127.0.0.1 and ::1, so no Windows Firewall prompt) on port 5173, the dev server's, so
@@ -13,6 +13,8 @@
 // The first launch, with no resort in packs/ (the zip ships it empty), downloads Vail in the console before it opens
 // the browser: the game can't reach its main menu without a pack (Game.ts falls back to the synthetic one). Later
 // launches start straight away; more resorts come from Change resort.
+// FEAT-318: the first launch also asks which installed browser to open (tools/launcher_browser.mjs), saved in
+// launcher.json next to the exe; --pick-browser asks again, and the game's Settings > Launcher > Browser changes it.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -20,7 +22,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream';
-import { DIST, LAUNCHER, PACKS } from './paths.mjs';
+import { DIST, LAUNCHER, LAUNCHER_CONFIG, PACKS } from './paths.mjs';
+import { LAUNCHER_META, browserRoutes, chooseBrowser, launch } from './launcher_browser.mjs';
 import { getPack, localPacks, PACK_FORMAT } from './get_pack.mjs';
 import { packDownloads, packFiles } from './pack_routes.mjs';
 
@@ -50,6 +53,13 @@ function gameFiles(dir) {
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(dir, rel);
     if (!file.startsWith(dir + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.statusCode = 404; res.end(); return; }
+    if (path.basename(file) === 'index.html') { // FEAT-318: tell the page it runs from the launcher (src/ui/LauncherBrowser.ts)
+      const html = fs.readFileSync(file, 'utf8').replace(/<head>/i, `<head>\n<meta name="${LAUNCHER_META}" content="1">`);
+      res.setHeader('content-type', TYPES['.html']); res.setHeader('cache-control', 'no-cache');
+      res.setHeader('content-length', Buffer.byteLength(html));
+      res.end(req.method === 'HEAD' ? undefined : html);
+      return;
+    }
     const size = fs.statSync(file).size;
     res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
     res.setHeader('cache-control', 'no-cache');
@@ -81,7 +91,7 @@ function hostAllowed(host) {
 }
 
 function handler(dir) {
-  const chain = [packFiles(PACKS), packDownloads(PACKS)];
+  const chain = [browserRoutes(LAUNCHER_CONFIG), packFiles(PACKS), packDownloads(PACKS)];
   const files = gameFiles(dir);
   return (req, res) => {
     if (!hostAllowed(req.headers.host)) { res.statusCode = 403; res.end('This address is not allowed: open http://localhost instead.'); return; }
@@ -156,6 +166,13 @@ function openBrowser(url) {
   try { spawn(cmd, args, { detached: true, stdio: 'ignore' }).on('error', () => {}).unref(); } catch { /* the address is printed */ }
 }
 
+/** FEAT-318: open url in the chosen browser ('default' or { name, path }); one that won't start falls back to the default */
+async function openIn(url, browser) {
+  if (browser !== 'default' && await launch(browser.path, url)) return;
+  if (browser !== 'default') console.log(`${browser.name} would not start: opening the default browser instead.`);
+  openBrowser(url);
+}
+
 function lanUrls(port) {
   const out = [];
   for (const list of Object.values(os.networkInterfaces())) {
@@ -221,8 +238,11 @@ function stop(message) {
 async function main(args) {
   const flag = (f) => { const i = args.indexOf(f); return i < 0 ? undefined : args[i + 1]; };
   if (args.includes('--version')) { console.log(VERSION); return; }
-  if (args.includes('--help')) { console.log(`${EXE} [--lan] [--port N] [--no-open] [--version]`); return; }
+  if (args.includes('--help')) { console.log(`${EXE} [--lan] [--port N] [--no-open] [--pick-browser] [--version]`); return; }
   const lan = args.includes('--lan');
+  const open = !args.includes('--no-open');
+  // FEAT-318: which browser; asks on the first launch, with --pick-browser, or when the saved one is gone
+  const browser = () => chooseBrowser(LAUNCHER_CONFIG, { pick: args.includes('--pick-browser') });
   const asked = flag('--port') !== undefined ? Number(flag('--port')) : PORT;
   if (!Number.isInteger(asked) || asked < 1 || asked > 65535) return stop(`--port ${flag('--port')} is not a port number`);
   if (LAUNCHER) process.title = `SnowboardAnywhere ${VERSION}`;
@@ -242,7 +262,7 @@ async function main(args) {
     if (other) {
       const url = `http://localhost:${asked}/`;
       console.log(`SnowboardAnywhere ${other.version} is already running at ${url}: opening it.`);
-      if (!args.includes('--no-open')) openBrowser(url);
+      if (open) await openIn(url, await browser());
       setTimeout(() => process.exit(0), LAUNCHER ? 3000 : 0);
       return;
     }
@@ -253,6 +273,7 @@ async function main(args) {
   console.log(`SnowboardAnywhere ${VERSION} is running.\n`);
   console.log(`  Game:    ${url}`);
   console.log(`  Resorts: ${PACKS}`);
+  const chosen = open ? await browser() : 'default'; // asked before the download, while the rider is at the window
   const failed = await firstResort(); // before the browser: the game needs a resort to show its menu
   if (failed) return stop(failed);
   if (port !== asked) {
@@ -265,9 +286,9 @@ async function main(args) {
     console.log(MAC ? 'If macOS asks whether SnowboardAnywhere may accept incoming network connections, click Allow.'
       : 'If it cannot connect: allow SnowboardAnywhere on Private networks in Windows Firewall, and set this PC\'s network to Private.');
   }
-  console.log('\nThe game opens in your browser (if it does not, paste the address above into Chrome or Edge).');
+  console.log(`\nThe game opens in ${chosen === 'default' ? 'your browser' : chosen.name} (if it does not, paste the address above into Chrome or Edge).`);
   console.log('More resorts: Change resort on the main menu. Close this window to quit.');
-  if (!args.includes('--no-open')) openBrowser(url);
+  if (open) await openIn(url, chosen);
   // FEAT-263: the update check goes here (read the latest release, compare its tag with VERSION, offer the zip).
 }
 

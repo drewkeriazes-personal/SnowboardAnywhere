@@ -14,3 +14,5 @@ export const REPO = EXE_DIR ?? path.resolve(GAME, '..');
 export const DIST = EXE_DIR ? GAME : process.env.SHOT_DIST ? path.resolve(process.env.SHOT_DIST) : path.join(GAME, 'dist');
 // SHOT_PACKS: another packs folder (the local render-budgets run's downloaded synthetic pack, FEAT-176 / FEAT-241)
 export const PACKS = EXE_DIR ? path.join(EXE_DIR, 'packs') : process.env.SHOT_PACKS ? path.resolve(process.env.SHOT_PACKS) : path.join(REPO, 'packs');
+// FEAT-318: the launcher's own settings (which browser it opens), next to the exe; the repo root from a checkout
+export const LAUNCHER_CONFIG = path.join(REPO, 'launcher.json');

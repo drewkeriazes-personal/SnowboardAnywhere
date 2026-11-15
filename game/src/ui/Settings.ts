@@ -184,6 +184,8 @@ export function loadSettings(): Settings {
       if (raw.playlistDefault !== 2) { if (raw.playlist === 'Ska-punk') raw.playlist = 'Lofi hip-hop'; raw.playlistDefault = 2; }
       // BUG-133: the Classic ska station (the procedural jukebox only) is gone
       if (raw.playlist === 'Classic ska') raw.playlist = 'Ska-punk';
+      // a music source this build has no option for (one saved by a newer or private build) plays the playlist; it showed Custom and played the jukebox
+      if (!['files', 'builtin', 'off'].includes(raw.musicSource)) raw.musicSource = 'files';
       delete raw.autoQuality; // FEAT-284: auto quality is gone; old saves drop the field
       const mk = migrateKeys(raw.keys);
       return { ...DEFAULTS, ...raw, keys: mk.keys, keysNote: raw.keysNote ?? (mk.custom ? true : undefined), padKeys: migratePadKeys(raw.padKeys), outfit: { ...DEFAULTS.outfit, ...(raw.outfit ?? {}) }, outrun: { ...DEFAULTS.outrun, ...(raw.outrun ?? {}) } };

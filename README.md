@@ -19,6 +19,7 @@ On Windows without any tools: download `SnowboardAnywhere-win.zip` from
 [the latest release](https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest), unzip it, double-click
 `SnowboardAnywhere.exe`. The first launch downloads Vail in its small window (about 270 MB, a few minutes), then
 the game opens in your browser; later launches start straight away, and more resorts come from Change resort.
+On Windows the first launch also asks which installed browser to use; `SnowboardAnywhere.exe --pick-browser` or Settings > Launcher > Browser changes it.
 Windows may warn the first time (the exe is not code-signed): More info > Run anyway. Close the small window to
 quit. On an Apple Silicon Mac the same with `SnowboardAnywhere-mac.zip`: double-click it, double-click
 `SnowboardAnywhere` in the folder it makes, and let it through once in System Settings > Privacy & Security > Open
