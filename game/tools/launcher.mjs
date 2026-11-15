@@ -1,4 +1,4 @@
-// FEAT-261 the Windows launcher, SnowboardAnywhere.exe: serves the prebuilt game and the pack routes, then opens the
+// FEAT-261 the launcher, SnowboardAnywhere.exe (FEAT-319: SnowboardAnywhere on a Mac): serves the prebuilt game and the pack routes, then opens the
 // browser on the main menu. tools/package.mjs bundles this file (esbuild, CommonJS) into a Node single executable
 // application next to the built game (game/) and an empty packs/, where Change resort > Download puts resorts.
 // No Vite here: the game is already built. The pack routes are tools/pack_routes.mjs, the same handlers the dev
@@ -31,6 +31,10 @@ import { packDownloads, packFiles } from './pack_routes.mjs';
 export const VERSION = LAUNCHER ? SBA_LAUNCHER.version : 'dev';
 const PORT = 5173;
 const TRIES = 20;
+// FEAT-319: the names the rider sees, the Mac zip's or the Windows one's
+const MAC = process.platform === 'darwin';
+const EXE = MAC ? 'SnowboardAnywhere' : 'SnowboardAnywhere.exe';
+const ZIP = MAC ? 'SnowboardAnywhere-mac.zip' : 'SnowboardAnywhere-win.zip';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -208,9 +212,9 @@ async function firstResort() {
     const why = offline ? `no connection to the download server (${e.cause?.code ?? e.cause?.message ?? 'offline?'})`
       : String(e?.message ?? e).replace(/: update the game \(git pull\)$/, ''); // get_pack's hint is for a checkout
     const releases = 'https://github.com/drewkeriazes/SnowboardAnywhere/releases';
-    const tip = offline ? 'Check the internet connection, then open SnowboardAnywhere.exe again (the download starts over).'
-      : /newer than this game/.test(why) ? `This SnowboardAnywhere is older than the published resorts: get the newest SnowboardAnywhere-win.zip from ${releases}`
-      : `Open SnowboardAnywhere.exe again later (the download starts over). If it keeps failing, get the newest zip from ${releases}`;
+    const tip = offline ? `Check the internet connection, then open ${EXE} again (the download starts over).`
+      : /newer than this game/.test(why) ? `This SnowboardAnywhere is older than the published resorts: get the newest ${ZIP} from ${releases}`
+      : `Open ${EXE} again later (the download starts over). If it keeps failing, get the newest zip from ${releases}`;
     return `${FIRST.name} could not be downloaded: ${why}.\n${tip}`;
   }
 }
@@ -227,7 +231,7 @@ function stop(message) {
 async function main(args) {
   const flag = (f) => { const i = args.indexOf(f); return i < 0 ? undefined : args[i + 1]; };
   if (args.includes('--version')) { console.log(VERSION); return; }
-  if (args.includes('--help')) { console.log('SnowboardAnywhere.exe [--lan] [--port N] [--no-open] [--pick-browser] [--version]'); return; }
+  if (args.includes('--help')) { console.log(`${EXE} [--lan] [--port N] [--no-open] [--pick-browser] [--version]`); return; }
   const lan = args.includes('--lan');
   const open = !args.includes('--no-open');
   // FEAT-318: which browser; asks on the first launch, with --pick-browser, or when the saved one is gone
@@ -237,8 +241,10 @@ async function main(args) {
   if (LAUNCHER) process.title = `SnowboardAnywhere ${VERSION}`;
 
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
-    return stop(LAUNCHER
-      ? `The game folder is missing: ${DIST}\nUnzip all of SnowboardAnywhere-win.zip first (right-click it > Extract All),\nthen run SnowboardAnywhere.exe from the unzipped folder.`
+    return stop(LAUNCHER && MAC
+      ? `The game folder is missing: ${DIST}\nUnzip ${ZIP} first (double-click it), then run ${EXE} from the unzipped folder.\nIf the game folder is there, macOS ran a quarantined copy from somewhere else: in Terminal run\n  xattr -dr com.apple.quarantine <the unzipped folder>\nthen double-click ${EXE} again.`
+      : LAUNCHER
+      ? `The game folder is missing: ${DIST}\nUnzip all of ${ZIP} first (right-click it > Extract All),\nthen run ${EXE} from the unzipped folder.`
       : `No built game in ${DIST}: run \`npx vite build\` in game/ first.`);
   }
   fs.mkdirSync(PACKS, { recursive: true });
@@ -270,7 +276,8 @@ async function main(args) {
   if (lan) {
     console.log('\nOn another computer on this network, open:');
     for (const u of lanUrls(port)) console.log(`  ${u}`);
-    console.log('If it cannot connect: allow SnowboardAnywhere on Private networks in Windows Firewall, and set this PC\'s network to Private.');
+    console.log(MAC ? 'If macOS asks whether SnowboardAnywhere may accept incoming network connections, click Allow.'
+      : 'If it cannot connect: allow SnowboardAnywhere on Private networks in Windows Firewall, and set this PC\'s network to Private.');
   }
   console.log(`\nThe game opens in ${chosen === 'default' ? 'your browser' : chosen.name} (if it does not, paste the address above into Chrome or Edge).`);
   console.log('More resorts: Change resort on the main menu. Close this window to quit.');

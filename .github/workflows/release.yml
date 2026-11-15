@@ -1,9 +1,11 @@
 # FEAT-262 the release: only when Drew clicks Run workflow (Actions > Release > Run workflow > bump). Merges to main
-# never release. It reads the latest release's tag (X.Y.Z, no v: 0.0.1 is the first), bumps it, builds the Windows
-# zip at the commit it ran on (npm run package, FEAT-261, which stamps the version into the exe and the game), then
-# creates the tag and the release with SnowboardAnywhere-win.zip attached and notes from the PRs merged since the
-# last tag, under Drew's own `notes` when he types any (FEAT-317). An existing tag stops it before the build: a
-# release is never overwritten.
+# never release. It reads the latest release's tag (X.Y.Z, no v: 0.0.1 is the first) and bumps it (job version),
+# builds the Windows zip and the Mac one (FEAT-319) at the commit it ran on, each on its own OS (job build: npm run
+# package, FEAT-261, which stamps the version into the launcher and the game), then creates the tag and the release
+# once, with SnowboardAnywhere-win.zip and SnowboardAnywhere-mac.zip attached and notes from the PRs merged since the
+# last tag, under Drew's own `notes` when he types any (FEAT-317) (job release). An existing tag stops it before the
+# build: a release is never overwritten. `dry_run` builds both zips and keeps them as the run's artifacts, with no
+# tag and no release.
 name: Release
 
 on:
@@ -19,6 +21,10 @@ on:
         type: string
         required: false
         default: ''
+      dry_run:
+        description: 'Dry run: build both zips as downloadable run artifacts, make no tag or release'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,9 +35,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      last: ${{ steps.v.outputs.last }}
+      ver: ${{ steps.v.outputs.ver }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -71,6 +80,7 @@ jobs:
         env:
           LAST: ${{ steps.v.outputs.last }}
           VER: ${{ steps.v.outputs.ver }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -uo pipefail
           if git ls-remote --exit-code --tags origin "refs/tags/$VER" > /dev/null; then
@@ -96,14 +106,34 @@ jobs:
             exit 1
           fi
           if [ "$at" = "$GITHUB_SHA" ]; then
-            echo "::error::$LAST is already this commit (${GITHUB_SHA:0:7}): merge something first."
-            exit 1
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::warning::$LAST is already this commit (${GITHUB_SHA:0:7}); a dry run builds it anyway."
+            else
+              echo "::error::$LAST is already this commit (${GITHUB_SHA:0:7}): merge something first."
+              exit 1
+            fi
           fi
           echo "No tag or release $VER yet; $LAST is ${at:0:7}."
 
+  # each zip on its own OS: the launcher is a copy of the node binary that builds it (an arm64 Mac's for the Mac zip)
+  build:
+    needs: version
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: win
+            runner: windows-latest
+          - os: mac
+            runner: macos-latest # Apple Silicon (arm64)
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-node@v4
         with:
-          # the exe embeds the node.exe that builds it: 24 is what FEAT-261 was tested on
+          # the launcher embeds the node binary that builds it: 24 is what FEAT-261 was tested on
           node-version: 24
           cache: npm
           cache-dependency-path: game/package-lock.json
@@ -111,12 +141,13 @@ jobs:
       - run: npm ci
         working-directory: game
 
-      # vite build, the launcher exe (checked with --version), README.txt, the zip in game/release/
-      - name: Build SnowboardAnywhere-win.zip
+      # vite build, the launcher (checked with --version), README.txt, the zip in game/release/ (on the Mac with
+      # ditto, which keeps the launcher's exec bit)
+      - name: Build SnowboardAnywhere-${{ matrix.os }}.zip
         working-directory: game
         shell: bash
         env:
-          VER: ${{ steps.v.outputs.ver }}
+          VER: ${{ needs.version.outputs.ver }}
           # FEAT-273: the public web config, from repository variables (Settings > Secrets and variables > Actions > Variables)
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -124,11 +155,37 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
         run: npm run package -- --version "$VER"
 
+      # the artifact wraps the zip in its own zip and the download unwraps it, so the zip (and the exec bit inside
+      # it) reaches the release byte for byte
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SnowboardAnywhere-${{ matrix.os }}
+          path: game/release/SnowboardAnywhere-${{ matrix.os }}.zip
+          if-no-files-found: error
+          compression-level: 0 # already a zip
+          retention-days: 7
+
+  # the tag and the release, once, after both zips built
+  release:
+    needs: [version, build]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: SnowboardAnywhere-*
+          merge-multiple: true
+          path: zips
+
       - name: Create the tag and the release
         shell: bash
         env:
-          LAST: ${{ steps.v.outputs.last }}
-          VER: ${{ steps.v.outputs.ver }}
+          LAST: ${{ needs.version.outputs.last }}
+          VER: ${{ needs.version.outputs.ver }}
           # through env, never ${{ }} in the script, so quotes or $( ) in the text stay text
           NOTES: ${{ inputs.notes }}
         run: |
@@ -142,6 +199,7 @@ jobs:
             extra=(--notes-file "$RUNNER_TEMP/notes.md")
             echo "Custom notes:"; cat "$RUNNER_TEMP/notes.md"
           fi
-          gh release create "$VER" game/release/SnowboardAnywhere-win.zip --target "$GITHUB_SHA" \
+          ls -l zips
+          gh release create "$VER" zips/SnowboardAnywhere-win.zip zips/SnowboardAnywhere-mac.zip --target "$GITHUB_SHA" \
             --title "$VER" --generate-notes --notes-start-tag "$LAST" "${extra[@]}"
           echo "Released [$VER](https://github.com/$GH_REPO/releases/tag/$VER) at ${GITHUB_SHA:0:7}, notes since $LAST." >> "$GITHUB_STEP_SUMMARY"
