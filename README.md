@@ -19,6 +19,7 @@ On Windows without any tools: download `SnowboardAnywhere-win.zip` from
 [the latest release](https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest), unzip it, double-click
 `SnowboardAnywhere.exe`. The first launch downloads Vail in its small window (about 270 MB, a few minutes), then
 the game opens in your browser; later launches start straight away, and more resorts come from Change resort.
+The first launch also asks which installed browser to use; `SnowboardAnywhere.exe --pick-browser` or Settings > Launcher > Browser changes it.
 Windows may warn the first time (the exe is not code-signed): More info > Run anyway. Close the small window to
 quit. To build that zip: `cd game && npm run package -- --version X.Y.Z` (Windows; it lands in `game/release/`).
 Releases are made only by hand, with Actions > Release > Run workflow ([developer guide > Releases](docs/developer-guide.md#releases)).
