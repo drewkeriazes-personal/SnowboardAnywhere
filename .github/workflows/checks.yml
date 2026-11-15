@@ -4,7 +4,8 @@
 #   typecheck-build   tsc --noEmit and vite build                                  game/ changed
 #   physics-checks    the Node-only check tools (Rider physics on exact planes,     game/ changed
 #                     get_pack.mjs --from; no pack, no browser)
-#   browser-checks    headless check tools on the synthetic pack, SwiftShader       game/ changed
+#   browser-checks    headless check tools on the synthetic pack, SwiftShader,      game/ changed
+#                     in three parallel shards: padcheck, clumpcheck, rest (FEAT-322)
 #   render-budgets    main and the PR on the synthetic pack (cishot.mjs): shader    PRs, game/ changed
 #                     compile, scene budget counts (fails on a count more than 10%
 #                     over main), bundle size; render-budgets-comment posts them.
@@ -173,11 +174,19 @@ jobs:
       - if: steps.cache.outputs.cache-hit != 'true'
         run: node game/tools/get_pack.mjs synth --catalog "$RUNNER_TEMP/catalog.json"
 
+  # FEAT-322: three shards, each on its own runner (in one job they would share the 4 cores SwiftShader
+  # already fills and skew the frame-timed checks). padcheck (about 2:15) and clumpcheck (about 1:40) run
+  # alone; `rest` runs every other BROWSER_CHECKS entry, so a new check lands there without touching this.
   browser-checks:
     needs: [changes, synth-pack]
     if: needs.changes.outputs.game == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [padcheck, clumpcheck, rest]
+    name: browser-checks (${{ matrix.shard }})
     defaults:
       run:
         working-directory: game
@@ -205,9 +214,18 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npx vite build
       - name: Browser checks (SwiftShader, lowgfx)
+        env:
+          SHARD: ${{ matrix.shard }}
+          SOLO: padcheck clumpcheck # the matrix's own shards; keep in step with matrix.shard
         run: |
+          if [ "$SHARD" = rest ]; then
+            run=""
+            for c in $BROWSER_CHECKS; do case " $SOLO " in *" $c "*) ;; *) run="$run $c" ;; esac; done
+          else
+            case " $BROWSER_CHECKS " in *" $SHARD "*) run="$SHARD" ;; *) echo "::error::shard $SHARD is not in BROWSER_CHECKS"; exit 1 ;; esac
+          fi
           failed=""
-          for c in $BROWSER_CHECKS; do
+          for c in $run; do
             echo "::group::$c"
             node tools/$c.mjs synth --cpu || failed="$failed $c"
             echo "::endgroup::"
