@@ -30,6 +30,8 @@ import { ParticleLight } from '../world/ParticleLight';
 import { Eat } from '../world/Eat';
 import { RiderChair } from '../world/RiderChair';
 import { TrialWorld } from '../world/TrialWorld';
+import { Boundary } from '../sim/Boundary';
+import { BoundaryRope } from '../world/BoundaryRope';
 
 export type World = ReturnType<typeof buildWorld>;
 
@@ -106,6 +108,10 @@ export function buildWorld(ctx: GameContext) {
   const courses = buildCourses(pack);
   const trialWorld = new TrialWorld(pack, courses);
   add('time trials', trialWorld.group);
+  // FEAT-305: the orange rope along the resort's edge (its crossings roll for the out of bounds yeti, modes/YetiEgg.ts)
+  const boundary = Boundary.fromFeatures(pack.features, pack.meta.bounds);
+  const boundaryRope = new BoundaryRope(pack, boundary);
+  add('boundary rope', boundaryRope.group);
   const riderView = new RiderView();
   add('rider', riderView.group);
   add('rider spray', riderView.sprayObject);
@@ -121,6 +127,7 @@ export function buildWorld(ctx: GameContext) {
   for (const m of eat.materials) env.registerMaterial(m);
   for (const m of landmarks.materials) env.registerMaterial(m);
   for (const m of slowSigns.materials) env.registerMaterial(m);
+  for (const m of boundaryRope.materials) env.registerMaterial(m);
   env.registerMaterial(people.material);
   veg.enableImpostors(renderer, !params.noimpostors, params.lowgfx ? 1024 : 2048); // FEAT-156: bakes the LOD2 / impostor atlases either way
   if (params.lod0 != null) setLod0Reach(params.lod0); // BUG-107
@@ -129,5 +136,6 @@ export function buildWorld(ctx: GameContext) {
   return {
     zr, env, clouds, snow, terrain, collider, veg, shrubs, treeFade, rocks, lifts, liftLines, resortTop, runs, buildings, roads, landmarks, slowSigns, bridges, people,
     tracks, bootprints, riderChair, puffs, particleLight, bigprints, deform, monsters, eat, courses, trialWorld, riderView, treeBrush,
+    boundary, boundaryRope,
   };
 }

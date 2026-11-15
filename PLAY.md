@@ -14,6 +14,8 @@ Nothing to install and no commands. You need about 1 GB of free space.
 
 Leave the black window open while you play. **Close it to quit.** More resorts: **Change resort** on the main menu.
 
+The first launch also asks which browser to open the game in: type its number and press Enter (Enter alone keeps the Windows default). It remembers the answer. To change it, run `SnowboardAnywhere.exe --pick-browser`, or in the game open **Settings > Launcher > Browser** (it takes effect next launch). Settings and best times are kept by each browser, so a different browser starts fresh.
+
 **Playing again later:** double-click `SnowboardAnywhere.exe`. It starts straight away.
 
 **Updating:** download the newest zip from the same page and extract it. Copy the `packs` folder from your old `SnowboardAnywhere-win` folder into the new one (replace the empty one), so you don't download your resorts again. Or close the black window and extract the new zip over the old folder. Settings and best times are kept by the browser, so they carry over.
@@ -31,9 +33,49 @@ Leave the black window open while you play. **Close it to quit.** More resorts: 
 
 Everything else (controls, choppy game, no sound) is the same as below: see Basic controls and Troubleshooting.
 
+## Easiest way (Mac): download the zip
+
+For Macs with Apple Silicon (M1 or newer: Apple menu > About This Mac says "Chip Apple M..."). Nothing to install and no commands. You need about 1 GB of free space. An Intel Mac needs the Git and Node.js way below.
+
+1. Open https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest and download **SnowboardAnywhere-mac.zip** (under Assets).
+2. Double-click the downloaded zip (in Downloads). It makes a folder, `SnowboardAnywhere-mac`.
+3. Open that folder and double-click **SnowboardAnywhere**.
+4. The first time, macOS blocks it, because the game isn't signed by an Apple developer yet. Let it through once (see **First launch on a Mac** below).
+5. The first launch downloads Vail in a Terminal window (about 270 MB, a few minutes). Then the game opens in your browser on the main menu.
+
+Leave the Terminal window open while you play. **Close it to quit** (click **Terminate** if it asks). More resorts: **Change resort** on the main menu.
+
+**Playing again later:** double-click `SnowboardAnywhere`. It starts straight away.
+
+**Updating:** download the newest zip and double-click it. Copy the `packs` folder from your old `SnowboardAnywhere-mac` folder into the new one (replace the empty one), so you don't download your resorts again. Settings and best times are kept by the browser, so they carry over. A new version is blocked once more, the same way as the first time.
+
+### First launch on a Mac
+
+On macOS 15 Sequoia and later (right-click > Open no longer gets past it):
+
+1. Double-click **SnowboardAnywhere**. A box says Apple could not verify it. Click **Done**.
+2. Open **System Settings** > **Privacy & Security**, scroll down to **"SnowboardAnywhere" was blocked** and click **Open Anyway**. Enter your password.
+3. Double-click **SnowboardAnywhere** again and click **Open**. From then on it starts without asking.
+
+<!-- FEAT-319: screenshot of the Privacy & Security "Open Anyway" screen goes here (Drew adds it from a Mac). -->
+*(Screenshot of the Open Anyway screen: coming soon.)*
+
+**Or, if you're happy in Terminal:** open Terminal, type `xattr -dr com.apple.quarantine ` (with the space at the end), drag the `SnowboardAnywhere-mac` folder onto the Terminal window, and press Enter. That clears the block for the whole folder, so no box appears.
+
+| Problem | Fix |
+| --- | --- |
+| "Apple could not verify SnowboardAnywhere" | See **First launch on a Mac** above. |
+| No **Open Anyway** button in Privacy & Security | Double-click SnowboardAnywhere first (the button shows up only after a blocked try, for about an hour), then look again. Or use the `xattr` line above. |
+| "The game folder is missing" | Double-click the zip first and open SnowboardAnywhere from the folder it made. If the `game` folder is there, use the `xattr` line above, then double-click it again. |
+| Double-clicking opens a text editor, or says it can't be opened | The zip was unpacked by a tool that lost the "can run" mark. Delete the folder and double-click the zip in Finder. Or in Terminal: type `chmod +x ` (with the space), drag SnowboardAnywhere onto the window, press Enter. |
+| "Vail could not be downloaded" | Check your internet connection, then double-click SnowboardAnywhere again. The download starts over. |
+| The browser doesn't open, or it isn't Chrome or Edge | Paste the address the Terminal window shows (like `http://localhost:5173/`) into Chrome or Edge. |
+
+The other problems in the Windows table (busy port, **Update**, **needs rebuild**, older than the published resorts) work the same on a Mac.
+
 ---
 
-## Developer, Mac or Linux way: Git and Node.js
+## Developer, Intel Mac or Linux way: Git and Node.js
 
 Copy and paste a few commands. You need about 15 minutes and 1 GB of free space for the first setup.
 

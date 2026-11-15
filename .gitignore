@@ -4,6 +4,8 @@ dist/
 dist-host/
 # npm run package: the Windows zip, its staged folder and the SEA bundle (FEAT-261)
 game/release/
+# the launcher's saved browser when run from a checkout (FEAT-318)
+/launcher.json
 __pycache__/
 *.py[cod]
 .venv/
