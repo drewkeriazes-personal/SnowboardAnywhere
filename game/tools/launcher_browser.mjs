@@ -15,6 +15,8 @@ import readline from 'node:readline';
 import { refuseForeignOrigin } from './same_origin.mjs';
 
 const WIN = process.platform === 'win32';
+/** the <meta name> the launcher adds to the index.html it serves, so the game asks for the routes only there */
+export const LAUNCHER_META = 'sba-launcher';
 /** how long the first-launch prompt waits before it takes the default, so a double-click never hangs */
 const PROMPT_SECONDS = 30;
 

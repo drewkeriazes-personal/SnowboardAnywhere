@@ -23,7 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream';
 import { DIST, LAUNCHER, LAUNCHER_CONFIG, PACKS } from './paths.mjs';
-import { browserRoutes, chooseBrowser, launch } from './launcher_browser.mjs';
+import { LAUNCHER_META, browserRoutes, chooseBrowser, launch } from './launcher_browser.mjs';
 import { getPack, localPacks, PACK_FORMAT } from './get_pack.mjs';
 import { packDownloads, packFiles } from './pack_routes.mjs';
 
@@ -53,6 +53,13 @@ function gameFiles(dir) {
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(dir, rel);
     if (!file.startsWith(dir + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.statusCode = 404; res.end(); return; }
+    if (path.basename(file) === 'index.html') { // FEAT-318: tell the page it runs from the launcher (src/ui/LauncherBrowser.ts)
+      const html = fs.readFileSync(file, 'utf8').replace(/<head>/i, `<head>\n<meta name="${LAUNCHER_META}" content="1">`);
+      res.setHeader('content-type', TYPES['.html']); res.setHeader('cache-control', 'no-cache');
+      res.setHeader('content-length', Buffer.byteLength(html));
+      res.end(req.method === 'HEAD' ? undefined : html);
+      return;
+    }
     const size = fs.statSync(file).size;
     res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
     res.setHeader('cache-control', 'no-cache');

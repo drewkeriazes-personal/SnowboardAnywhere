@@ -1,8 +1,9 @@
 /**
  * FEAT-318: Settings > Launcher > Browser, which browser SnowboardAnywhere.exe opens the game in. The choice lives
  * in the launcher's launcher.json, not in the game's settings, and is read and changed through the launcher's
- * /__launcher/browsers and /__launcher/browser routes (tools/launcher_browser.mjs). The dev server and
- * `npm run host` have no such routes, so `state` stays null there and the Launcher category hides.
+ * /__launcher/browsers and /__launcher/browser routes (tools/launcher_browser.mjs). Only the launcher has them, and it
+ * marks the index.html it serves with <meta name="sba-launcher">; without that meta (dev server, `npm run host`, the
+ * checks' static servers) nothing is requested, `state` stays null and the Launcher category hides.
  */
 export interface LauncherBrowsers {
   available: boolean;
@@ -37,6 +38,8 @@ export const launcherBrowser = {
 
   /** read the list again (each time Settings opens, so a change made in the console shows) */
   async load(): Promise<void> {
+    // only when the launcher served the page (it adds this meta): another server would answer 404, a red console line
+    if (!document.querySelector('meta[name="sba-launcher"]')) return;
     const j = await call('/__launcher/browsers');
     if (j || state) { state = j; changed(); }
   },
@@ -68,3 +71,6 @@ export const launcherBrowser = {
     changed();
   },
 };
+
+// the launcher's first registry read takes about 2 s: start it with the page, so Settings has the list when it opens
+void launcherBrowser.load();
