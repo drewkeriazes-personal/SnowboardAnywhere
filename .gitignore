@@ -42,6 +42,8 @@ secrets*.json
 
 # Per-user Claude Code settings
 .claude/settings.local.json
+.claude/worktrees/
+CLAUDE.local.md
 
 # Editor and OS clutter
 .vscode/
