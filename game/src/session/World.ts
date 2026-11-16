@@ -4,7 +4,7 @@ import { Terrain } from '../terrain/Terrain';
 import { Collider } from '../sim/Collider';
 import { buildCourses } from '../sim/Courses';
 import { Bridges } from '../world/Bridges';
-import { Landmarks, landmarkStart } from '../world/Landmarks';
+import { Landmarks } from '../world/Landmarks';
 import { SlowSigns } from '../world/SlowSigns';
 import { StaticPeople, parsePeopleMode } from '../world/StaticPeople';
 import { Clouds } from '../world/Clouds';
@@ -84,8 +84,8 @@ export function buildWorld(ctx: GameContext) {
   const bridges = new Bridges(pack, collider, params.bridgeguess); // BUG-022: OSM-tagged bridges and creek-bed dips; ?bridgeguess adds segment chords
   add('bridges', bridges.group);
   // FEAT-307: skier pairs and sitting snowboarders on the runs, kept clear of the start, the landmarks and the SLOW signs (FEAT-306)
-  const ls = landmarkStart(pack.meta.slug);
-  const people = new StaticPeople(pack, collider, parsePeopleMode(params.people), [[pack.meta.start.x, pack.meta.start.y], ...(ls ? [[ls.x, ls.y] as [number, number]] : []), ...landmarks.list.map((l) => [l.x, l.y] as [number, number])], slowSigns.signs.map((s) => [s.site.cx, s.site.cy] as [number, number]));
+  // (FEAT-243: a landmark or placed start is already resolved into meta.start by the pipeline)
+  const people = new StaticPeople(pack, collider, parsePeopleMode(params.people), [[pack.meta.start.x, pack.meta.start.y], ...landmarks.list.map((l) => [l.x, l.y] as [number, number])], slowSigns.signs.map((s) => [s.site.cx, s.site.cy] as [number, number]));
   add('people', people.group);
   people.ground = terrain; // BUG-088
   const tracks = new Tracks(pack);
