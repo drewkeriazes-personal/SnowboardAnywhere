@@ -8,6 +8,7 @@
     "x": 1586,
     "y": -4008
   },
+  "weather": "clear",
   "views": [
     {
       "id": "north",
@@ -18,7 +19,7 @@
       "x": 1586.1,
       "y": -4007.8,
       "h": 6.8,
-      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=6.8&pitch=10.0&fov=75.0&cam=eye&spot=blue-sky-belles-camp/north"
+      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=6.8&pitch=10.0&fov=75.0&cam=eye&spot=blue-sky-belles-camp/north&weather=clear"
     },
     {
       "id": "east",
@@ -29,7 +30,7 @@
       "x": 1586.1,
       "y": -4007.8,
       "h": 78.2,
-      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=78.2&pitch=2.0&fov=75.0&cam=eye&spot=blue-sky-belles-camp/east"
+      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=78.2&pitch=2.0&fov=75.0&cam=eye&spot=blue-sky-belles-camp/east&weather=clear"
     },
     {
       "id": "south",
@@ -40,7 +41,7 @@
       "x": 1586.1,
       "y": -4007.8,
       "h": 200.3,
-      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=200.3&pitch=11.6&fov=75.0&cam=eye&spot=blue-sky-belles-camp/south"
+      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=200.3&pitch=11.6&fov=75.0&cam=eye&spot=blue-sky-belles-camp/south&weather=clear"
     },
     {
       "id": "west",
@@ -51,7 +52,7 @@
       "x": 1586.1,
       "y": -4007.8,
       "h": 269.0,
-      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=269.0&pitch=7.9&fov=75.0&cam=eye&spot=blue-sky-belles-camp/west"
+      "game": "http://localhost:5173/?pack=vail&x=1586.1&y=-4007.8&h=269.0&pitch=7.9&fov=75.0&cam=eye&spot=blue-sky-belles-camp/west&weather=clear"
     }
   ],
   "streetview_capture": "Mar 2012, Google Street View trekker (calibrated; the lodge sits at about 207 true in the photo vs 212 in the pack, 75 m). Real screenshots shared in chat, not saved locally.",

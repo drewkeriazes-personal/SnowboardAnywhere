@@ -2,6 +2,8 @@
 
 Real: Street View, Mar 2023, contributor JianMing Zhou, listed as "Vail Ski Resort" (links in spot.json; `real-*.png` local only). Sunny, spring snow. Game: `eye-<view>.jpg`, eye camera at (1097, -2725), 1919x910, 2026-11-06.
 
+**Sky (FEAT-094):** scattered cumulus in a blue sky in the `real-*.png` views; tagged `weather: scattered` explicitly so it no longer depends on the page default.
+
 Position and compass: the pin is 10 m from The Divide, and the Skyline Express line runs north-south 118 m to the west, which fits the cables crossing the west view and sitting on the right of the south view. The slope directions agree in all four views (fall line north; rising to the left looking west, to the right looking east). With so few trees in the game there is no skyline to fine-tune the heading against, so treat the compass as checked to about 10 degrees, not exact.
 
 ## What matches

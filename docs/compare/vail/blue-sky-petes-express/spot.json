@@ -8,6 +8,7 @@
     "x": 1748,
     "y": -2532
   },
+  "weather": "clear",
   "views": [
     {
       "id": "north",
@@ -18,7 +19,7 @@
       "x": 1748.5,
       "y": -2531.5,
       "h": 10.4,
-      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=10.4&pitch=-3.8&fov=75.0&cam=eye&spot=blue-sky-petes-express/north"
+      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=10.4&pitch=-3.8&fov=75.0&cam=eye&spot=blue-sky-petes-express/north&weather=clear"
     },
     {
       "id": "southeast",
@@ -29,7 +30,7 @@
       "x": 1748.5,
       "y": -2531.5,
       "h": 130.9,
-      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=130.9&pitch=18.2&fov=75.0&cam=eye&spot=blue-sky-petes-express/southeast"
+      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=130.9&pitch=18.2&fov=75.0&cam=eye&spot=blue-sky-petes-express/southeast&weather=clear"
     },
     {
       "id": "southwest",
@@ -40,7 +41,7 @@
       "x": 1748.5,
       "y": -2531.5,
       "h": 234.1,
-      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=234.1&pitch=12.2&fov=75.0&cam=eye&spot=blue-sky-petes-express/southwest"
+      "game": "http://localhost:5173/?pack=vail&x=1748.5&y=-2531.5&h=234.1&pitch=12.2&fov=75.0&cam=eye&spot=blue-sky-petes-express/southwest&weather=clear"
     }
   ],
   "streetview_capture": "Mar 2012, Google Street View trekker (calibrated). Real screenshots shared in chat, not saved locally.",

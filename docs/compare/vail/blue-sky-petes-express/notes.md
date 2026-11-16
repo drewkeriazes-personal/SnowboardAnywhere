@@ -2,6 +2,8 @@
 
 Real: Google Street View trekker, Mar 2012 (calibrated; links in spot.json). The real screenshots were shared in chat and are not saved locally. Sunny spring snow. Game: `eye-<view>.jpg`, eye camera at (1749, -2532), 1919x910, 2026-11-06. 11 m from Big Rock Park - West.
 
+**Sky (FEAT-094):** tagged `weather: clear` from the "Sunny spring snow" note above. Not re-checked: the real screenshots are not saved and the trekker panorama did not reopen from the link in spot.json, so confirm against the photo when it is next opened.
+
 ## What matches
 - **Terrain:** the run dropping into the gully between forested slopes (south-east), and the slope rising to the north with the distant snowy hill.
 - **Forest edges:** the best tree match of all the spots. The pack has 147 trees within 100 m, and the forest walls sit where the photo has them.

@@ -8,6 +8,7 @@
     "x": 1097,
     "y": -2725
   },
+  "weather": "scattered",
   "views": [
     {
       "id": "east",
@@ -18,7 +19,7 @@
       "x": 1097.3,
       "y": -2725.4,
       "h": 80.0,
-      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=80.0&pitch=23.0&fov=75.0&cam=eye&spot=blue-sky-the-divide/east"
+      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=80.0&pitch=23.0&fov=75.0&cam=eye&spot=blue-sky-the-divide/east&weather=scattered"
     },
     {
       "id": "south",
@@ -29,7 +30,7 @@
       "x": 1097.3,
       "y": -2725.4,
       "h": 159.2,
-      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=159.2&pitch=17.0&fov=75.0&cam=eye&spot=blue-sky-the-divide/south"
+      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=159.2&pitch=17.0&fov=75.0&cam=eye&spot=blue-sky-the-divide/south&weather=scattered"
     },
     {
       "id": "west",
@@ -40,7 +41,7 @@
       "x": 1097.3,
       "y": -2725.4,
       "h": 253.3,
-      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=253.3&pitch=13.2&fov=75.0&cam=eye&spot=blue-sky-the-divide/west"
+      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=253.3&pitch=13.2&fov=75.0&cam=eye&spot=blue-sky-the-divide/west&weather=scattered"
     },
     {
       "id": "north",
@@ -51,7 +52,7 @@
       "x": 1097.3,
       "y": -2725.4,
       "h": 333.3,
-      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=333.3&pitch=11.1&fov=75.0&cam=eye&spot=blue-sky-the-divide/north"
+      "game": "http://localhost:5173/?pack=vail&x=1097.3&y=-2725.4&h=333.3&pitch=11.1&fov=75.0&cam=eye&spot=blue-sky-the-divide/north&weather=scattered"
     }
   ],
   "streetview_capture": "Mar 2023, contributor JianMing Zhou, listed as 'Vail Ski Resort' (user photosphere)",

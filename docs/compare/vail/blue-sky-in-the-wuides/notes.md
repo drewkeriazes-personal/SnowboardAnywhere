@@ -2,6 +2,8 @@
 
 Real: Street View, Feb 2014, contributor Krishna Vinod (links in spot.json; `real-*.png` local only). Clear winter light. Game: `eye-<view>.jpg`, eye camera at (1041, -3367), 1919x910, 2026-11-06.
 
+**Sky (FEAT-094):** thin high cirrus streaks across a blue sky in the `real-*.png` views (same day and contributor as Hornsilver); tagged `weather: cirrus` (Thin high cloud).
+
 **This panorama's compass is about 76 degrees off** (same contributor as Yonder, -88). Found from the fall line: downhill is about 335 degrees by the panorama's compass, and the DEM's fall line here runs about 260 grid. Confirmed in all four views; view ids are true directions.
 
 ## What matches

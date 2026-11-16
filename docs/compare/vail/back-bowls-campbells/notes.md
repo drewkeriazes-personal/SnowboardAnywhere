@@ -2,6 +2,8 @@
 
 Real: Street View, Jan 2019 (link in spot.json; not stored here). Game: `game-east-standing.png` (at the spot), `game-east-riding.png` (a few metres east, slightly lower).
 
+**Sky (FEAT-094):** tagged `weather: clear`, inferred from the sharp small shadows noted below. Not re-checked against the photo (not stored here); confirm when the link is next opened.
+
 ## Findings
 - **Moguls (Drew):** the real bowl is covered in mogul fields: the bowl floor and the steep slopes on the right (Milt's Face / The Slot side) show a dense, regular bump texture. The game bowl is smooth. Reference for FEAT-059 (#92). Ungroomed, steep, high-traffic Back Bowls runs are exactly where the card's score should put bumps.
 - **Tree density: matches looking east, too low looking north-west.** East: sparse lone conifers on the steep bowl faces, similar in game. North-west (uphill, 15 degrees up): a dense band of tall spruce/fir (20 to 25 m, snow clumps on the branches) lines the top of the slope, with one silver dead snag in it. In the game (`game-northwest-aerial.png`, shot from above, not yet matched) the same slope has only scattered small trees. So BUG-023 also hits stand edges in the bowls, not only glades.

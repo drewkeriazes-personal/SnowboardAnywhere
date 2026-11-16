@@ -8,6 +8,7 @@
     "x": 1583,
     "y": -30
   },
+  "weather": "clear",
   "views": [
     {
       "id": "north",
@@ -18,7 +19,7 @@
       "x": 1583.2,
       "y": -30.3,
       "h": 17.6,
-      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=17.6&pitch=-2.6&fov=75.0&cam=eye&spot=china-bowl-poppyfields/north",
+      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=17.6&pitch=-2.6&fov=75.0&cam=eye&spot=china-bowl-poppyfields/north&weather=clear",
       "heading_offset": -105.0
     },
     {
@@ -30,7 +31,7 @@
       "x": 1583.2,
       "y": -30.3,
       "h": 103.3,
-      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=103.3&pitch=0.0&fov=75.0&cam=eye&spot=china-bowl-poppyfields/east",
+      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=103.3&pitch=0.0&fov=75.0&cam=eye&spot=china-bowl-poppyfields/east&weather=clear",
       "heading_offset": -105.0
     },
     {
@@ -42,7 +43,7 @@
       "x": 1583.2,
       "y": -30.3,
       "h": 173.6,
-      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=173.6&pitch=-2.5&fov=75.0&cam=eye&spot=china-bowl-poppyfields/south",
+      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=173.6&pitch=-2.5&fov=75.0&cam=eye&spot=china-bowl-poppyfields/south&weather=clear",
       "heading_offset": -105.0
     },
     {
@@ -54,7 +55,7 @@
       "x": 1583.2,
       "y": -30.3,
       "h": 273.0,
-      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=273.0&pitch=-3.8&fov=75.0&cam=eye&spot=china-bowl-poppyfields/west",
+      "game": "http://localhost:5173/?pack=vail&x=1583.2&y=-30.3&h=273.0&pitch=-3.8&fov=75.0&cam=eye&spot=china-bowl-poppyfields/west&weather=clear",
       "heading_offset": -105.0
     }
   ],
