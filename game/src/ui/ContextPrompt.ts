@@ -17,7 +17,7 @@ export interface PromptState {
   metric: boolean;
 }
 
-/** The prompt in the middle of the screen: the lift you are on or near, or strapping in and out (FEAT-124: E straps in and out, or the optional board-only key). */
+/** The prompt in the middle of the screen: the lift you are on or near, or strapping in and out (FEAT-124: E straps in and out away from lifts; FEAT-323: the strap key, B, anywhere). */
 export function contextPrompt(keys: KeyLabels, s: PromptState): string {
   const { k, padKey, lookKey } = keys;
   const { liftRide, rider } = s;
@@ -28,9 +28,14 @@ export function contextPrompt(keys: KeyLabels, s: PromptState): string {
   if (liftRide.nearby && !s.mapOpen && !s.detached) {
     const name = liftRide.nearby.feature.name ?? 'Lift';
     const dist = s.metric ? `${liftRide.nearbyDist.toFixed(0)} m` : `${(liftRide.nearbyDist * 3.28084).toFixed(0)} ft`;
-    if (liftRide.canBoard) return `<div class="name">${name}</div><div class="row">${k('lift')} ${rider.unstrapped ? 'strap in and ' : ''}${liftRide.nearby.kind === 'gondola' ? 'board the gondola' : liftRide.nearby.kind === 'surface' ? 'grab the lift' : liftRide.nearby.kind === 'carpet' ? 'step on' : 'ride up'}</div>`;
-    if (liftRide.blocker === 'fast') return `<div class="name">${name}</div><div class="row">slow down to board ${s.usingPad ? k('brake') : '<kbd>&darr;</kbd>'} brake</div>`;
-    return `<div class="name">${name}</div><div class="row">ride to the lift <span class="dim">${dist}</span> then ${k('lift')}</div>`;
+    // FEAT-323: by a lift the strap key still straps (E boards), so both show
+    const sk = padKey('board') || (keys.keys('board') ? `<kbd>${keys.keys('board')}</kbd>` : '');
+    const strap = !sk || s.boardMsg || rider.strapState !== 'none' ? '' : rider.canUnstrap ? `<div class="row">${sk} unstrap</div>` : '';
+    const msg = s.boardMsg ? `<div class="row">${s.boardMsg}</div>` : '';
+    if (liftRide.canBoard && liftRide.choices.length > 1) return `<div class="name">${liftRide.choices.length} lifts here</div><div class="row">${k('lift')} ${rider.unstrapped ? 'strap in and ' : ''}pick a lift</div>${strap}${msg}`;
+    if (liftRide.canBoard) return `<div class="name">${name}</div><div class="row">${k('lift')} ${rider.unstrapped ? 'strap in and ' : ''}${liftRide.nearby.kind === 'gondola' ? 'board the gondola' : liftRide.nearby.kind === 'surface' ? 'grab the lift' : liftRide.nearby.kind === 'carpet' ? 'step on' : 'ride up'}</div>${strap}${msg}`;
+    if (liftRide.blocker === 'fast') return `<div class="name">${name}</div><div class="row">slow down to board ${s.usingPad ? k('brake') : '<kbd>&darr;</kbd>'} brake</div>${msg}`;
+    return `<div class="name">${name}</div><div class="row">ride to the lift <span class="dim">${dist}</span> then ${k('lift')}</div>${strap}${msg}`;
   }
   if (!s.mapOpen && !s.detached) {
     // board on / off
