@@ -8,17 +8,25 @@ sits taking in the view: ride round them, since hitting one crashes you like a t
 
 Built with Three.js, TypeScript and Vite. Resorts so far: Vail, Breckenridge and Big Sky (Change resort on the main menu).
 Modes: free ride, time trials and Outrun, picked on the main menu's cards or in Esc > Mode (time trial gates can also stay on all the time: Settings > Gameplay).
+Around the runs: a few yellow SLOW signs stand at the side of green and blue runs where they merge into another run or come into the base area (never on blacks, never up high).
+An orange rope on posts marks the resort's outer edge. You can duck it, but now and then (about 1 in 30
+times) something notices.
 
 ## Play
 
-**Just want to ride?** Follow [PLAY.md](PLAY.md): on Windows, download the zip and double-click it (nothing to install); anywhere else, five copy-paste steps. Plus fixes for the common problems.
+**Just want to ride?** Follow [PLAY.md](PLAY.md): on Windows or an Apple Silicon Mac, download the zip and double-click it (nothing to install); anywhere else, five copy-paste steps. Plus fixes for the common problems.
 
 On Windows without any tools: download `SnowboardAnywhere-win.zip` from
 [the latest release](https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest), unzip it, double-click
 `SnowboardAnywhere.exe`. The first launch downloads Vail in its small window (about 270 MB, a few minutes), then
 the game opens in your browser; later launches start straight away, and more resorts come from Change resort.
+On Windows the first launch also asks which installed browser to use; `SnowboardAnywhere.exe --pick-browser` or Settings > Launcher > Browser changes it.
 Windows may warn the first time (the exe is not code-signed): More info > Run anyway. Close the small window to
-quit. To build that zip: `cd game && npm run package -- --version X.Y.Z` (Windows; it lands in `game/release/`).
+quit. On an Apple Silicon Mac the same with `SnowboardAnywhere-mac.zip`: double-click it, double-click
+`SnowboardAnywhere` in the folder it makes, and let it through once in System Settings > Privacy & Security > Open
+Anyway (it is not signed by an Apple developer; [PLAY.md](PLAY.md) has the steps). Close the Terminal window to quit.
+To build a zip: `cd game && npm run package -- --version X.Y.Z` (on Windows the win zip, on an Apple Silicon Mac the
+mac one; it lands in `game/release/`).
 Releases are made only by hand, with Actions > Release > Run workflow ([developer guide > Releases](docs/developer-guide.md#releases)).
 
 From the source (the developer version):
@@ -167,7 +175,7 @@ Rider, Accessibility, Credits), the settings in the middle, and what the focused
 | Esc (Circle / B) | clear the search, then close (with graphics changes waiting, it asks Apply or Discard first) |
 
 Type in the search box to find a setting in any category. Graphics has presets (Low, Medium, High, and Ultra:
-High plus cascaded shadows at full resolution; Low draws the trees near you as simple cones) over its advanced options, and a Frame cap (30, 60 or Uncapped);
+High plus cascaded shadows at full resolution; the detailed trees reach 800 m on High, 400 m on Medium and 200 m on Low, simple cones beyond) over its advanced options, and a Frame cap (30, 60 or Uncapped);
 the game draws the settings you pick and never lowers them on its own. The preset and the advanced options
 (Detail, Shadows, Cascaded shadows, Trees, Forest, Resolution, Snow dents) wait, marked Pending, until you press
 **Apply** at the bottom of Graphics: a short loading screen covers the rebuild, so trying an option never stutters
@@ -271,6 +279,11 @@ burst when you land. Brush a snow-loaded spruce or fir and the snow drops off it
 until the snow builds back over a few minutes; a tree you just shook has less to drop. Slam into the
 trunk and the whole tree shakes off every bit of its snow. Settings > Graphics > Snow dents turns the sag off (the Low preset turns it off
 too).
+
+Crash at speed and you keep it: the body tumbles and slides on down the hill, a long way on a steep
+pitch, sooner to a stop on a gentle one or on the flat, further on ice and less in powder or slush. A
+trunk or a rock still stops you, and off a cliff band you fall. You get up once the slide has slowed
+to a walk (or after about 6 s at most). The Assisted and Off fall line settings shorten the slide.
 
 In first person you look through goggle lenses (Settings > Camera > Goggle lens). In flat light
 (a storm, overcast, deep shade) the snow's bumps, rollers and dips are hard to see; a warm lens (Rose,

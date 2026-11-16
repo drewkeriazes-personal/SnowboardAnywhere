@@ -5,6 +5,7 @@ import { Collider } from '../sim/Collider';
 import { buildCourses } from '../sim/Courses';
 import { Bridges } from '../world/Bridges';
 import { Landmarks, landmarkStart } from '../world/Landmarks';
+import { SlowSigns } from '../world/SlowSigns';
 import { StaticPeople, parsePeopleMode } from '../world/StaticPeople';
 import { Clouds } from '../world/Clouds';
 import { Snow } from '../world/Snow';
@@ -29,6 +30,8 @@ import { ParticleLight } from '../world/ParticleLight';
 import { Eat } from '../world/Eat';
 import { RiderChair } from '../world/RiderChair';
 import { TrialWorld } from '../world/TrialWorld';
+import { Boundary } from '../sim/Boundary';
+import { BoundaryRope } from '../world/BoundaryRope';
 
 export type World = ReturnType<typeof buildWorld>;
 
@@ -74,11 +77,13 @@ export function buildWorld(ctx: GameContext) {
   add('roads', roads.group);
   const landmarks = new Landmarks(pack, collider); // FEAT-132: hand-placed signs (the Back Bowls gateway)
   add('landmarks', landmarks.group);
+  const slowSigns = new SlowSigns(pack, collider); // FEAT-306: SLOW signs at the bottom of some green and blue runs
+  add('slow signs', slowSigns.group);
   const bridges = new Bridges(pack, collider, params.bridgeguess); // BUG-022: OSM-tagged bridges and creek-bed dips; ?bridgeguess adds segment chords
   add('bridges', bridges.group);
-  // FEAT-307: skier pairs and sitting snowboarders on the runs, kept clear of the start and the landmarks
+  // FEAT-307: skier pairs and sitting snowboarders on the runs, kept clear of the start, the landmarks and the SLOW signs (FEAT-306)
   const ls = landmarkStart(pack.meta.slug);
-  const people = new StaticPeople(pack, collider, parsePeopleMode(params.people), [[pack.meta.start.x, pack.meta.start.y], ...(ls ? [[ls.x, ls.y] as [number, number]] : []), ...landmarks.list.map((l) => [l.x, l.y] as [number, number])]);
+  const people = new StaticPeople(pack, collider, parsePeopleMode(params.people), [[pack.meta.start.x, pack.meta.start.y], ...(ls ? [[ls.x, ls.y] as [number, number]] : []), ...landmarks.list.map((l) => [l.x, l.y] as [number, number])], slowSigns.signs.map((s) => [s.site.cx, s.site.cy] as [number, number]));
   add('people', people.group);
   const tracks = new Tracks(pack);
   add('tracks', tracks.group);
@@ -104,6 +109,10 @@ export function buildWorld(ctx: GameContext) {
   const courses = buildCourses(pack);
   const trialWorld = new TrialWorld(pack, courses);
   add('time trials', trialWorld.group);
+  // FEAT-305: the orange rope along the resort's edge (its crossings roll for the out of bounds yeti, modes/YetiEgg.ts)
+  const boundary = Boundary.fromFeatures(pack.features, pack.meta.bounds);
+  const boundaryRope = new BoundaryRope(pack, boundary);
+  add('boundary rope', boundaryRope.group);
   const riderView = new RiderView();
   add('rider', riderView.group);
   add('rider spray', riderView.sprayObject);
@@ -118,13 +127,16 @@ export function buildWorld(ctx: GameContext) {
   for (const m of Object.values(monsters.materials)) env.registerMaterial(m);
   for (const m of eat.materials) env.registerMaterial(m);
   for (const m of landmarks.materials) env.registerMaterial(m);
+  for (const m of slowSigns.materials) env.registerMaterial(m);
+  for (const m of boundaryRope.materials) env.registerMaterial(m);
   env.registerMaterial(people.material);
   veg.enableImpostors(renderer, !params.noimpostors, params.lowgfx ? 1024 : 2048); // FEAT-156: bakes the LOD2 / impostor atlases either way
   if (params.lod0 != null) setLod0Reach(params.lod0); // BUG-107
   if (!params.noclumps) veg.enableClumps(renderer, params.clumpfar ?? undefined); // FEAT-292: the far forest as clump impostors past the drawn trees
   terrain.setTreeShade(veg.shade); // FEAT-171: the drawn trees' shadows past the shadow map
   return {
-    zr, env, clouds, snow, terrain, collider, veg, shrubs, treeFade, rocks, lifts, liftLines, resortTop, runs, buildings, roads, landmarks, bridges, people,
+    zr, env, clouds, snow, terrain, collider, veg, shrubs, treeFade, rocks, lifts, liftLines, resortTop, runs, buildings, roads, landmarks, slowSigns, bridges, people,
     tracks, bootprints, riderChair, puffs, particleLight, bigprints, deform, monsters, eat, courses, trialWorld, riderView, treeBrush,
+    boundary, boundaryRope,
   };
 }
