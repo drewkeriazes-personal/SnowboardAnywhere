@@ -4,7 +4,8 @@
 #   typecheck-build   tsc --noEmit and vite build                                  game/ changed
 #   physics-checks    the Node-only check tools (Rider physics on exact planes,     game/ changed
 #                     get_pack.mjs --from; no pack, no browser)
-#   browser-checks    headless check tools on the synthetic pack, SwiftShader       game/ changed
+#   browser-checks    headless check tools on the synthetic pack, SwiftShader,      game/ changed
+#                     in three parallel shards: padcheck, clumpcheck, rest (FEAT-322)
 #   render-budgets    main and the PR on the synthetic pack (cishot.mjs): shader    PRs, game/ changed
 #                     compile, scene budget counts (fails on a count more than 10%
 #                     over main), bundle size; render-budgets-comment posts them.
@@ -22,7 +23,7 @@
 #
 # Check tools that stay local (they need Vail / Breckenridge or a real GPU, or are too slow on software
 # rendering for a runner; run them on Drew's PC and say so in the PR):
-#   need a real pack: lenscheck, outruncheck, snowcheck, treefadecheck, shoot_spots, aerial, views, treeperf
+#   need a real pack: lenscheck, outruncheck, oobcheck (runs on synth too; not timed on a runner yet), snowcheck, treefadecheck, shoot_spots, aerial, views, treeperf
 #   too slow on SwiftShader (minutes per check): see BROWSER_LOCAL below
 #   no pass / fail exit code (they print numbers or save shots for a person to read): leancheck, rider, shoot,
 #   carveshot, brakeshot
@@ -61,9 +62,9 @@ env:
   PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
   BASE_REF: ${{ github.base_ref || 'main' }}
   # Node-only check tools: exit 1 on a failed check, need neither a pack nor a browser
-  PHYSICS_CHECKS: accountcheck brakecheck buildprogresscheck carvecheck climbcheck conditionscheck fakiecheck fallcheck gatecheck getpackcheck hardcarvecheck jumpcheck lipcheck mogulcheck origincheck presscheck resortsearchcheck shrubcheck standcheck treepuffcheck
+  PHYSICS_CHECKS: accountcheck brakecheck buildprogresscheck carvecheck climbcheck conditionscheck fakiecheck fallcheck gatecheck getpackcheck hardcarvecheck jumpcheck lipcheck mogulcheck origincheck presscheck resortsearchcheck shrubcheck standcheck treepuffcheck boundarycheck
   # Browser check tools that pass on the synthetic pack under SwiftShader within a few minutes
-  BROWSER_CHECKS: switchcheck glancecheck hardposecheck padcheck accountmenucheck releasecheck clumpcheck
+  BROWSER_CHECKS: switchcheck crashcheck glancecheck hardposecheck padcheck accountmenucheck releasecheck clumpcheck
   # BROWSER_LOCAL (timed on a runner for FEAT-172: they draw every frame, and SwiftShader takes minutes per check):
   #   powdercheck (over 7 min), menucheck (times out), leadcheck, trailcheck, statecheck (10+ min on SwiftShader), treeshot
 
@@ -173,11 +174,19 @@ jobs:
       - if: steps.cache.outputs.cache-hit != 'true'
         run: node game/tools/get_pack.mjs synth --catalog "$RUNNER_TEMP/catalog.json"
 
+  # FEAT-322: three shards, each on its own runner (in one job they would share the 4 cores SwiftShader
+  # already fills and skew the frame-timed checks). padcheck (about 2:15) and clumpcheck (about 1:40) run
+  # alone; `rest` runs every other BROWSER_CHECKS entry, so a new check lands there without touching this.
   browser-checks:
     needs: [changes, synth-pack]
     if: needs.changes.outputs.game == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [padcheck, clumpcheck, rest]
+    name: browser-checks (${{ matrix.shard }})
     defaults:
       run:
         working-directory: game
@@ -205,9 +214,18 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npx vite build
       - name: Browser checks (SwiftShader, lowgfx)
+        env:
+          SHARD: ${{ matrix.shard }}
+          SOLO: padcheck clumpcheck # the matrix's own shards; keep in step with matrix.shard
         run: |
+          if [ "$SHARD" = rest ]; then
+            run=""
+            for c in $BROWSER_CHECKS; do case " $SOLO " in *" $c "*) ;; *) run="$run $c" ;; esac; done
+          else
+            case " $BROWSER_CHECKS " in *" $SHARD "*) run="$SHARD" ;; *) echo "::error::shard $SHARD is not in BROWSER_CHECKS"; exit 1 ;; esac
+          fi
           failed=""
-          for c in $BROWSER_CHECKS; do
+          for c in $run; do
             echo "::group::$c"
             node tools/$c.mjs synth --cpu || failed="$failed $c"
             echo "::endgroup::"
