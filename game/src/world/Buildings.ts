@@ -55,6 +55,76 @@ function signedArea2(pts: number[][]): number {
   for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; }
   return a;
 }
+/**
+ * FEAT-323: lift station buildings are open shelters, so the rider rides straight into and out of the station.
+ * A footprint within STATION_NEAR m of a lift's end station (OSM's station node usually sits inside it) and no
+ * bigger than STATION_MAX_M2 (STATION_NAMED_M2 when its name says it is a station, gondola or tram) loses its walls:
+ * a pavilion (posts at the corners under a pitched roof, open all round) or, against a bigger building's wall
+ * (within ATTACH_GAP m), a lean-to (a shed roof falling away from that wall, posts only on its open side).
+ * No post stands within LINE_CLEAR m of the lift's line, the way in and out. A lodge with a station inside
+ * (Eagle's Nest) stays a building; the unloading spot search steps off clear of it.
+ */
+const STATION_NEAR = 2, STATION_MAX_M2 = 1000, STATION_NAMED_M2 = 2500, ATTACH_GAP = 1.5, LINE_CLEAR = 2.5;
+const STATION_NAME = /station|gondola|tram|lift|express|chair|bahn|terminal/i;
+/** a lean-to's roof falls this much across its depth at most (m), and the share of the depth it falls */
+const LEAN_RISE = 2.5, LEAN_PITCH = 0.3;
+/** an end station on a lift's line: where it is and the unit direction of the line */
+export interface StationLine { x: number; y: number; ux: number; uy: number }
+/** how a lift station building is drawn */
+export type Shelter = { kind: 'pavilion'; lines: StationLine[] } | { kind: 'leanto'; lines: StationLine[]; wall: number[][] };
+
+function pointInPoly(pts: number[][], x: number, y: number): boolean {
+  let c = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+function segDist(x: number, y: number, a: number[], b: number[]): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(a[0] + dx * t - x, a[1] + dy * t - y);
+}
+/** distance from a point to a footprint (0 inside) */
+export function polyDist(pts: number[][], x: number, y: number): number {
+  if (pointInPoly(pts, x, y)) return 0;
+  let d = Infinity;
+  for (let i = 0; i < pts.length; i++) d = Math.min(d, segDist(x, y, pts[i], pts[(i + 1) % pts.length]));
+  return d;
+}
+/** distance between two footprints' outlines (0 when one has a corner inside the other) */
+function polyGap(p: number[][], q: number[][]): number {
+  let d = Infinity;
+  for (const v of p) d = Math.min(d, polyDist(q, v[0], v[1]));
+  for (const v of q) d = Math.min(d, polyDist(p, v[0], v[1]));
+  return d;
+}
+
+/**
+ * FEAT-323: which buildings are lift station shelters, and how each is drawn. `stations` are the end stations of
+ * every lift with its line's direction.
+ */
+export function stationShelters(buildings: readonly BuildingFeature[], stations: readonly StationLine[]): Map<BuildingFeature, Shelter> {
+  const out = new Map<BuildingFeature, Shelter>();
+  const areaOf = (b: BuildingFeature) => Math.abs(signedArea2(b.points)) / 2;
+  for (const b of buildings) {
+    if (b.points.length < 3) continue;
+    const lines = stations.filter((s) => polyDist(b.points, s.x, s.y) <= STATION_NEAR);
+    if (!lines.length) continue;
+    const area = areaOf(b);
+    if (area > (b.name && STATION_NAME.test(b.name) ? STATION_NAMED_M2 : STATION_MAX_M2)) continue;
+    let wall: number[][] | null = null;
+    for (const o of buildings) {
+      if (o === b || o.points.length < 3 || out.has(o) || areaOf(o) <= area) continue;
+      if (Math.abs(o.points[0][0] - b.points[0][0]) > 600 || Math.abs(o.points[0][1] - b.points[0][1]) > 600) continue;
+      if (polyGap(b.points, o.points) < ATTACH_GAP) { wall = o.points; break; }
+    }
+    out.set(b, wall ? { kind: 'leanto', lines, wall } : { kind: 'pavilion', lines });
+  }
+  return out;
+}
+
 /** edges shorter than this (m) get the plain wall quad only, no facade bands (keeps curved blocks cheap) */
 const MIN_FACADE_EDGE = 3;
 
@@ -70,12 +140,22 @@ export class Buildings {
   private waiting: { mesh: THREE.Mesh; minX: number; minY: number }[] = [];
   /** FEAT-071: the lowest building base in the pack (the village floor) */
   private readonly valleyFloor: number;
+  /** FEAT-323: the lift station buildings drawn as open shelters */
+  readonly shelters: Map<BuildingFeature, Shelter>;
 
   constructor(pack: Pack, collider: Collider | null = null) {
     this.collider = collider;
     let vf = Infinity;
     for (const b of pack.features.buildings) if (Number.isFinite(b.zBase)) vf = Math.min(vf, b.zBase);
     this.valleyFloor = Number.isFinite(vf) ? vf : 0;
+    const stations: StationLine[] = [];
+    for (const l of pack.features.lifts ?? []) {
+      if (l.stations.length < 2) continue;
+      const a = l.stations[0], z = l.stations[l.stations.length - 1], d = Math.hypot(z[0] - a[0], z[1] - a[1]) || 1;
+      const ux = (z[0] - a[0]) / d, uy = (z[1] - a[1]) / d;
+      stations.push({ x: a[0], y: a[1], ux, uy }, { x: z[0], y: z[1], ux, uy });
+    }
+    this.shelters = stationShelters(pack.features.buildings, stations);
     const cells = new Map<string, BuildingFeature[]>();
     for (const b of pack.features.buildings) {
       if (b.points.length < 3) continue;
@@ -164,10 +244,39 @@ export class Buildings {
       idx.push(v0, v0 + 1, v0 + 2, v0, v0 + 2, v0 + 3);
     };
     // BUG-045: a canopy (building=roof: lift stations, covered decks) is a roof on posts with the
-    // ground left walkable under it, not a solid block; only the posts stop the rider
-    const canopy = kind === 'roof';
+    // ground left walkable under it, not a solid block; only the posts stop the rider. FEAT-323: lift
+    // station buildings are canopies too, a pavilion or a lean-to, with no post on the lift's line
+    const shelter = this.shelters.get(b) ?? null;
+    const canopy = kind === 'roof' || !!shelter;
+    // the roof height at a point: level, or for a lean-to falling away from the wall it leans on
+    let roofZ = (_x: number, _y: number): number => top;
+    let lean: { nx: number; ny: number; v0: number; g: number } | null = null;
+    if (shelter?.kind === 'leanto') {
+      // the slope runs from the nearest point of the wall toward this footprint's middle
+      let cx = 0, cy = 0;
+      for (const p of pts) { cx += p[0] / n; cy += p[1] / n; }
+      let wx = cx, wy = cy, wd = Infinity;
+      const w = shelter.wall;
+      for (let i = 0; i < w.length; i++) {
+        const a = w[i], c = w[(i + 1) % w.length], dx = c[0] - a[0], dy = c[1] - a[1];
+        const t = Math.max(0, Math.min(1, ((cx - a[0]) * dx + (cy - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+        const qx = a[0] + dx * t, qy = a[1] + dy * t, d = Math.hypot(cx - qx, cy - qy);
+        if (d < wd) { wd = d; wx = qx; wy = qy; }
+      }
+      const nl = Math.hypot(cx - wx, cy - wy) || 1, nx = (cx - wx) / nl, ny = (cy - wy) / nl;
+      let v0 = Infinity, v1 = -Infinity;
+      for (const p of pts) { const v = p[0] * nx + p[1] * ny; v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+      const depth = Math.max(1, v1 - v0), rise = Math.min(LEAN_RISE, depth * LEAN_PITCH);
+      const L = lean = { nx, ny, v0, g: rise / depth };
+      roofZ = (x, y) => top - L.g * (x * L.nx + y * L.ny - L.v0);
+    }
     if (canopy) {
-      for (const p of canopyPosts(pts)) {
+      const posts = canopyPosts(pts).filter((p) => !shelter || (
+        // the way in and out along the lift's line stays clear, and a lean-to stands on its open side only
+        shelter.lines.every((l) => Math.abs((p[0] - l.x) * l.uy - (p[1] - l.y) * l.ux) >= LINE_CLEAR) &&
+        (shelter.kind !== 'leanto' || polyDist(shelter.wall, p[0], p[1]) >= ATTACH_GAP)));
+      for (const p of posts) {
+        const top = roofZ(p[0], p[1]);
         if (this.collider) this.collider.add(p[0], p[1], POST / 2 + 0.05, base, top);
         for (let i = 0; i < 4; i++) {
           const a0 = (i * Math.PI) / 2 + Math.PI / 4, a1 = a0 + Math.PI / 2, r = POST * 0.71;
@@ -178,15 +287,16 @@ export class Buildings {
       }
     } else if (this.collider) this.collider.addFootprint(pts.map((p) => [p[0], p[1]] as [number, number]), base, top);
     // walls: one quad per edge with a flat normal (a canopy only has a fascia under its roof edge)
-    const wallBase = canopy ? top - CANOPY_FASCIA : base;
+    const wallBase = base;
     const storeys = Math.max(1, Math.round((top - Math.max(zMax, hi)) / STOREY));
     for (let i = 0; i < n; i++) {
       const a = pts[i], c = pts[(i + 1) % n];
       const ex = c[0] - a[0], ey = c[1] - a[1];
       const len = Math.hypot(ex, ey) || 1;
       const nx = ey / len, ny = -ex / len; // outward for CCW footprint (x east, y north)
+      if (canopy) { const za = roofZ(a[0], a[1]), zc = roofZ(c[0], c[1]); quad([[a[0], a[1], za - CANOPY_FASCIA], [c[0], c[1], zc - CANOPY_FASCIA], [c[0], c[1], zc], [a[0], a[1], za]], nx, ny, 0, wall); continue; }
       quad([[a[0], a[1], wallBase], [c[0], c[1], wallBase], [c[0], c[1], top], [a[0], a[1], top]], nx, ny, 0, wall);
-      if (canopy || len < MIN_FACADE_EDGE) continue;
+      if (len < MIN_FACADE_EDGE) continue;
       // FEAT-071 facade, just proud of the wall: a stone base band up to the highest ground plus a
       // little, a dark window band per storey (huts get one small one), and a timber band under the eaves
       const o = 0.04, ox = nx * o, oy = ny * o;
@@ -212,7 +322,7 @@ export class Buildings {
     let a0 = Infinity, a1 = -Infinity, p0 = Infinity, p1 = -Infinity;
     for (const p of pts) { const u = p[0] * ax + p[1] * ay, v = p[0] * px + p[1] * py; a0 = Math.min(a0, u); a1 = Math.max(a1, u); p0 = Math.min(p0, v); p1 = Math.max(p1, v); }
     const fill = area / Math.max(1e-6, (a1 - a0) * (p1 - p0));
-    const flat = canopy || fill < MIN_FILL || (style === 'village' && area > FLAT_BLOCK_M2 && !b.name) || style === 'utility';
+    const flat = (canopy && shelter?.kind !== 'pavilion') || fill < MIN_FILL || (style === 'village' && area > FLAT_BLOCK_M2 && !b.name) || style === 'utility';
     if (!flat) {
       // ridge along the rectangle's long side; eaves overhang by OVERHANG all round
       let [ua, ub, va, vb] = [a0, a1, p0, p1];
@@ -245,22 +355,33 @@ export class Buildings {
       }
       // a flat lid at the eave height over the footprint, so a footprint narrower than its rectangle is closed
       const shape = pts.map((p) => new THREE.Vector2(p[0], p[1]));
+      const tris = THREE.ShapeUtils.triangulateShape(shape, []);
       const v0 = pos.length / 3;
       for (const p of pts) { pos.push(p[0], top - 0.02, -p[1]); nor.push(0, 1, 0); col.push(roofSnow[0], roofSnow[1], roofSnow[2]); }
-      for (const t of THREE.ShapeUtils.triangulateShape(shape, [])) idx.push(v0 + t[0], v0 + t[1], v0 + t[2]);
+      for (const t of tris) idx.push(v0 + t[0], v0 + t[1], v0 + t[2]);
+      if (canopy) {
+        // FEAT-323: a pavilion's ceiling, seen from under it
+        const u0 = pos.length / 3;
+        for (const p of pts) { pos.push(p[0], top - 0.06, -p[1]); nor.push(0, -1, 0); col.push(wall[0] * 0.6, wall[1] * 0.6, wall[2] * 0.6); }
+        for (const t of tris) idx.push(u0 + t[0], u0 + t[2], u0 + t[1]);
+      }
       return;
     }
     const shape = pts.map((p) => new THREE.Vector2(p[0], p[1]));
     const tris = THREE.ShapeUtils.triangulateShape(shape, []);
+    // the roof's up normal (pack x, y, z): level, or for a lean-to tilted away from its wall
+    const rl = lean ? Math.hypot(lean.g, 1) : 1;
+    const rn = lean ? [(lean.g * lean.nx) / rl, (lean.g * lean.ny) / rl, 1 / rl] : [0, 0, 1];
     if (canopy) {
       // the canopy's underside, seen from the deck below
       const v0 = pos.length / 3;
-      for (const p of pts) { pos.push(p[0], top - CANOPY_FASCIA, -p[1]); nor.push(0, -1, 0); col.push(wall[0] * 0.6, wall[1] * 0.6, wall[2] * 0.6); }
+      for (const p of pts) { pos.push(p[0], roofZ(p[0], p[1]) - CANOPY_FASCIA, -p[1]); nor.push(-rn[0], -rn[2], rn[1]); col.push(wall[0] * 0.6, wall[1] * 0.6, wall[2] * 0.6); }
       for (const t of tris) idx.push(v0 + t[0], v0 + t[2], v0 + t[1]);
     }
     const v0 = pos.length / 3;
-    for (const p of pts) { pos.push(p[0], top, -p[1]); nor.push(0, 1, 0); col.push(roofSnow[0], roofSnow[1], roofSnow[2]); }
+    for (const p of pts) { pos.push(p[0], roofZ(p[0], p[1]), -p[1]); nor.push(rn[0], rn[2], -rn[1]); col.push(roofSnow[0], roofSnow[1], roofSnow[2]); }
     for (const t of tris) idx.push(v0 + t[0], v0 + t[1], v0 + t[2]);
+    if (lean) return; // a lean-to is the roof and its fascia, no eave strip
     // a dark eave strip just under the roof edge so flat roofs read as a building, not a snow pile
     const eave = top - 0.5;
     for (let i = 0; i < n; i++) {
