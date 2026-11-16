@@ -30,7 +30,7 @@ The terrain is bare-earth lidar, which strips bridges. `build_pack.py` also drop
 
 1. **Does the deck exist in the browser?** Run the dev server, go to `?pack=vail&x=1320&y=-1668`, wait for tiles, then in DevTools run `__sim.pack.decks`. If it is empty, `maintain` is not running or `pack.fine.sample` returns NaN (log inside `Bridges.maintain`). If it has a deck, the mesh is not visible: check `scene` children, material, and position (three.js x east, y up, z = -north).
 2. **Is it the right gully?** On the 1 m DEM the deep Two Elk Creek channel runs from about (1235, -1590) down to (1190, -1700). It sits 12 to 20 m below its banks around y -1600 to -1640. The OSM bridge segment crosses a shallower part further south-east, only about 7 to 9 m deep. Compare with Drew's Street View and Google Maps screenshots. The bridge he means may be a different OSM way, or the OSM line may be offset from the real crossing.
-3. If the OSM data is off, consider a pipeline fix: rebuild Vail so tagged bridges come through (`python pipeline\build_pack.py vail C:\Users\Drew\Documents\snowboard-sim\raw\vail packs\vail`). Then check `features.json` for runs and roads with `bridge: true`. The raw OSM JSON is in `Documents\snowboard-sim\raw\vail\osm`.
+3. If the OSM data is off, consider a pipeline fix (the pipeline is in MapPacker since EPIC-16): rebuild Vail so tagged bridges come through (`python pipeline\build_pack.py vail C:\Users\Drew\Documents\snowboard-sim\raw\vail packs\vail`). Then check `features.json` for runs and roads with `bridge: true`. The raw OSM JSON is in `Documents\snowboard-sim\raw\vail\osm`.
 
 ## Second pass (Tea Cup bridge)
 
@@ -44,7 +44,7 @@ The terrain is bare-earth lidar, which strips bridges. `build_pack.py` also drop
 - Commit as Drew, plain message, no trailers, id BUG-013 in the message; comment the hash on #64 and close it when Drew confirms.
 - `cd game && npx tsc --noEmit` before committing. No em dashes in prose.
 
-## New: false-positive deck (Drew screenshot, 2026-11-05)
+## False-positive deck (Drew screenshot, 2026-11-05; resolved by BUG-022 below)
 
 Near Tea Cup Express / Skyline Express (Blue Sky Basin) the rider sits on a wide, flat grey slab that runs along the valley side and looks like a bad road overlay. It is almost certainly a bridge deck from the `Bridges.ts` gap detector on an ordinary cat track or road segment. So decks do render in the browser; the detector is too loose.
 

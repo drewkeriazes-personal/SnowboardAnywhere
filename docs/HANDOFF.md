@@ -1,6 +1,6 @@
-# Handoff: state of the project (updated 2026-11-06)
+# Handoff: state of the project (updated 2026-11-16)
 
-Read this first when picking the project up in Claude Code / VS Code. Current work lives on the board (https://github.com/users/drewkeriazes/projects/2, see `docs/BOARD.md`); this file is the background: where things are, what works, and the dated notes below. The "Next steps" list is the original 2026-11-05 plan, kept for history; steps 1 to 5 are done or have moved to cards.
+Read this first when picking the project up in Claude Code / VS Code. Current work lives on the board (https://github.com/users/drewkeriazes/projects/2, see `docs/BOARD.md`); this file is the background: where things are, what works, and the dated notes below. For the detail of any feature, `README.md` (what a player sees, controls, modes) and `docs/developer-guide.md` (features in detail, code layout, test tools, CI, URL parameters) are kept current with every PR; this file is not. The "Next steps" list is the original 2026-11-05 plan, kept for history; steps 1 to 5 are done or have moved to cards. The dated notes below it are history too: later cards may have changed what they describe.
 
 ## Where things are
 
@@ -11,13 +11,18 @@ Read this first when picking the project up in Claude Code / VS Code. Current wo
 
 ## What works
 
-- `game/`: full client skeleton, type-checks and builds.
-  - Quadtree LOD terrain over the 262 km far ring, 1 m near the rider, CPU-built chunks with skirts (`src/terrain/Terrain.ts`), snow / rock / scree / groomed material with procedural detail (`src/terrain/TerrainMaterial.ts`).
-  - Tiled Terrarium height sets with bilinear sampling and on-demand loading (`src/pack/`).
-  - Rider physics: carve / skid edge model, tuck, brake, hold-release jump, air spin, landing penalties, surface types, tree and rock collisions (`src/sim/`).
-  - Instanced trees per 1 km cell with near / far geometry, rocks, lifts with towers, catenary cables and moving chairs, piste overlay, sky, sun shadows, chase and free-fly cameras, HUD (`src/world/`).
-  - Headless check: `node tools/shoot.mjs synth` (Playwright is a devDependency of `game/`; run `npx playwright install chromium` once per machine; the cloud falls back to `/opt/npm-tools`. Add `--headed` for a visible window on the real GPU). Use `?lowgfx` in software-rendered environments; a full-density scene takes ~9 s per frame under SwiftShader, which is what made the earlier run look hung. The first screenshot (snow, forest with trail cuts, rider) rendered correctly.
-- The pipeline (in MapPacker since EPIC-16; this line is its state when it moved): downloader proven on Vail; `build_pack.py` runs end to end on the real Vail data in about 4 minutes on Drew's PC (see "First Vail build" below) and has been rebuilt several times since (for example the AO and rock-mask rebuild for FEAT-047). Every resort builds with `build_resort.cmd <slug>` (`pipeline/build_resort.py`, FEAT-175 step 3), which replaced the per-resort fetch and build launchers.
+State on `main` as of 2026-11-16. The game plays published resort packs; it no longer builds them (EPIC-16).
+
+- **Resorts and packs.** Vail, Breckenridge and Big Sky are published and ridden; more resorts (Keystone, Boston Mills and others) build through MapPacker. `cd game && npm run get <slug>` downloads a pack, the main menu's resort picker lists every installed pack with a Favorites tier (FEAT-302), and its Find a resort search has a Build it button that builds a new resort through MapPacker from a name or a Skimap.org id, shows build progress and offers to ride the new release (EPIC-17: FEAT-246, FEAT-247, FEAT-248, FEAT-286). Landmarks and the start position come from the pack, not per-resort tables in the game (FEAT-243). The pack format is MapPacker's `docs/pack-format.md` (FEAT-239), checked against `PACK_FORMAT` in `game/src/pack/format.ts`.
+- **Terrain.** Quadtree LOD terrain over the far ring, 1 m near the rider with a 4 m height set for mid chunks (FEAT-229), baked AO, snow / rock / scree / groomed material, moguls where they really form, built from rider lines (FEAT-059, FEAT-147), snow deformation and tracks, new snow and time-of-day snow.
+- **Forest.** A procedural tree kit (8 species, eastern hardwoods and hemlock, snow-flocked crowns, snow ghosts, shrubs: FEAT-156, FEAT-157, FEAT-159, FEAT-233), lidar trees at their real height (BUG-023), stand density generated per cell (FEAT-074), crown width by openness (FEAT-298), a far forest of clump impostors (FEAT-292), real lidar trees on the surrounding ridges out to 9 km (BUG-081), each tree's own shadow far past the shadow map (FEAT-168, FEAT-171, FEAT-304), and LOD0 reach set by the graphics preset (BUG-107).
+- **World.** Lifts with towers, cables, moving chairs and rides, runs and roads, buildings, bridges (BUG-013, BUG-022), peak labels, SLOW signs (FEAT-306), the orange boundary rope (FEAT-305), static people on the runs (FEAT-307), weather presets from bluebird and thin high cloud to a snowstorm, sky, clouds and sun from the real date and time.
+- **Riding.** The carve / skid edge model with a fall line (FEAT-127, FEAT-134), brake, tuck, ollies and presses, realistic jumps and ramps (FEAT-277, FEAT-311), tree and rock collisions, crashes that slide and tumble at speed (FEAT-288), walking, keyboard, mouse and controllers, chase, eye and free cameras.
+- **Modes and menus.** Free ride, time trials (scaled to the resort, FEAT-232) and Outrun with the yeti; a main menu with a live backdrop and ghost riders (FEAT-177, FEAT-181); settings with graphics presets, an Apply button and a frame cap (FEAT-284, FEAT-285); the resort map; the in-game jukebox.
+- **Accounts.** Play as a guest or sign in with GitHub or email and password, with password reset (FEAT-273, FEAT-274, FEAT-283; developer guide > Accounts).
+- **Shipping.** A one-click Windows launcher and an Apple Silicon Mac zip (FEAT-261, FEAT-319) that let you pick the browser (FEAT-318), `npm run package`, and a manual Release workflow with optional notes (FEAT-262, FEAT-317). `PLAY.md` is the rider's quick start.
+- **Checks.** CI runs typecheck, build, the physics and synth-pack browser checks (as a parallel matrix, FEAT-322), shader compile and scene budget counts against `main`, before / after stills on request, repo rules and public repo guards on every PR, with the Claude reviewer commenting (developer guide > Checks in CI). On Drew's PC the GPU tools (`shoot.mjs`, `shoot_spots.mjs`, `compare.mjs`, `perf-check`) cover what CI can't.
+- **Compare pairs.** `docs/compare/` holds Street View photos against the game's eye camera for Vail, plus generated spots for Breckenridge and Big Sky that still wait for photos (DATA-008, FEAT-175).
 
 ## Next steps, in order
 
