@@ -9,6 +9,7 @@ import { padGlyph, stickGlyph } from './PadGlyphs';
 import { KEY_GROUPS, PAD_GROUPS, applyUiScale, defaultSettings, keyName, migrateKeys, saveSettings, type Settings } from './Settings';
 import { CATEGORIES, HELD_FIELDS, SECTIONS, descOf, optsOf, presetLine, rowsOf, type CatId, type Row } from './SettingsRows';
 import { LoadingScreen } from './Loading';
+import { launcherBrowser } from './LauncherBrowser';
 
 /**
  * FEAT-128 settings screen (layout B): full screen, categories on the left, rows of label and control in
@@ -36,6 +37,8 @@ const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const ROW_OF = new Map<string, Row>(SECTIONS.flatMap((s) => s.rows.map((r) => [r.id, r] as [string, Row])));
 const CAT_OF = new Map<string, CatId>(SECTIONS.flatMap((s) => s.rows.map((r) => [r.id, s.cat] as [string, CatId])));
 const catLabel = (c: CatId) => CATEGORIES.find((x) => x.id === c)!.label;
+/** categories with nothing to reset: Credits, and Launcher (its choice is the launcher's, FEAT-318) */
+const NO_RESET = new Set<CatId>(['credits', 'launcher']);
 /** the hint chips for a category's what (onChange) list, deduplicated */
 const whatOf = (r: Row) => r.what ?? r.id;
 
@@ -115,6 +118,7 @@ class SettingsOverlay {
     this.leaveEl.hidden = true;
     this.el.style.display = '';
     document.body.classList.add('settings-open');
+    void launcherBrowser.load(); // FEAT-318: the Launcher category shows once the exe's launcher answers
     this.fillAll();
     this.drawKeys();
     this.drawCredits();
@@ -171,7 +175,7 @@ class SettingsOverlay {
   private page(c: CatId): string {
     const secs = SECTIONS.filter((s) => s.cat === c);
     return `<section class="page" data-cat="${c}"><h2 class="pagetitle">${catLabel(c)}</h2>` + secs.map((sec, i) =>
-      `<div class="sect"><div class="sh"><span>${sec.title}</span>${i === 0 && c !== 'credits' ? `<button class="reset-cat" data-reset-cat="${c}">Reset ${catLabel(c).toLowerCase()}</button>` : ''}</div>` +
+      `<div class="sect"><div class="sh"><span>${sec.title}</span>${i === 0 && !NO_RESET.has(c) ? `<button class="reset-cat" data-reset-cat="${c}">Reset ${catLabel(c).toLowerCase()}</button>` : ''}</div>` +
       sec.rows.map((r) => this.row(r)).join('') + '</div>').join('') + '</section>';
   }
 
@@ -227,6 +231,7 @@ class SettingsOverlay {
     window.addEventListener('blur', () => this.peek(false)); // a held V whose keyup went to another window
     const prevStatus = dualSense.onStatus;
     dualSense.onStatus = (st) => { prevStatus?.(st); if (this.o) this.fillAll(); };
+    launcherBrowser.onChange(() => { if (this.o) this.fillAll(); });
   }
 
   // ---------------------------------------------------------------- values
@@ -253,6 +258,7 @@ class SettingsOverlay {
         b.textContent = r.id === 'hid' ? (dualSense.connected ? 'Disconnect' : 'Connect') : typeof r.button === 'function' ? r.button(s) : r.button;
         const st = rowEl.querySelector<HTMLElement>('.status')!;
         st.textContent = r.id === 'hid' ? (dualSense.status || (dualSense.connected ? 'Connected' : 'Not connected')) : r.id === 'rumble-test' ? this.rumbleMsg
+          : r.id === 'launcherOther' ? launcherBrowser.status
           : r.id === 'gfx-apply' ? (this.applying ? 'Applying...' : pending ? `${pending} ${pending === 1 ? 'change' : 'changes'} waiting` : 'Nothing to apply') : '';
         if (r.id === 'gfx-apply') { b.disabled = !pending || this.applying; b.classList.toggle('primary', !!pending); }
         return;
@@ -285,11 +291,19 @@ class SettingsOverlay {
     });
     // a section whose rows are all gone hides (DualSense extras without WebHID)
     this.el.querySelectorAll<HTMLElement>('.sect').forEach((sec) => sec.classList.toggle('gone', !sec.querySelector('.srow:not(.gone)')));
+    // a hidden category (Launcher away from the exe, FEAT-318) loses its button and page
+    for (const c of CATEGORIES) {
+      const gone = !!c.hidden?.();
+      this.el.querySelector(`.cats button[data-cat="${c.id}"]`)?.classList.toggle('gone', gone);
+      this.el.querySelector(`.page[data-cat="${c.id}"]`)?.classList.toggle('gone', gone);
+    }
+    if (this.o && this.catHidden(this.cat)) this.openCat('gameplay', false);
     this.showDetail(this.screen?.focused ?? null);
   }
 
   private change(r: Row, v: string | number | boolean): void {
     if (!('set' in r)) return;
+    if (r.external) { r.set(this.s, v); this.fillAll(); return; } // FEAT-318: written elsewhere, nothing to save or apply
     if (r.held) { r.set(this.draft, v); this.fillAll(); this.hints(); return; } // FEAT-285: waits for Apply, nothing rebuilds
     r.set(this.s, v);
     this.commit([whatOf(r)]);
@@ -371,6 +385,7 @@ class SettingsOverlay {
     else if (a === 'rumble-test') { this.rumbleMsg = 'Testing...'; this.fillAll(); void padFx.test(activePad()).then((m) => { this.rumbleMsg = m; this.fillAll(); }); }
     else if (a === 'hid') void (dualSense.connected ? dualSense.disconnect() : dualSense.connect()).then(() => this.fillAll());
     else if (a === 'gfx-apply') void this.apply();
+    else if (a === 'launcher-other') void launcherBrowser.other();
   }
 
   // ---------------------------------------------------------------- reset
@@ -403,7 +418,7 @@ class SettingsOverlay {
     } else {
       const whats: string[] = [];
       const lens = this.s.goggleLens; // the outfit preset carries a lens, but the lens is Camera's setting
-      for (const r of rowsOf(what)) if ('set' in r) { r.set(this.src(r), r.get(d)); if (!r.held) whats.push(whatOf(r)); }
+      for (const r of rowsOf(what)) if ('set' in r && !r.external) { r.set(this.src(r), r.get(d)); if (!r.held) whats.push(whatOf(r)); }
       if (what === 'rider') this.s.goggleLens = lens;
       if (what === 'controls') { this.s.keys = d.keys; this.s.padKeys = d.padKeys; this.s.keysNote = false; whats.push('keys', 'padKeys'); }
       this.commit(whats);
@@ -541,9 +556,11 @@ class SettingsOverlay {
     // the first setting (not the section's Reset button), else the category itself
     return items.find((e) => e.closest('.page.shown') && !e.matches('.reset-cat')) ?? this.el.querySelector<HTMLElement>(`.cats button[data-cat="${this.cat}"]`);
   }
+  private catHidden(c: CatId): boolean { return !!CATEGORIES.find((x) => x.id === c)?.hidden?.(); }
   private cycle(d: number): void {
-    const i = CATEGORIES.findIndex((c) => c.id === this.cat);
-    const next = CATEGORIES[(i + d + CATEGORIES.length) % CATEGORIES.length].id;
+    const shown = CATEGORIES.filter((c) => !c.hidden?.());
+    const i = shown.findIndex((c) => c.id === this.cat);
+    const next = shown[(i + d + shown.length) % shown.length].id;
     const inCats = !!this.screen.focused?.closest('.cats');
     this.openCat(next, !inCats);
     if (inCats) this.screen.focus(this.el.querySelector<HTMLElement>(`.cats button[data-cat="${next}"]`));
@@ -615,7 +632,7 @@ class SettingsOverlay {
         if (f === this.searchEl) { const first = this.screen.items().find((e) => e.closest('.page') && !e.closest('.miss')); if (first) this.screen.focus(first); return true; }
         return false;
       case 'prevCat': case 'nextCat': this.cycle(i === 'nextCat' ? 1 : -1); return true;
-      case 'reset': if (this.cat !== 'credits' && !this.searchEl.value) this.askReset(this.cat); return true;
+      case 'reset': if (!NO_RESET.has(this.cat) && !this.searchEl.value) this.askReset(this.cat); return true;
       default: return false;
     }
   }
@@ -624,7 +641,7 @@ class SettingsOverlay {
     const cat = this.searchEl.value ? null : this.cat;
     const h: Hint[] = [['select', 'Select'], ['adjust', 'Change'], ['cat', 'Category']];
     if (this.o?.overGame) h.push(['peek', 'Hold to peek']);
-    if (cat && cat !== 'credits') h.push(['reset', this.armed && this.armed.what === cat ? 'Press again to reset' : `Reset ${catLabel(cat).toLowerCase()}`]);
+    if (cat && !NO_RESET.has(cat)) h.push(['reset', this.armed && this.armed.what === cat ? 'Press again to reset' : `Reset ${catLabel(cat).toLowerCase()}`]);
     h.push(['back', this.searchEl.value ? 'Clear search' : 'Back']);
     renderHints(this.hintEl, h, lastInputKind());
     const k = lastInputKind() === 'pad';
