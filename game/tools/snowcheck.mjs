@@ -6,6 +6,10 @@
 // less than the same groomer at 1 pm, and that chop rattles where powder does not. BUG-084: also
 // reloads with ?time=7 on "Resort default" and checks the snow follows the URL hour like the sun does
 // (spring-morning ice on Simba), and that "Resort default" alone still reads the 1 pm snow.
+// BUG-136: each spot waits for the trees, rocks and shrubs round it to finish loading before the rider sets off
+// (they stream in on their own, so a run used to hit a trunk or miss it depending on timing), and a crash
+// reports what caused it: a trunk hit in the forest a run reaches below the open face is not the snow's doing.
+// The restart test starts back at the spot (or beside it, clear of trunks), not wherever the run ended.
 // node tools/snowcheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
@@ -45,7 +49,8 @@ const SPOTS = {
     { id: 'chicken9', name: 'Chicken Yard (SE, open) 9 am', x: -698, y: -612, h: 160, hour: 9, day: 'mid', weather: null },
     { id: 'golden15', name: 'Tea Cup Glades (S, low, open) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },
     { id: 'goldenSpring', name: 'Tea Cup Glades 4:30 pm spring', x: 235, y: -1831, h: 80, hour: 16.5, day: 'spring', weather: 'clear' },
-    { id: 'twoElk13', name: 'Two Elk Connector ridge 1 pm', x: 3676, y: -222, h: 114, hour: 13, day: 'mid', weather: null },
+    // BUG-136: the open bowl above Two Elk Connector (the connector itself is a groomed catwalk, which scours less)
+    { id: 'twoElk13', name: 'Open high bowl above Two Elk 1 pm', x: 3676, y: -72, h: 180, hour: 13, day: 'mid', weather: null },
   ],
 };
 const spots = SPOTS[pack];
@@ -81,13 +86,36 @@ const place = async (sp) => {
     await page.waitForTimeout(500);
   }
   await page.evaluate(() => window.__step(2, 1 / 60));
+  // BUG-136: stream the trees, rocks and shrubs round the spot until nothing is loading and the collider holds
+  // still. The frame loop does this as you ride; here the physics steps without it, so without the wait the
+  // trunks a run reaches arrive part way through it (or not), and the same build crashed in one run and not the next.
+  const settled = await page.evaluate(async ([sp]) => {
+    const s = window.__sim, col = s.collider, cp = s.cam.camera.position;
+    const busy = () => (s.rocks?.pending ?? 0) > 0 || (s.shrubs?.pending ?? 0) > 0 || [...s.veg.cells.values()].some((c) => c.loading || c.standState === 1);
+    const pump = () => { s.veg.update(sp.x, sp.y, sp.x, sp.y, cp); s.rocks?.update(sp.x, sp.y); s.shrubs?.update(sp.x, sp.y, sp.x, sp.y, cp); };
+    let last = -1, still = 0;
+    pump();
+    for (let i = 0; i < 1200 && still < 8; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      pump();
+      const n = col.cylinderCount;
+      still = !busy() && n === last ? still + 1 : 0;
+      last = n;
+    }
+    return still >= 8;
+  }, [sp]);
+  if (!settled) console.log(`(the trees round ${sp.id ?? 'the spot'} did not settle)`);
 };
 /** step n frames of the physics with the input held; returns the state per 10 frames */
 const ride = (n, input = {}) => page.evaluate(([n, input]) => {
   const r = window.__sim.rider, out = [];
   const inp = { steer: 0, tuck: false, brake: false, jumpHeld: false, jumpReleased: false, grab: false, ...input };
   for (let i = 0; i < n; i++) {
+    const was = r.crashed;
+    if (was <= 0) r.lastHit = ''; // so a crash below reads this step's cause, not an earlier graze
     r.update(1 / 60, inp);
+    // BUG-136: what started a crash: a trunk or wall ('wall'), an edge catch ('catch'), or '' (a washout, a slam)
+    if (was <= 0 && r.crashed > 0) out.push({ crash: true, cause: r.lastHit || 'washout or slam', canopy: r.surface.canopy, x: r.x, y: r.y, speed: r.speed });
     if (i % 10 === 9) out.push({ speed: r.speed, x: r.x, y: r.y, z: r.z, heading: r.heading, travel: Math.atan2(r.vx, r.vy), kind: r.snow.kind, w: [r.snow.groomed, r.snow.powder, r.snow.chop, r.snow.ice, r.snow.slush, r.snow.rock].map((v) => +v.toFixed(2)), grip: r.snow.grip, turn: r.snow.turn, drag: r.snow.drag0 + r.snow.drag1 * 10, depth: r.snow.depth, chop: r.chop, sink: r.noseSink, skid: r.skid, R: r.turnRadius, slope: r.slopeDeg, crashed: r.crashed, onGround: r.onGround, hit: r.lastHit });
   }
   return out;
@@ -96,7 +124,7 @@ const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const results = {};
 for (const sp of spots) {
   await place(sp);
-  const at = (await ride(10))[0]; // the snow at the spot itself (the runs below wander off it)
+  const at = (await ride(10)).filter((s) => !s.crash)[0]; // the snow at the spot itself (the runs below wander off it)
   // 1. run the fall line for 12 s from a standstill (steer toward the fall line gently)
   let run = [];
   for (let k = 0; k < 12; k++) {
@@ -104,31 +132,47 @@ for (const sp of spots) {
     const steer = Math.max(-0.4, Math.min(0.4, wrap(st.fall - st.heading) * 1.5));
     run = run.concat(await ride(60, { steer }));
   }
+  const crash = run.find((s) => s.crash) ?? null;
+  run = run.filter((s) => !s.crash);
   const top = Math.max(...run.map((s) => s.speed));
   const last = run[run.length - 1];
   const chopPeak = Math.max(...run.map((s) => s.chop));
   const kinds = [...new Set(run.map((s) => s.kind))];
   // 2. a full carve from about 12 m/s: set the speed along the heading and hold steer 1 for 1.5 s
   await page.evaluate(() => { const r = window.__sim.rider, v = 12; r.vx = Math.sin(r.heading) * v; r.vy = Math.cos(r.heading) * v; r.edge = 0; });
-  const carve = await ride(90, { steer: 1 });
+  const carve = (await ride(90, { steer: 1 })).filter((s) => !s.crash);
   const turned = Math.abs(wrap(carve[carve.length - 1].travel - carve[0].travel));
   const Rs = carve.slice(3).map((s) => s.R).filter((R) => Number.isFinite(R));
   const R = Rs.length ? Rs.reduce((a, b) => a + b, 0) / Rs.length : Infinity;
   const skidPeak = Math.max(...carve.map((s) => s.skid));
-  // 3. stopped with the board down the fall line: does the rider get going again in 4 s?
+  // 3. stopped with the board down the fall line: does the rider get going again in 4 s? Back at the spot, or
+  // the nearest start across the slope with 15 m of fall line clear of trunks (BUG-136: the run can end pinned
+  // against a trunk in the glades, and the Steep and Deep spot itself stands 1.5 m above one)
+  await page.evaluate(([sp]) => {
+    const s = window.__sim, r = s.rider, idle = { steer: 0, tuck: false, brake: false, jumpHeld: false, jumpReleased: false, grab: false };
+    r.reset(sp.x, sp.y, sp.h * Math.PI / 180); r.update(1 / 60, idle);
+    const n = r.normal, l = Math.hypot(n[0], n[1]) || 1, fx = n[0] / l, fy = n[1] / l;
+    for (const off of [0, 3, -3, 6, -6, 9, -9, 12, -12]) {
+      const x = sp.x - fy * off, y = sp.y + fx * off, z = s.pack.groundHeight(x, y) + 1;
+      if (s.collider.near(x, y, 1.5).length || s.collider.segmentHit(x, y, z, x + fx * 15, y + fy * 15, s.pack.groundHeight(x + fx * 15, y + fy * 15) + 1, 1) < 1) continue;
+      r.reset(x, y, sp.h * Math.PI / 180);
+      return;
+    }
+  }, [sp]);
+  await ride(2);
   await page.evaluate(() => { const r = window.__sim.rider, n = r.normal; r.vx = r.vy = 0; r.edge = 0; r.heading = Math.atan2(n[0], n[1]); r.squareBoard?.(); });
-  const go = await ride(240, { steer: 0 });
+  const go = (await ride(240, { steer: 0 })).filter((s) => !s.crash);
   const restart = go[go.length - 1].speed;
-  results[sp.id] = { top, kind: at.kind, w: at.w, grip: at.grip, turn: at.turn, depth: at.depth, drag: at.drag, chopPeak, turned, R, skidPeak, restart, slope: go[go.length - 1].slope, sink: Math.max(...go.map((s) => s.sink)), kinds, crashed: run.some((s) => s.crashed > 0) };
+  results[sp.id] = { top, kind: at.kind, w: at.w, grip: at.grip, turn: at.turn, depth: at.depth, drag: at.drag, chopPeak, turned, R, skidPeak, restart, slope: go[go.length - 1].slope, sink: Math.max(...go.map((s) => s.sink)), kinds, crashed: run.some((s) => s.crashed > 0), crash };
   const r = results[sp.id];
-  console.log(`${sp.name.padEnd(40)} ${r.kind.padEnd(8)} g${r.w[0]} p${r.w[1]} c${r.w[2]} i${r.w[3]} s${r.w[4]} r${r.w[5]}  slope ${r.slope.toFixed(0)}  top ${r.top.toFixed(1)} m/s  carve ${(r.turned * 180 / Math.PI).toFixed(0)} deg R ${Number.isFinite(r.R) ? r.R.toFixed(0) : 'inf'} m skid ${r.skidPeak.toFixed(2)}  chop ${r.chopPeak.toFixed(2)}  restart ${r.restart.toFixed(1)} m/s sink ${r.sink.toFixed(2)}${r.crashed ? '  CRASHED' : ''}${r.kinds.length > 1 ? '  kinds ' + r.kinds.join('/') : ''}`);
+  console.log(`${sp.name.padEnd(40)} ${r.kind.padEnd(8)} g${r.w[0]} p${r.w[1]} c${r.w[2]} i${r.w[3]} s${r.w[4]} r${r.w[5]}  slope ${r.slope.toFixed(0)}  top ${r.top.toFixed(1)} m/s  carve ${(r.turned * 180 / Math.PI).toFixed(0)} deg R ${Number.isFinite(r.R) ? r.R.toFixed(0) : 'inf'} m skid ${r.skidPeak.toFixed(2)}  chop ${r.chopPeak.toFixed(2)}  restart ${r.restart.toFixed(1)} m/s sink ${r.sink.toFixed(2)}${r.crashed ? `  CRASHED (${r.crash ? `${r.crash.cause} at ${r.crash.speed.toFixed(0)} m/s, canopy ${r.crash.canopy.toFixed(2)}` : 'down from before the run'})` : ''}${r.kinds.length > 1 ? '  kinds ' + r.kinds.join('/') : ''}`);
 }
 // BUG-084: ?time=7 with the setting on Resort default: the snow takes the URL's hour, as the sun does
 let urlSnow = null;
 if (pack === 'vail') {
   await load('&time=7');
   await place({ x: -3420, y: 2317, h: 321, hour: 'pack', day: 'spring', weather: 'clear' });
-  const at = (await ride(10))[0];
+  const at = (await ride(10)).filter((s) => !s.crash)[0];
   urlSnow = { kind: at.kind, grip: at.grip, hour: await page.evaluate(() => window.__sim.rider.snowWorld.hour) };
   console.log(`${'Simba ?time=7, Resort default, spring'.padEnd(40)} ${at.kind.padEnd(8)} g${at.w[0]} p${at.w[1]} c${at.w[2]} i${at.w[3]} s${at.w[4]} r${at.w[5]}  snow hour ${urlSnow.hour}`);
 }
@@ -148,7 +192,11 @@ check('the trees are deep powder and the slowest', R.trees14.kind === 'powder' &
 check('a stopped rider gets going again in deep powder on this pitch', R.trees14.restart > 1 || R.trees14.slope < 8, `restart ${R.trees14.restart.toFixed(1)} m/s on ${R.trees14.slope.toFixed(0)} deg, nose sink ${R.trees14.sink.toFixed(2)}`);
 check('spring afternoon low is Slush with more drag than the same spot mid-season', R.goldenSpring.kind === 'slush' && R.goldenSpring.drag > R.golden15.drag * 1.3, `${R.goldenSpring.kind}, drag at 10 m/s ${R.goldenSpring.drag.toFixed(2)} vs ${R.golden15.drag.toFixed(2)}`);
 check('the high ridge is firmer than the north face', R.twoElk13.w[3] > 0.3, `ice ${R.twoElk13.w[3]} (${R.twoElk13.kind})`);
-check('no crashes running the groomer or the open north face (the glades may hit a trunk)', !['simba13', 'simba7s', 'simbaStorm', 'prima13', 'wild9', 'wild13'].some((id) => R[id].crashed), Object.entries(R).filter(([, r]) => r.crashed).map(([id]) => id).join(', '));
+// BUG-136: a trunk hit under a closed canopy is the forest a 12 s run reaches below the open face (Prima Browns Face
+// runs into the trees at about 140 m), not the snow; any other crash on these spots (an edge catch, a washout) fails
+const forest = (r) => r.crash && r.crash.cause === 'wall' && r.crash.canopy > 0.5;
+const noCrash = ['simba13', 'simba7s', 'simbaStorm', 'prima13', 'wild9', 'wild13'];
+check('no crashes running the groomer or the open north face (the glades, and the forest below a face, may hit a trunk)', !noCrash.some((id) => R[id].crashed && !forest(R[id])), Object.entries(R).filter(([, r]) => r.crashed).map(([id, r]) => `${id} (${r.crash ? r.crash.cause : '?'}${noCrash.includes(id) && forest(r) ? ', in the forest' : ''})`).join(', '));
 const errs = errors.filter((e) => !e.includes('Failed to load resource')); // missing pack tiles are not this check's business
 check('no console errors', errs.length === 0, errs.slice(0, 3).join(' | ').slice(0, 300));
 await browser.close();
