@@ -14,6 +14,8 @@ export const PROMPT_RANGE = 60; // m: show the boarding card
  * The tuning knob: `?boardRange=<m>` overrides it for a session (LiftRide.boardRange) to try other sizes.
  */
 export const BOARD_RANGE = 28;
+/** FEAT-323: the gentle coast-down near the loading point stays at the old 14 m zone */
+export const COAST_RANGE = 14;
 export const BOARD_SPEED = 6; // m/s
 export const RIDE_SPEEDUP = 4; // real lift speeds feel far too slow in a game: ride at 4x
 export const FAST_FORWARD = 5; // extra multiplier while the tuck key is held (20x real)
@@ -66,8 +68,8 @@ export class LiftRide<L extends LiftLine = LiftLine> {
       const inZone = this.choices.length > 0;
       this.blocker = !inZone ? '' : !rider.onGround ? 'air' : rider.speed > BOARD_SPEED ? 'fast' : '';
       this.canBoard = inZone && this.blocker === '';
-      // loading maze: coast to a stop inside the zone
-      if (inZone && rider.onGround && rider.speed > 0.5) { const f = Math.exp(-dt * 1.2); rider.vx *= f; rider.vy *= f; }
+      // loading maze: coast to a stop inside the zone (within COAST_RANGE: the wider zone does not brake a rider passing by)
+      if (inZone && this.nearbyDist < COAST_RANGE && rider.onGround && rider.speed > 0.5) { const f = Math.exp(-dt * 1.2); rider.vx *= f; rider.vy *= f; }
       // two or more lifts in range: E opens the lift picker (states/LiftPickState.ts), which boards with boardLift
       if (boardPressed && this.canBoard && this.nearby && this.choices.length === 1) this.board(rider, this.nearby);
       return this.lift !== null;
