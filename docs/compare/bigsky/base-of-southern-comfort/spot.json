@@ -32,7 +32,29 @@
       "y": -2132.7,
       "h": 22.1,
       "game": "http://localhost:5173/?pack=bigsky&x=2567.4&y=-2132.7&h=22.1&pitch=0.0&fov=75.0&cam=eye&spot=base-of-southern-comfort/across"
+    },
+    {
+      "id": "sv-west",
+      "heading": 286.3,
+      "pitch": 14.3,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2649955,-111.3811285,3a,75y,286.34h,104.29t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDm-OmT-wE!2e10",
+      "x": 2300.0,
+      "y": -2090.6,
+      "h": 286.6,
+      "game": "http://localhost:5173/?pack=bigsky&x=2300.0&y=-2090.6&h=286.6&pitch=14.3&fov=75.0&cam=eye&spot=base-of-southern-comfort/sv-west"
+    },
+    {
+      "id": "sv-east",
+      "heading": 74.9,
+      "pitch": 11.3,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2649955,-111.3811285,3a,75y,74.93h,101.26t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDm-OmT-wE!2e10",
+      "x": 2300.0,
+      "y": -2090.6,
+      "h": 75.2,
+      "game": "http://localhost:5173/?pack=bigsky&x=2300.0&y=-2090.6&h=75.2&pitch=11.3&fov=75.0&cam=eye&spot=base-of-southern-comfort/sv-east"
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Jan 2022, contributor Ken Draper"
 }

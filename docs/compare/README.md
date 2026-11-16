@@ -22,11 +22,13 @@ nearby can be deleted.
    ```
 
    It prints a link like `http://localhost:5173/?pack=vail&x=1421.5&y=289.6&h=218.9&pitch=-8.4&fov=63.5&cam=eye&spot=china-bowl-north-rim/southwest`. `--add` writes the view into `vail/<spot>/spot.json` (it creates the file for a new spot; fill in `streetview_capture` by hand). Without `--spot` it prints a plain link.
+
+   **Your own photo instead (DATA-026):** pass a phone JPEG in place of the URL, `python tools/gmaps2game.py "<photo.jpg>" bigsky --spot top-of-lone-peak-tram/photo-north --add`. The EXIF gives the position, the compass heading (a Pixel's is magnetic: `--declination`, default 11 degrees east for southwest Montana, makes it true) and the vertical FOV (from the 35 mm focal length; skip 5x zoom shots, their few degrees of FOV can't be lined up against a compass that is 10 to 15 degrees off). There is no tilt in EXIF, so the view starts level. `--add` writes `photo`, `photo_capture` and `declination` instead of `streetview` and copies the photo next to `spot.json` as `real-<view>.jpg` (gitignored). Handheld photos are close to level in practice (the Big Sky set was, all but one tilted selfie, left out), so the level start holds; nudge the heading in the eye camera (step 3) when a pair looks off. Front camera selfies point the other way and are best left out. Report line 19 (MapPacker `pack_report.py`) counts a photo view as a pair.
 3. **Open the link.** The game skips the menu and opens in the eye camera at that view: 1.7 m above the ground, HUD and rider hidden, rider frozen.
    - Look: click for mouse look, or the arrow keys (Shift for faster). Walk: WASD (Shift faster). Eye height: Q / E. FOV: `[` / `]`. Street View positions can be tens of metres off, so nudge until the skyline lines up.
    - **P saves the shot** to `docs/compare/<pack>/<spot>/eye-<view>.jpg` through the dev server and records the pose under that view's `eye` in `spot.json`. Without `spot=` it downloads the PNG instead. The URL bar is updated to the nudged pose either way.
    - A hint with these keys shows for 10 s on load. Lift markers and piste lines are hidden. C or F leaves the eye camera (the HUD comes back); reload the link to return.
-4. **Save the real photo** next to it as `real-<view>.png` for side-by-side review. It stays on your PC: `docs/compare/.gitignore` keeps `real*.png` out of git (see Licensing).
+4. **Save the real photo** next to it as `real-<view>.png` for side-by-side review (a photo added from its file is already there as `real-<view>.jpg`). It stays on your PC: `docs/compare/.gitignore` keeps `real*.png` and `real*.jpg` out of git (see Licensing).
 5. **Write `notes.md`** with the checklist below and link every finding to a card: a comment on an existing card with the pair, or a new BUG / FEAT / DATA card.
 6. **Add the spot to the index** below.
 

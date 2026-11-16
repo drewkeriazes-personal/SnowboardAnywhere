@@ -1,5 +1,7 @@
 # Street View / Google imagery is reference only and must not be committed (public repo).
+# Photos added with gmaps2game.py <photo> stay local too (real-<view>.jpg).
 real*.png
+real*.jpg
 
 # Eye shots: the committed copy is eye-<view>.jpg (FEAT-095); the lossless PNG next to it stays local
 eye-*.png

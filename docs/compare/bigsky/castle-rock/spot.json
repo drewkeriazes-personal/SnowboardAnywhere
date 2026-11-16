@@ -32,7 +32,29 @@
       "y": 11.5,
       "h": 275.3,
       "game": "http://localhost:5173/?pack=bigsky&x=-2799.4&y=11.5&h=275.3&pitch=-3.0&fov=75.0&cam=eye&spot=castle-rock/away"
+    },
+    {
+      "id": "sv-west",
+      "heading": 258.9,
+      "pitch": -5.7,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2825315,-111.4404004,3a,75y,258.91h,84.26t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC0uablhQE!2e10",
+      "x": -2339.3,
+      "y": -118.8,
+      "h": 259.2,
+      "game": "http://localhost:5173/?pack=bigsky&x=-2339.3&y=-118.8&h=259.2&pitch=-5.7&fov=75.0&cam=eye&spot=castle-rock/sv-west"
+    },
+    {
+      "id": "sv-north",
+      "heading": 345.2,
+      "pitch": 28.3,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2825315,-111.4404004,3a,75y,345.18h,118.29t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC0uablhQE!2e10",
+      "x": -2339.3,
+      "y": -118.8,
+      "h": 345.5,
+      "game": "http://localhost:5173/?pack=bigsky&x=-2339.3&y=-118.8&h=345.5&pitch=28.3&fov=75.0&cam=eye&spot=castle-rock/sv-north"
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Apr 2018, contributor Big Sky Resort (MT-360); taken about 480 m east of the peak, looking at it"
 }

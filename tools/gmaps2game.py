@@ -22,6 +22,13 @@ a link that opens the eye camera there:
   contributor placed in the wrong spot (heading, pitch and FOV still come from the URL). It is
   stored as `position_override` on the view.
 - Short links (maps.app.goo.gl) are expanded first, which needs the network.
+- A photo instead of a URL (DATA-026): pass a phone JPEG path. Its EXIF gives the position, the
+  compass heading (magnetic on a Pixel; `--declination`, default 11 deg east for southwest Montana,
+  turns it true) and the FOV from the 35 mm focal length and the frame's height. EXIF has no tilt,
+  so the view starts level; a phone compass is often 10 to 15 deg off, so line the view up in the
+  eye camera. `--add` records `photo` (the file name) and the capture time instead of `streetview`
+  and copies the photo next to spot.json as `real-<view>.jpg` (gitignored, like the Street View
+  screenshots).
 """
 from __future__ import annotations
 
@@ -66,6 +73,37 @@ def parse(url: str) -> dict:
     return out
 
 
+def from_photo(path: Path, declination: float) -> dict:
+    """lat, lon, true heading and vertical FOV from a phone photo's EXIF (DATA-026)."""
+    from PIL import Image
+    from PIL.ExifTags import GPSTAGS
+    im = Image.open(path)
+    e = im.getexif()
+    g = {GPSTAGS.get(k, k): v for k, v in e.get_ifd(0x8825).items()}
+    ex = e.get_ifd(0x8769)
+    if 'GPSLatitude' not in g:
+        raise SystemExit(f'no GPS position in {path}')
+
+    def deg(v, ref):
+        d = float(v[0]) + float(v[1]) / 60 + float(v[2]) / 3600
+        return -d if ref in ('S', 'W') else d
+    out: dict = {'lat': deg(g['GPSLatitude'], g['GPSLatitudeRef']), 'lon': deg(g['GPSLongitude'], g['GPSLongitudeRef']),
+                 'streetview': False, 'photo': True, 'tilt': 90.0}
+    if 'GPSImgDirection' in g:
+        mag = g.get('GPSImgDirectionRef', 'T') == 'M'
+        out['heading'] = (float(g['GPSImgDirection']) + (declination if mag else 0.0)) % 360
+    w, h = im.size
+    if e.get(274) in (5, 6, 7, 8):  # rotated 90 degrees by its orientation tag
+        w, h = h, w
+    f35 = ex.get(41989)
+    if f35:
+        # a 35 mm equivalent focal length matches the diagonal (43.27 mm); the frame's height is its share of it
+        side = 43.27 * h / math.hypot(w, h)
+        out['fov'] = math.degrees(2 * math.atan(side / 2 / float(f35)))
+    out['capture'] = ex.get(36867) or e.get(306) or ''
+    return out
+
+
 def to_game(meta: dict, lat: float, lon: float, heading: float) -> tuple[float, float, float]:
     """Pack metres and the grid heading for a true heading at that spot."""
     t = Transformer.from_crs('EPSG:4326', meta['crs'], always_xy=True)
@@ -87,14 +125,17 @@ def main() -> None:
     ap.add_argument('--offset', type=float, default=0.0, help='degrees added to the Street View heading (bad panorama compass)')
     ap.add_argument('--at', default='', help='X,Y in pack metres: override a misplaced panorama position')
     ap.add_argument('--host', default='http://localhost:5173/')
+    ap.add_argument('--declination', type=float, default=11.0,
+                    help="degrees east added to a photo's magnetic compass heading (photos only)")
     a = ap.parse_args()
 
     meta_file = REPO / 'packs' / a.pack / 'meta.json'
     if not meta_file.exists():
         raise SystemExit(f'no pack meta at {meta_file}')
     meta = json.loads(meta_file.read_text(encoding='utf-8'))
-    url = expand(a.url)
-    v = parse(url)
+    photo = Path(a.url) if a.url.lower().endswith(('.jpg', '.jpeg')) and Path(a.url).exists() else None
+    url = '' if photo else expand(a.url)
+    v = from_photo(photo, a.declination) if photo else parse(url)
     heading = v.get('heading', 0.0)
     pitch = v['tilt'] - 90 if 'tilt' in v else 0.0
     fov = v.get('fov', 75.0)
@@ -125,7 +166,7 @@ def main() -> None:
     print(link)
     print(f'  lat {v["lat"]:.7f} lon {v["lon"]:.7f} -> x {x:.1f} y {y:.1f}; heading {heading:.1f} true = {h:.1f} grid; pitch {pitch:.1f}; fov {fov:.1f}'
           + (f'; compass offset {a.offset:+.1f} applied' if a.offset else '')
-          + ('' if v['streetview'] else ' (not a Street View URL: heading and pitch defaulted)'), file=sys.stderr)
+          + (' (photo: compass heading, level pitch)' if photo else '' if v['streetview'] else ' (not a Street View URL: heading and pitch defaulted)'), file=sys.stderr)
 
     if a.add:
         if not a.spot:
@@ -145,6 +186,14 @@ def main() -> None:
             views.append(entry)
         entry.update({'heading': round(heading, 1), 'pitch': round(pitch, 1), 'fov': round(fov, 1), 'streetview': url,
                       'x': round(x, 1), 'y': round(y, 1), 'h': round(h, 1), 'game': link})
+        if photo:
+            import shutil
+            entry.pop('streetview', None)
+            entry.update({'photo': photo.name, 'photo_capture': v['capture'], 'declination': a.declination})
+            shutil.copyfile(photo, spot_dir / f'real-{view}.jpg')
+        else:
+            for k in ('photo', 'photo_capture', 'declination'):
+                entry.pop(k, None)
         if a.at:
             entry['position_override'] = True
         else:

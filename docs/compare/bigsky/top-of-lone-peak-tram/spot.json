@@ -32,7 +32,68 @@
       "y": -606.7,
       "h": 181.0,
       "game": "http://localhost:5173/?pack=bigsky&x=-3119.1&y=-606.7&h=181.0&pitch=-4.0&fov=75.0&cam=eye&spot=top-of-lone-peak-tram/across"
+    },
+    {
+      "id": "sv-south",
+      "heading": 150.7,
+      "pitch": -0.4,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.27797,-111.4501589,3a,75y,150.7h,89.63t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDqw4yzTQ!2e10",
+      "x": -3107.4,
+      "y": -621.3,
+      "h": 151.0,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3107.4&y=-621.3&h=151.0&pitch=-0.4&fov=75.0&cam=eye&spot=top-of-lone-peak-tram/sv-south"
+    },
+    {
+      "id": "sv-west",
+      "heading": 245.9,
+      "pitch": 2.5,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.27797,-111.4501589,3a,75y,245.94h,92.54t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDqw4yzTQ!2e10",
+      "x": -3107.4,
+      "y": -621.3,
+      "h": 246.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3107.4&y=-621.3&h=246.3&pitch=2.5&fov=75.0&cam=eye&spot=top-of-lone-peak-tram/sv-west"
+    },
+    {
+      "id": "photo-north",
+      "heading": 359.0,
+      "pitch": 0.0,
+      "fov": 56.9,
+      "x": -3077.7,
+      "y": -615.1,
+      "h": 359.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3077.7&y=-615.1&h=359.3&pitch=0.0&fov=56.9&cam=eye&spot=top-of-lone-peak-tram/photo-north",
+      "photo": "PXL_20260213_190923314.jpg",
+      "photo_capture": "2026:02:13 12:09:23",
+      "declination": 11.0
+    },
+    {
+      "id": "photo-east",
+      "heading": 90.0,
+      "pitch": 0.0,
+      "fov": 56.9,
+      "x": -3131.5,
+      "y": -600.3,
+      "h": 90.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3131.5&y=-600.3&h=90.3&pitch=0.0&fov=56.9&cam=eye&spot=top-of-lone-peak-tram/photo-east",
+      "photo": "PXL_20260213_190816079.jpg",
+      "photo_capture": "2026:02:13 12:08:16",
+      "declination": 11.0
+    },
+    {
+      "id": "photo-south",
+      "heading": 188.0,
+      "pitch": 0.0,
+      "fov": 39.6,
+      "x": -3136.6,
+      "y": -618.2,
+      "h": 188.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3136.6&y=-618.2&h=188.3&pitch=0.0&fov=39.6&cam=eye&spot=top-of-lone-peak-tram/photo-south",
+      "photo": "PXL_20260213_191610548.jpg",
+      "photo_capture": "2026:02:13 12:16:10",
+      "declination": 11.0
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Mar 2015, contributor Beaver Incredible; photos Drew, Feb 2026"
 }
