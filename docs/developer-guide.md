@@ -266,6 +266,8 @@ CI's `render-budgets` job then checks the head commit's statuses first and skips
 
 **Add a check:** a Node-only tool that exits 1 on failure goes in `PHYSICS_CHECKS`; a browser tool that passes on `synth` with `--cpu` in a few minutes goes in `BROWSER_CHECKS` (it runs in the `rest` shard; one that takes over about 2 minutes on a runner can get its own shard: add it to `matrix.shard` and `SOLO` in the job); anything else is a new job or a step in one. Keep the tool runnable locally with the same command.
 
+**Keeping open PRs mergeable** (FEAT-324): the `pr-shepherd` skill (`.claude/skills/pr-shepherd/`, or `/pr-shepherd`) sends a background agent to each open PR that conflicts with `main` or has a failed check, then watches `main` (`watch.sh`; `survey.sh` lists each open PR's mergeable state, failed checks and worktree once GitHub has settled) and sends them again whenever a merge leaves a still-open PR conflicting, so Drew can merge PRs one after another without waiting on conflicts. Agents merge `main` in (never rebase) in the PR's own worktree and push with `local_render_budgets.mjs --push` when `game/` changed.
+
 **Required checks** (optional): to block merging on a red check, Settings > Branches > a rule for `main` > Require status checks > pick `typecheck-build` (it only appears after its first run). Drew switches this on himself.
 
 ## README update (`readme-update.yml`)
