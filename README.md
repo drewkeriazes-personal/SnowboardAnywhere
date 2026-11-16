@@ -3,20 +3,30 @@
 A browser snowboarding game set on real mountains, rebuilt at 1:1 from public data: lidar terrain,
 real trees, and the actual lifts, runs and buildings from OpenStreetMap. Ride Vail top to bottom,
 take the chairs back up, race your own ghost, or outrun the snow monster.
+Here and there on the runs a pair of skiers stands chatting (sometimes right in the middle) or a snowboarder
+sits taking in the view: ride round them, since hitting one crashes you like a tree.
 
 Built with Three.js, TypeScript and Vite. Resorts so far: Vail, Breckenridge and Big Sky (Change resort on the main menu).
 Modes: free ride, time trials and Outrun, picked on the main menu's cards or in Esc > Mode (time trial gates can also stay on all the time: Settings > Gameplay).
+Around the runs: a few yellow SLOW signs stand at the side of green and blue runs where they merge into another run or come into the base area (never on blacks, never up high).
+An orange rope on posts marks the resort's outer edge. You can duck it, but now and then (about 1 in 30
+times) something notices.
 
 ## Play
 
-**Just want to ride?** Follow [PLAY.md](PLAY.md): on Windows, download the zip and double-click it (nothing to install); anywhere else, five copy-paste steps. Plus fixes for the common problems.
+**Just want to ride?** Follow [PLAY.md](PLAY.md): on Windows or an Apple Silicon Mac, download the zip and double-click it (nothing to install); anywhere else, five copy-paste steps. Plus fixes for the common problems.
 
 On Windows without any tools: download `SnowboardAnywhere-win.zip` from
 [the latest release](https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest), unzip it, double-click
 `SnowboardAnywhere.exe`. The first launch downloads Vail in its small window (about 270 MB, a few minutes), then
 the game opens in your browser; later launches start straight away, and more resorts come from Change resort.
+On Windows the first launch also asks which installed browser to use; `SnowboardAnywhere.exe --pick-browser` or Settings > Launcher > Browser changes it.
 Windows may warn the first time (the exe is not code-signed): More info > Run anyway. Close the small window to
-quit. To build that zip: `cd game && npm run package -- --version X.Y.Z` (Windows; it lands in `game/release/`).
+quit. On an Apple Silicon Mac the same with `SnowboardAnywhere-mac.zip`: double-click it, double-click
+`SnowboardAnywhere` in the folder it makes, and let it through once in System Settings > Privacy & Security > Open
+Anyway (it is not signed by an Apple developer; [PLAY.md](PLAY.md) has the steps). Close the Terminal window to quit.
+To build a zip: `cd game && npm run package -- --version X.Y.Z` (on Windows the win zip, on an Apple Silicon Mac the
+mac one; it lands in `game/release/`).
 Releases are made only by hand, with Actions > Release > Run workflow ([developer guide > Releases](docs/developer-guide.md#releases)).
 
 From the source (the developer version):
@@ -31,7 +41,7 @@ Open http://localhost:5173/?pack=vail. Use `?pack=synth` for a synthetic test mo
 no resort pack yet. With no pack in `packs/` at all (a fresh clone), http://localhost:5173/ opens a
 "No resorts yet" screen with the resort list: pick one to download it (below).
 
-Signing in is optional and changes nothing about riding: the game starts as a guest and plays everything. Sign in (in the corner of the main menu) opens the account panel: Sign in with GitHub, or an email and password (Make an account sends a link to verify the address first). Signed in, the corner's Account link opens the same panel, where you can add the other method to your account and sign out. Sign-in works on this PC, through the launcher or `npm run dev`, not from another computer, and only at `http://localhost:5173` (another port is refused until it is added to the browser key's website list; see [developer guide > Accounts](docs/developer-guide.md#accounts-feat-273)).
+Signing in is optional and changes nothing about riding: the game starts as a guest and plays everything. Sign in (in the corner of the main menu) opens the account panel: Sign in with GitHub, or an email and password (Make an account sends a link to verify the address first; Forgot your password? under the form emails a link to set a new one). Signed in, the corner's Account link opens the same panel, where you can add the other method to your account and sign out. Sign-in works on this PC, through the launcher or `npm run dev`, not from another computer, and only at `http://localhost:5173` (another port is refused until it is added to the browser key's website list; see [developer guide > Accounts](docs/developer-guide.md#accounts-feat-273)).
 
 ### Getting a resort
 
@@ -108,7 +118,7 @@ on the main menu, which works through the host too.
 | Key | Action |
 | --- | --- |
 | A / D (or arrows) | steer |
-| W / S (or arrows) | tuck / brake (front flip / backflip in the air); walk on foot |
+| W / S (or arrows) | tuck / brake (front flip / backflip in the air: you tuck for 0.2 s first, so held on from a nollie / ollie the flip starts at the top of the jump); walk on foot |
 | Space (hold, release) | jump (hold W / S while charging for a nollie / ollie); climb on foot |
 | Shift | squat on the snow (hold while steering: hard carve), grab in the air, sprint on foot |
 | Q / Z | nose / tail press (hold); W / S balance it |
@@ -165,13 +175,14 @@ Rider, Accessibility, Credits), the settings in the middle, and what the focused
 | Esc (Circle / B) | clear the search, then close (with graphics changes waiting, it asks Apply or Discard first) |
 
 Type in the search box to find a setting in any category. Graphics has presets (Low, Medium, High, and Ultra:
-High plus cascaded shadows at full resolution; Low draws the trees near you as simple cones) over its advanced options, and a Frame cap (30, 60 or Uncapped);
+High plus cascaded shadows at full resolution; the detailed trees reach 800 m on High, 400 m on Medium and 200 m on Low, simple cones beyond) over its advanced options, and a Frame cap (30, 60 or Uncapped);
 the game draws the settings you pick and never lowers them on its own. The preset and the advanced options
 (Detail, Shadows, Cascaded shadows, Trees, Forest, Resolution, Snow dents) wait, marked Pending, until you press
 **Apply** at the bottom of Graphics: a short loading screen covers the rebuild, so trying an option never stutters
 the menu. Leaving Settings with changes waiting asks Apply or Discard. Everything else, the Frame cap included,
 applies at once. Gameplay has Feel presets (Arcade,
-Realistic). Accessibility has UI scale and Reduce motion (camera shake, first person shake and speed
+Realistic) and Jump height: Realistic (the default; a full charge clears about knee height, a tap is a small hop) or
+Arcade (big air, about 2.5 m on a full charge). Kickers, lips and rollers launch you from your speed either way. Accessibility has UI scale and Reduce motion (camera shake, first person shake and speed
 lines off together). Camera has See-through trees (on by default): in the third-person cameras, a tree that hides you or
 your line ahead turns see-through (trees off to the side stay solid); a tree you are about to hit stays solid. Opened from the pause menu, changes show at once behind the screen, with the frame rate in the corner.
 
@@ -268,6 +279,11 @@ burst when you land. Brush a snow-loaded spruce or fir and the snow drops off it
 until the snow builds back over a few minutes; a tree you just shook has less to drop. Slam into the
 trunk and the whole tree shakes off every bit of its snow. Settings > Graphics > Snow dents turns the sag off (the Low preset turns it off
 too).
+
+Crash at speed and you keep it: the body tumbles and slides on down the hill, a long way on a steep
+pitch, sooner to a stop on a gentle one or on the flat, further on ice and less in powder or slush. A
+trunk or a rock still stops you, and off a cliff band you fall. You get up once the slide has slowed
+to a walk (or after about 6 s at most). The Assisted and Off fall line settings shorten the slide.
 
 In first person you look through goggle lenses (Settings > Camera > Goggle lens). In flat light
 (a storm, overcast, deep shade) the snow's bumps, rollers and dips are hard to see; a warm lens (Rose,

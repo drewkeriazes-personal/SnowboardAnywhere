@@ -133,7 +133,7 @@ export class RideFrame {
   private readonly eye = new THREE.Vector3();
   private readonly pressHead = new THREE.Vector3();
   /** FEAT-164: one reused frame for modes.update (a mutable ModeFrame), so the frame allocates nothing */
-  private readonly modeFrame: { -readonly [K in keyof ModeFrame]: ModeFrame[K] } = { dt: 0, tuck: false, onLift: false, frozen: false, elapsed: 0 };
+  private readonly modeFrame: { -readonly [K in keyof ModeFrame]: ModeFrame[K] } = { dt: 0, tuck: false, onLift: false, frozen: false, elapsed: 0, detached: false };
   private readonly hud = document.getElementById('hud')!;
   private readonly prompt = document.getElementById('prompt')!;
   private readonly helpEl = document.getElementById('help');
@@ -170,7 +170,7 @@ export class RideFrame {
     this.syncView(dt, runs);
     // 7. FEAT-164: the modes (Outrun's chase and eat, the trial gates) and their HUDs
     const mf = this.modeFrame;
-    mf.dt = dt; mf.tuck = this.input.tuck; mf.onLift = this.onLift; mf.frozen = !runs.trial; mf.elapsed = this.elapsed;
+    mf.dt = dt; mf.tuck = this.input.tuck; mf.onLift = this.onLift; mf.frozen = !runs.trial; mf.elapsed = this.elapsed; mf.detached = this.detached;
     this.p.modes.update(mf);
     this.p.audio.update(this.p.rider, this.input.tuck, this.onLift, dt, this.p.liftRide.passedTower);
     this.p.rider.lastHit = ''; this.p.rider.hitSpeed = 0;
@@ -308,7 +308,7 @@ export class RideFrame {
 
   /** 11. Streaming around the rider (or the camera when detached), the snow on the ground, lifts and landmarks, the live sun */
   private streaming(dt: number): void {
-    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, sky, snow, settings, sun, params, zr, resortTop, roads, riderChair, lifts, bridges, liftLines, landmarks, map } = this.p;
+    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, buildings, sky, snow, settings, sun, params, zr, resortTop, roads, riderChair, lifts, bridges, liftLines, landmarks, slowSigns, people, map, boundaryRope } = this.p;
     const onLift = this.onLift, detached = this.detached;
     const cond = this.p.conditions();
     const cp = cam.camera.position;
@@ -319,6 +319,7 @@ export class RideFrame {
     prefetch.update(pack, fx, fy, dt, liftTop);
     veg.update(fx, fy, prefetch.ax, prefetch.ay, cp);
     rocks.update(fx, fy, prefetch.ax, prefetch.ay);
+    buildings.update(); // BUG-088
     shrubs.update(fx, fy, prefetch.ax, prefetch.ay, cp);
     if (sky.weather === 'storm') sky.snowCover = Math.min(1, sky.snowCover + dt / 600);
     else if (sky.weather === 'flurries') sky.snowCover = Math.min(1, sky.snowCover + dt / 3000);
@@ -327,7 +328,7 @@ export class RideFrame {
     // FEAT-077: groomers get skied out through the day (fresh corduroy first thing, tracked out by
     // mid-afternoon); new snow covers the tracks again
     {
-      const hour = typeof cond.timeOfDay === 'number' ? cond.timeOfDay : cond.timeOfDay === 'now' ? ((new Date().getUTCHours() + new Date().getUTCMinutes() / 60 + sun.utcOff) % 24 + 24) % 24 : 13;
+      const hour = sun.hour(cond); // BUG-084: the sun's own hour, so ?time= moves the snow too
       const day = Math.max(0, Math.min(1, (hour - 8.5) / 6.5));
       const base = SKIED_BASE[cond.snowDay ?? 'mid'];
       terrain.setSkied(base * (0.15 + 0.85 * day * day * (3 - 2 * day)) * (1 - snowCover), cond.snowDay === 'spring' ? 1 : 0);
@@ -355,6 +356,7 @@ export class RideFrame {
     }
     rocks.setSnow(Math.min(1, snowCover * 3), snow.wind.x, snow.wind.y); // boulder tops fill three times faster than the slopes
     roads.update(fx, fy);
+    boundaryRope.update(dt, fx, fy); // FEAT-305
     const carried = onLift && liftRide.airborneRide ? liftRide.lift : null;
     riderChair.update(carried, rider.x, rider.y, rider.z, rider.heading, liftRide.cableY);
     lifts.update(this.elapsed, carried ? this.chairPos.set(rider.x, rider.z, -rider.y) : null);
@@ -363,6 +365,8 @@ export class RideFrame {
     liftLines.maintain(rider.x, rider.y);
     const passed = landmarks.maintain(rider.x, rider.y);
     if (passed) this.p.events.emit({ type: 'landmark', name: passed.name });
+    slowSigns.maintain(rider.x, rider.y);
+    people.maintain(fx, fy); // FEAT-307
     sun.update(dt, this.p.conditions());
     lifts.updateMarkers(this.elapsed, rider.x, rider.y, liftRide.canBoard ? liftRide.nearby : null);
     map.liftMarker = liftRide.nearby ? [liftRide.nearby.bottom[0], liftRide.nearby.bottom[1]] : null;

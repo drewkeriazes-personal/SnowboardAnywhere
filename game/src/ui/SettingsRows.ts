@@ -2,6 +2,7 @@ import { PLAYLISTS, SHUFFLE_ALL } from '../audio/Audio';
 import { LENSES, LENS_ORDER } from '../world/Lens';
 import { DualSenseHID } from '../sim/DualSense';
 import { MENU_KEYS } from './MenuKeys';
+import { launcherBrowser } from './LauncherBrowser';
 import { OUTFIT_LENS, OUTFIT_PRESETS, applyQuality, keyName, keysOf, type Outfit, type Settings } from './Settings';
 
 /**
@@ -9,11 +10,13 @@ import { OUTFIT_LENS, OUTFIT_PRESETS, applyQuality, keyName, keysOf, type Outfit
  * control and how it reads and writes the settings. `SettingsOverlay.ts` draws them; the presets and
  * the per-category reset read the same rows, so nothing about a setting lives in two places.
  */
-export type CatId = 'gameplay' | 'controls' | 'camera' | 'graphics' | 'conditions' | 'world' | 'audio' | 'rider' | 'access' | 'credits';
-export const CATEGORIES: { id: CatId; label: string }[] = [
+export type CatId = 'gameplay' | 'controls' | 'camera' | 'graphics' | 'conditions' | 'world' | 'audio' | 'rider' | 'access' | 'launcher' | 'credits';
+/** `hidden`: the category's button and page are left out (FEAT-318: Launcher only when run from the exe) */
+export const CATEGORIES: { id: CatId; label: string; hidden?: () => boolean }[] = [
   { id: 'gameplay', label: 'Gameplay' }, { id: 'controls', label: 'Controls' }, { id: 'camera', label: 'Camera' },
   { id: 'graphics', label: 'Graphics' }, { id: 'conditions', label: 'Conditions' }, { id: 'world', label: 'Map and world' },
-  { id: 'audio', label: 'Audio' }, { id: 'rider', label: 'Rider' }, { id: 'access', label: 'Accessibility' }, { id: 'credits', label: 'Credits' },
+  { id: 'audio', label: 'Audio' }, { id: 'rider', label: 'Rider' }, { id: 'access', label: 'Accessibility' },
+  { id: 'launcher', label: 'Launcher', hidden: () => !launcherBrowser.state }, { id: 'credits', label: 'Credits' },
 ];
 
 type V = string | number | boolean;
@@ -32,6 +35,9 @@ interface Base {
   hidden?: () => boolean;
   /** FEAT-285: a heavy graphics option, held as pending until Apply (the settings screen edits a draft of it) */
   held?: boolean;
+  /** FEAT-318: the value lives outside the settings (the launcher's launcher.json): `set` writes it there, nothing is
+   *  saved or applied, and the category reset leaves it alone */
+  external?: boolean;
 }
 interface Valued extends Base { get: (s: Settings) => V; set: (s: Settings, v: V) => void }
 export type Row =
@@ -75,10 +81,10 @@ export function gfxPresetOf(s: Settings): GfxPreset | 'custom' {
   return 'custom';
 }
 export type FeelPreset = 'arcade' | 'realistic';
-/** Feel presets set the gameplay feel options together: press balance and the fall line (FEAT-134; jump mode joins as it lands).
+/** Feel presets set the gameplay feel options together: press balance, the fall line (FEAT-134) and the jump mode (FEAT-311).
  *  Two, by Drew's call: Arcade forgives, Realistic is the defaults (Hard press balance stays a manual pick) */
 const FEEL: Record<FeelPreset, Partial<Settings>> = {
-  arcade: { pressBalance: 'easy', fallLine: 'off' }, realistic: { pressBalance: 'on', fallLine: 'real' },
+  arcade: { pressBalance: 'easy', fallLine: 'off', jumpMode: 'arcade' }, realistic: { pressBalance: 'on', fallLine: 'real', jumpMode: 'real' },
 };
 export function applyFeelPreset(s: Settings, p: FeelPreset): void { Object.assign(s, FEEL[p]); }
 export function feelPresetOf(s: Settings): FeelPreset | 'custom' {
@@ -99,6 +105,7 @@ export const SECTIONS: Section[] = [
       desc: 'Sets the feel options together. Arcade forgives more, Realistic asks more of you. Changing an option below shows Custom.' },
     pick('pressBalance', 'Press balance', [['easy', 'Easy'], ['on', 'Normal'], ['hard', 'Hard'], ['off', 'Off']], 'Holding a nose or tail press is a balancing act: steer to keep the balance point centred. Easy drifts slowly, Hard fast, Off holds the press as long as the key.'),
     seg('fallLine', 'Fall line', [['real', 'Realistic'], ['assist', 'Assisted'], ['off', 'Off']], 'How hard the hill works on a flat board. Realistic: it drifts down and comes round toward the fall line unless you hold the uphill edge, a board let go across the hill side-slips, and sliding sideways onto the edge you are sliding toward catches it. Assisted: half the pull and no edge catches. Off: a flat board holds a traverse on rails.'),
+    seg('jumpMode', 'Jump height', [['real', 'Realistic'], ['arcade', 'Arcade']], 'How high a jump pops you off flat snow. Realistic: a full charge clears about knee height, a tap is a small hop. Arcade: big air, a full charge about 2.5 m. Kickers, lips and rollers launch you from your speed either way.'),
   ] },
   { cat: 'gameplay', title: 'Rider', rows: [
     seg('discipline', 'Ride', [['board', 'Snowboard'], ['ski', 'Skis']], () => `Snowboard or skis. ${keyName(MENU_KEYS.discipline[0])} on the main menu switches too.`),
@@ -228,6 +235,14 @@ export const SECTIONS: Section[] = [
   ] },
   { cat: 'access', title: 'Motion', rows: [
     toggle('reduceMotion', 'Reduce motion', 'Turns camera shake, first person shake and speed lines off together, and the menus stop animating.'),
+  ] },
+
+  { cat: 'launcher', title: 'Browser', rows: [
+    { kind: 'pick', id: 'launcherBrowser', label: 'Browser', external: true, opts: () => launcherBrowser.opts(),
+      get: () => launcherBrowser.state?.current ?? 'default', set: (_s, v) => launcherBrowser.choose(String(v)),
+      desc: 'Which browser SnowboardAnywhere.exe opens the game in, from the next launch. Settings and best times are kept by each browser, so a different browser starts fresh (the old one keeps its own). Controllers and graphics work best in Chrome or Edge.' },
+    { kind: 'action', id: 'launcherOther', label: 'Other browser', button: 'Pick an .exe...', action: 'launcher-other',
+      desc: 'Opens a file picker on this PC for any browser .exe, like a portable browser or Chrome Canary. It may open behind the game window.' },
   ] },
 
   { cat: 'credits', title: 'Credits', rows: [
