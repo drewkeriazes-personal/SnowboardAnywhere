@@ -1,4 +1,4 @@
-// FEAT-261 `npm run package -- --version X.Y.Z`: the Windows zip a rider unzips and double-clicks. Builds the game
+// FEAT-261 `npm run package -- --version X.Y.Z`: the zip a rider unzips and double-clicks. Builds the game
 // (vite build, with the version and the hosted flag that hides the dev-only tools), bundles tools/launcher.mjs into
 // one CommonJS file (esbuild) and makes it a Node single executable application (SEA: `node --experimental-sea-config`,
 // then postject into a copy of this node.exe), and zips it all into game/release/SnowboardAnywhere-win.zip:
@@ -6,8 +6,11 @@
 //   game/                   the built game (dist/)
 //   packs/                  empty: the first launch downloads Vail into it, Change resort > Download the rest
 //   README.txt              how to start it, and the SmartScreen note
-// Windows only (the exe is this node.exe). The version is stamped into the exe (SBA_LAUNCHER.version) and the game
-// (import.meta.env.VITE_GAME_VERSION, shown on the main menu); without --version both say "dev".
+// FEAT-319: on a Mac (Apple Silicon) it makes game/release/SnowboardAnywhere-mac.zip instead, the same layout in a
+// SnowboardAnywhere-mac/ folder with the launcher as a bare binary `SnowboardAnywhere` (ad hoc signed, exec bit kept).
+// The launcher is a copy of the node binary running this, so each zip is built on its own OS: Windows or an arm64 Mac.
+// The version is stamped into the launcher (SBA_LAUNCHER.version) and the game (import.meta.env.VITE_GAME_VERSION,
+// shown on the main menu); without --version both say "dev".
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,14 +22,17 @@ const args = process.argv.slice(2);
 const vi = args.indexOf('--version');
 const version = vi >= 0 ? args[vi + 1] : 'dev';
 if (!/^\d+\.\d+\.\d+$/.test(version) && version !== 'dev') { console.error(`package: --version wants X.Y.Z, not ${version}`); process.exit(2); }
-if (process.platform !== 'win32') { console.error('package: the launcher is Windows only for now (the exe is this node.exe)'); process.exit(2); }
+const MAC = process.platform === 'darwin';
+if (process.platform !== 'win32' && !MAC) { console.error('package: the launcher is a copy of this node binary, so it builds on Windows or a Mac only'); process.exit(2); }
+if (MAC && process.arch !== 'arm64') { console.error(`package: the Mac zip is Apple Silicon only (this node is ${process.arch})`); process.exit(2); }
 if (vi < 0) console.warn('package: no --version, so the exe and the game say "dev"');
 
+const OS = MAC ? 'mac' : 'win';
 const RELEASE = path.join(GAME, 'release');
 const WORK = path.join(RELEASE, 'build'); // the bundle, the SEA blob
-const STAGE = path.join(RELEASE, 'SnowboardAnywhere-win'); // what the zip holds, as it unzips
-const ZIP = path.join(RELEASE, 'SnowboardAnywhere-win.zip');
-const EXE = path.join(STAGE, 'SnowboardAnywhere.exe');
+const STAGE = path.join(RELEASE, `SnowboardAnywhere-${OS}`); // what the zip holds, as it unzips
+const ZIP = path.join(RELEASE, `SnowboardAnywhere-${OS}.zip`);
+const EXE = path.join(STAGE, MAC ? 'SnowboardAnywhere' : 'SnowboardAnywhere.exe');
 const t0 = Date.now();
 const mb = (b) => `${(b / 1e6).toFixed(0)} MB`;
 
@@ -35,7 +41,7 @@ fs.mkdirSync(WORK, { recursive: true });
 fs.mkdirSync(path.join(STAGE, 'packs'), { recursive: true });
 
 // 1. the game: the hosted build (no dev-only tools, as `npm run host`) with the version on the main menu
-console.log(`Building the game ${version} into release/SnowboardAnywhere-win/game/ ...`);
+console.log(`Building the game ${version} into release/SnowboardAnywhere-${OS}/game/ ...`);
 process.env.VITE_HOSTED = '1';
 process.env.VITE_GAME_VERSION = version;
 const { build } = await import('vite');
@@ -54,36 +60,74 @@ await esbuild.build({
 });
 
 // 3. the exe: the SEA blob injected into a copy of this node.exe, its Node.js signature removed first (the injection
-// breaks it anyway, and a broken signature looks worse to antivirus than none)
-console.log(`Making SnowboardAnywhere.exe with Node ${process.version} ...`);
+// breaks it anyway, and a broken signature looks worse to antivirus than none). On a Mac the same into a copy of this
+// node, in its own NODE_SEA segment, then signed again ad hoc (`codesign --sign -`): Apple Silicon runs no unsigned code.
+console.log(`Making ${path.basename(EXE)} with Node ${process.version} ...`);
 const blob = path.join(WORK, 'sea-prep.blob');
 const seaConfig = path.join(WORK, 'sea-config.json');
 fs.writeFileSync(seaConfig, JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true, useCodeCache: true }, null, 1));
 execFileSync(process.execPath, ['--experimental-sea-config', seaConfig], { stdio: 'inherit', cwd: WORK });
 fs.copyFileSync(process.execPath, EXE);
-unsign(EXE);
+if (MAC) execFileSync('codesign', ['--remove-signature', EXE], { stdio: 'inherit' });
+else unsign(EXE);
 const { inject } = await import('postject');
-await inject(EXE, 'NODE_SEA_BLOB', fs.readFileSync(blob), { sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2' });
+await inject(EXE, 'NODE_SEA_BLOB', fs.readFileSync(blob), {
+  sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
+  ...(MAC ? { machoSegmentName: 'NODE_SEA' } : {}),
+});
+if (MAC) {
+  execFileSync('codesign', ['--sign', '-', EXE], { stdio: 'inherit' });
+  fs.chmodSync(EXE, 0o755);
+}
 const said = execFileSync(EXE, ['--version'], { encoding: 'utf8' }).trim();
 if (said !== version) throw new Error(`the exe says ${said}, not ${version}`);
 
-// 4. README.txt (Notepad line ends)
-fs.writeFileSync(path.join(STAGE, 'README.txt'), [
+// 4. README.txt (Notepad line ends on Windows)
+fs.writeFileSync(path.join(STAGE, 'README.txt'), MAC ? [
+  `SnowboardAnywhere ${version} for Mac (Apple Silicon)`,
+  '',
+  '1. Double-click SnowboardAnywhere. The first time, a Terminal window downloads Vail (about 270 MB, a few minutes); later it starts straight away.',
+  '2. The game opens in your browser on the main menu: Ride. More resorts: Change resort > Download (kept in the packs folder).',
+  '3. Close the Terminal window to quit (click Terminate if it asks).',
+  '',
+  'The first double-click says Apple "cannot verify" SnowboardAnywhere: it is not signed by an Apple developer (that costs money).',
+  'Click Done, then open System Settings > Privacy & Security, scroll down to "SnowboardAnywhere was blocked" and click',
+  'Open Anyway (enter your password). Double-click SnowboardAnywhere again and click Open. After that it just starts.',
+  '',
+  'Or, in Terminal: xattr -dr com.apple.quarantine <this folder> (drag the folder onto the Terminal window for its path).',
+  '',
+].join('\n') : [
   `SnowboardAnywhere ${version}`,
   '',
   '1. Double-click SnowboardAnywhere.exe. The first time, a small window downloads Vail (about 270 MB, a few minutes); later it starts straight away.',
   '2. The game opens in your browser on the main menu: Ride. More resorts: Change resort > Download (kept in the packs folder).',
   '3. Close the small window to quit.',
   '',
+  'The first launch asks which browser to open the game in. To change it later: run SnowboardAnywhere.exe --pick-browser, or Settings > Launcher > Browser in the game.',
+  '',
   'Windows may say "Windows protected your PC" the first time: the exe is not code-signed (that costs money).',
   'Click More info, then Run anyway.',
   '',
 ].join('\r\n'));
 
-// 5. the zip
+// 5. the zip. On a Mac ditto, which keeps the launcher's exec bit (zipDir writes no unix modes, so it would unzip as
+// a plain file Finder won't run), in a SnowboardAnywhere-mac/ folder; no extended attributes or resource forks (the
+// signature is inside the binary). Then check the zip says rwx for the launcher.
 console.log('Zipping ...');
-const n = zipDir(STAGE, ZIP);
+let n;
+if (MAC) {
+  execFileSync('ditto', ['-c', '-k', '--norsrc', '--noextattr', '--noacl', '--keepParent', STAGE, ZIP], { stdio: 'inherit' });
+  const entry = `${path.basename(STAGE)}/${path.basename(EXE)}`;
+  const info = execFileSync('zipinfo', [ZIP, entry], { encoding: 'utf8' }).trim();
+  if (!/^-rwx/.test(info)) throw new Error(`the zip lost the launcher's exec bit: ${info}`);
+  n = countFiles(STAGE);
+} else n = zipDir(STAGE, ZIP);
 console.log(`\n${path.relative(process.cwd(), ZIP)}: ${n} files, ${mb(fs.statSync(ZIP).size)} (the exe ${mb(fs.statSync(EXE).size)}), in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+
+/** Files under a folder, its subfolders' too. */
+function countFiles(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).reduce((k, e) => k + (e.isDirectory() ? countFiles(path.join(dir, e.name)) : 1), 0);
+}
 
 /** Drop a PE file's Authenticode signature: zero the certificate table entry and cut the table off the end. */
 function unsign(file) {
