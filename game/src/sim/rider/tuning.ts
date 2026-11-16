@@ -181,16 +181,34 @@ export const HARD_DEEP = 0.3;
 export const HARD_STEER = 0.3, HARD_MIN_SPEED = 3;
 
 // ---- squat (FEAT-111) and flips (FEAT-110)
-/** FEAT-111 deep squat: ease time (s), extra grip, share of the tuck's drag cut, jump bonus and its window after letting go (s) */
+/** FEAT-111 deep squat: ease time (s), extra grip, share of the tuck's drag cut, and the jump bonus's window after letting go (s; the bonus is JUMP_POP's squat) */
 export const SQUAT_IN = 0.25;
 export const SQUAT_GRIP = 0.08;
 export const SQUAT_AERO = 0.3;
-export const SQUAT_POP = 1.15;
+/** Pop speed (m/s) off flat snow: (base + charge x jump charge (0 .. 1)), times `squat` from a deep squat
+ *  (FEAT-111) and `ollie` off a loaded tail or nose (FEAT-112), which leaves `pitch` rad/s per unit lean of rotation (back off
+ *  an ollie, forward off a nollie; Real's lands about 10 deg off level), and `spin` the air spin rate at full steer
+ *  (rad/s): Real's 370 deg/s turns a full charge's 0.56 s of air into a 180 (a flat 180 is an early trick; riders
+ *  spin about 360 deg/s), and no flat 360. `slopeKick`: Arcade's old launch, which drops the downhill fall speed at the pop, so
+ *  the faster down a slope the higher (about 10 m off a 20 deg slope at 20 m/s); Real adds the pop to the velocity
+ *  along the snow, the same 0.4 m off the slope at any speed. Arcade (BUG-055) is the old pop: a 0.1 s tap
+ *  0.57 m, a full charge 2.5 m, a squat ollie 5.6 m. FEAT-311 Real: the high end of expert snowboarders'
+ *  measured ollies (29 to 36 cm on average, List et al., ISBS 2012): a full charge 0.43 m, an ollie 0.51 m, a
+ *  squat ollie 0.6 m, a tap 0.16 m; at most 0.7 s of air, too little for a flip off flat snow (tools/jumpcheck.mjs).
+ *  Lips, rollers and kickers still send you from speed, not this. */
+export const JUMP_POP = { arcade: { base: 2.5, charge: 4.5, squat: 1.15, ollie: 1.3, pitch: 1.2, spin: 3.5, slopeKick: true }, real: { base: 1.3, charge: 1.46, squat: 1.1, ollie: 1.1, pitch: 0.6, spin: 6.5, slopeKick: false } } as const;
+export type JumpMode = keyof typeof JUMP_POP;
 export const SQUAT_SPRING_WINDOW = 0.25;
 /** FEAT-110 flips: full-input pitch rate (1.1 rotations a second), how fast it builds and decays (1/s),
  * and the landing windows (rad): within FLIP_CLEAN of upright is clean, up to FLIP_CRASH a wobble, past it a crash */
 export const FLIP_RATE = 1.1 * Math.PI * 2;
 export const FLIP_EASE = 6, FLIP_DECAY = 4;
+/** FEAT-311 the tuck after an ollie / nollie with the key still held: the rider's moment of inertia about the
+ *  pitch axis (kg m^2) open (about 14 for an adult laid out, plus the board at the feet) and tucked (about 4, plus
+ *  the board), and the time to pull the knees in (s). The air can't add rotation, only the tuck speeds up what the
+ *  pop left, I_OPEN / I_TUCK = 3.4 times. A real knee tuck takes about 0.3 s, about the apex of a Realistic ollie
+ *  (0.27 to 0.33 s: vz / g); Drew's call is 0.2 s, a snappier feel, so a held ollie starts to flip just before the top. */
+export const I_OPEN = 16, I_TUCK = 4.7, TUCK_TIME = 0.2;
 export const FLIP_CLEAN = 35 * Math.PI / 180, FLIP_CRASH = 60 * Math.PI / 180;
 
 // ---- switch (FEAT-139), skating (FEAT-085), the press lean (FEAT-112)
@@ -203,9 +221,9 @@ export const SWITCH_GRIP = 0.04;
 /** FEAT-085 skating: mean push (m/s^2) from a standstill, top skating speed (m/s), steepest slope it works on (deg), stroke period (s) */
 export const SKATE_ACC = 4.2, SKATE_MAX = 5.5, SKATE_SLOPE = 10, SKATE_PERIOD = 0.6;
 
-/** FEAT-112 lean: ease time (s), grip lost and drag added (per m/s) on a full press, pop multiplier for an
- * ollie / nollie (|lean| > 0.5 at release), and the pitch rate it leaves (rad/s per unit lean) */
-export const LEAN_IN = 0.2, PRESS_GRIP = 0.35, PRESS_DRAG = 0.05, OLLIE_POP = 1.3, OLLIE_PITCH = 1.2;
+/** FEAT-112 lean: ease time (s), grip lost and drag added (per m/s) on a full press (an ollie / nollie is
+ * |lean| > 0.5 at release; its pop and pitch are JUMP_POP's) */
+export const LEAN_IN = 0.2, PRESS_GRIP = 0.35, PRESS_DRAG = 0.05;
 
 // ---- leaving the snow off lips and side hits (FEAT-277)
 /** the margin (m/s per step) by which the ground has to drop away faster than you fall before you leave
@@ -263,3 +281,33 @@ export const PB_LAND_WINDOW = 0.5;
 export const PB_POWDER = 0.55, PB_POWDER_FAST = 0.4, PB_POWDER_STEADY = 0.4, PB_POWDER_CALM = 0.25;
 /** FEAT-140: a press held shorter than this (s) ends without a report */
 export const PRESS_MIN_REPORT = 0.5;
+
+// ---- the crash slide (FEAT-288): a crashed body is a sliding object, a = g (sin a - mu cos a) - k v^2
+/** body-on-snow friction tumbling (the first CRASH_TUMBLE_T s, eased into sliding over CRASH_TUMBLE_EASE s)
+ *  and sliding once the body is flat on the snow. Starting values from the card, to tune, not measured */
+export const CRASH_MU_TUMBLE = 0.5, CRASH_MU_SLIDE = 0.3, CRASH_TUMBLE_T = 1.5, CRASH_TUMBLE_EASE = 0.5;
+/** friction by snow: groomed, powder, chop, ice, slush, rock (a body ploughs into powder and slush, skates on ice) */
+export const CRASH_MU_SNOW = { groomed: 1, powder: 1.4, chop: 1.15, ice: 0.55, slush: 1.3, rock: 1.5 };
+/** air and snow drag on the tumbling body (m/s^2 per (m/s)^2), so a slide can't run away */
+export const CRASH_DRAG = 0.01;
+/** speed cut once when a crash starts (a landing slam, a caught edge, a washout, a press slam; a trunk,
+ *  rock or wall hit keeps the bounce Collision.ts already takes) */
+export const CRASH_LOSS = 0.25;
+/** stay down until slower than this (m/s) and the crash's minimum time has passed */
+export const CRASH_UP_SPEED = 2;
+/** self-arrest: from CRASH_ARREST_T s the rider digs in, the extra braking ramping to CRASH_ARREST m/s^2
+ *  over a second; at CRASH_MAX s the slide stops whatever (no soft lock on a steep icy face) */
+export const CRASH_ARREST_T = 4, CRASH_ARREST = 8, CRASH_MAX = 6;
+/** fall line setting below Realistic (FEAT-134 Assisted 0.5, Off 0): the friction scales up by this share
+ *  of what is missing (Off is 1.6x), a shorter, more forgiving slide */
+export const CRASH_ASSIST_MU = 0.6;
+/** a crashed body leaves the snow where the ground steps down more than this (m) below where it falls in one step */
+export const CRASH_DROP = 0.3;
+/** a landing in the crash slide keeps 1 - CRASH_LAND_DRAG x the speed into the snow (m/s) of the slide; past
+ *  CRASH_ROLLOVER_SPEED (m/s) a rollover too sharp to follow lifts the body off the snow */
+export const CRASH_LAND_DRAG = 0.03, CRASH_ROLLOVER_SPEED = 3;
+/** a trunk, rock, wall or person hit in the slide: the share of the rest lost on a square hit, and the speed
+ *  into it (m/s) past which it counts as a wall hit (lastHit, hitSpeed) */
+export const CRASH_HIT_LOSS = 0.8, CRASH_WALL_SPEED = 3;
+/** the rider's body radius against trunks, rocks, walls and people (m), riding and crashed */
+export const BODY_R = 0.4;

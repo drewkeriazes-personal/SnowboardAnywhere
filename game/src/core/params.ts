@@ -55,6 +55,12 @@ export interface Params {
   noclumps: boolean;
   /** FEAT-292 ?clumpfar=<m>: how far the clump impostors reach at least (default 9000) */
   clumpfar: number | null;
+  /** BUG-107 ?lod0=<m>: how far the LOD0 branch-card trees reach at full tree density */
+  lod0: number | null;
+  /** FEAT-305 ?yetiodds=<0..1>: the chance a boundary rope crossing wakes the yeti (default 1/30; 1 every time, 0 never) */
+  yetiodds: number | null;
+  /** FEAT-307 ?people=center|sitters|off: every static-people spot a skier pair across the middle of its run, or a sitting snowboarder, or none (null: as planned) */
+  people: string | null;
 }
 
 export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOST_NAME || import.meta.env.VITE_HOSTED)): Params {
@@ -92,5 +98,8 @@ export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOS
     snowdepth: num('snowdepth'),
     noclumps: p.has('noclumps'),
     clumpfar: num('clumpfar'),
+    lod0: num('lod0'),
+    yetiodds: num('yetiodds') === null ? null : Math.max(0, Math.min(1, num('yetiodds')!)),
+    people: p.get('people'),
   };
 }

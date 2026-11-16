@@ -3,7 +3,7 @@ import type { Pack } from '../pack/Pack';
 import type { StandsMeta } from '../pack/types';
 import { decodeRGBA } from '../pack/MaskSet';
 import type { Collider } from '../sim/Collider';
-import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, setGhostBand, type FarAttrs, type StandGrid } from './trees';
+import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, setGhostBand, crownWidthsOf, kitUniforms, type FarAttrs, type StandGrid, type CrownWidthsMeta } from './trees';
 import { treelineOf } from '../pack/treeline';
 import { TreeShade } from './TreeShade';
 import { crownOverlap, type CrownHit } from './TreeBrush';
@@ -13,8 +13,8 @@ import { ClumpCanopy } from './trees/clumps';
  * Streams tree instances per 1 km cell around the rider and draws them with the FEAT-156 tree kit
  * (trees/): ten species, four variants each, and four LODs picked per tree by its distance from the
  * camera, with a dither crossfade at each edge:
- *   LOD0 branch cards  0..80 m      one InstancedMesh per species x variant, from the trees near the camera
- *   LOD1 cones         80..400 m    the same, from a wider ring
+ *   LOD0 branch cards  0..800 m     one InstancedMesh per species x variant, from the trees near the camera
+ *   LOD1 cones         b0..b1       the same, from a wider ring (80..400 m originally; none left on High and Medium, where LOD0 reaches the LOD1 edge)
  *   LOD2 crossed quads 400..1500 m  one mesh per cell (all species), from the baked impostor atlas
  *   impostors          1500..4500 m one mesh per cell, camera-facing quads from the same atlas
  * The two near sets are rebuilt on the CPU when the camera has moved part of their margin; the far
@@ -46,8 +46,19 @@ const FAR_REACH_K = 2;
  * them carry the forest (TerrainMaterial FOREST_DRAWN_FAR) instead of laying flat timber over the ground between.
  */
 const STEM_GROW = 2.2;
-/** LOD0 / LOD1 reach as a share of 80 / 400 m */
+// FEAT-298: a pack with crown widths holds the same canopy with wider crowns and fewer stems, so its crowns grow by
+// less: STEM_GROW / sqrt(crownWidths.crownArea), the detected crowns' drawn area over their area at the species radii
+/** LOD1 reach as a share of 400 m */
 let LOD_K = 1;
+/** BUG-107: how far the LOD0 branch cards reach (m), set by the graphics setting (`lod0ForDensity`, 200 m on Low) */
+let LOD0_REACH = 800;
+/** BUG-107: `?lod0=<m>` in place of the setting's reach, null without it */
+let LOD0_OVERRIDE: number | null = null;
+/**
+ * BUG-107: the LOD0 reach (m) for a Trees setting 0.25..1: High (1) 800, Medium (0.6) 400, the Low preset's 0.3 200, in
+ * straight lines between. Drew judged 800 m on High; up to 2026-11-13 it was 80 m, and the cones past it read as stand-ins.
+ */
+export function lod0ForDensity(k: number): number { return k >= 0.6 ? 400 + (k - 0.6) / 0.4 * 400 : 200 + Math.max(0, k - 0.3) / 0.3 * 200; }
 /** FEAT-158: false on the Low preset: LOD1 cones from the camera out, no LOD0 cards */
 let LOD0_ON = true;
 /** FEAT-167: bumped whenever the radii change, so update() redoes the LOD bands only then */
@@ -79,10 +90,12 @@ export function vegetationClumpBand(): { near: number; fade: number; far: number
 export function vegetationNearRadius(): number { return NEAR_RADIUS; }
 /** BUG-081: where the generated stems stop (m), past which the crowns grow to stand in for them */
 export function vegetationStemReach(): number { return NEAR_RADIUS + STAND_MID; }
-/** Headless / weak GPU: far fewer instances; `lod0` false draws LOD1 from the camera out (the Low preset). */
-export function setVegetationBudget(near: number, far: number, lod0 = true): void { LOW_REACH = true; NEAR_RADIUS = near; FAR_RADIUS = THIN_RADIUS = far; LOD_K = Math.max(0.5, Math.min(1, near / 1500)); LOD0_ON = lod0; bandsVersion++; }
+/** BUG-107: `?lod0=<m>`: the LOD0 reach on every setting */
+export function setLod0Reach(m: number): void { LOD0_OVERRIDE = Math.max(10, m); bandsVersion++; }
+/** Headless / weak GPU (the Low preset): far fewer instances; LOD0 to `lod0` m, 0 for none (LOD1 from the camera out, `?lowgfx`). */
+export function setVegetationBudget(near: number, far: number, lod0: number): void { LOW_REACH = true; NEAR_RADIUS = near; FAR_RADIUS = THIN_RADIUS = far; LOD_K = Math.max(0.5, Math.min(1, near / 1500)); LOD0_ON = lod0 > 0; LOD0_REACH = lod0; bandsVersion++; }
 /** Scale the near/far radii by a 0.25..1 density (1 = full 1500 m, thinning from 4500 m out to 9000 m); the LOD0 / LOD1 reach scales more gently. */
-export function setVegetationDensity(d: number): void { LOW_REACH = false; const k = Math.max(0.25, Math.min(1, d)); NEAR_RADIUS = 1500 * k; THIN_RADIUS = 4500 * k; FAR_RADIUS = THIN_RADIUS * FAR_REACH_K; LOD_K = 0.6 + 0.4 * k; LOD0_ON = true; bandsVersion++; }
+export function setVegetationDensity(d: number): void { LOW_REACH = false; const k = Math.max(0.25, Math.min(1, d)); NEAR_RADIUS = 1500 * k; THIN_RADIUS = 4500 * k; FAR_RADIUS = THIN_RADIUS * FAR_REACH_K; LOD_K = 0.6 + 0.4 * k; LOD0_ON = true; LOD0_REACH = lod0ForDensity(k); bandsVersion++; }
 
 /**
  * BUG-121: the impostors run on, thinning, this far (m) past FAR_RADIUS, and end over the last farFadeWidth of it. They
@@ -101,7 +114,9 @@ export function vegetationTreeEnd(): [number, number] {
 }
 /** the LOD band edges for the current setting (m from the camera), into `out`; out[0] is 0 without LOD0, out[3] is where the trees end */
 function edges(out: number[]): void {
-  const b2 = NEAR_RADIUS, b1 = Math.min(400 * LOD_K, b2 * 0.8), b0 = LOD0_ON ? Math.min(80 * LOD_K, b1 * 0.5) : 0;
+  // BUG-107: a LOD0 reach past the LOD1 edge takes that edge out with it (no cones left), up to 0.8 of the near radius
+  const b2 = NEAR_RADIUS, b0 = LOD0_ON ? Math.min(LOD0_OVERRIDE ?? LOD0_REACH, b2 * 0.8) : 0;
+  const b1 = Math.min(Math.max(400 * LOD_K, b0), b2 * 0.8);
   out[0] = b0; out[1] = b1; out[2] = b2; out[3] = treeEnd();
 }
 
@@ -243,6 +258,8 @@ export class Vegetation {
   private impostorsOn = true;
   private readonly cam = new THREE.Vector3(NaN, 0, 0);
   private readonly legacy: boolean;
+  /** FEAT-298: the pack's crown widths (record field 4 is the radius to draw, stands carry a width factor), or null */
+  private readonly widths: CrownWidthsMeta | null;
   /** the band edges in use and the bandsVersion they were taken at (-1: redo on the next update) */
   private readonly band = [80, 400, 1500, 4500];
   private bandSeen = -1;
@@ -279,6 +296,8 @@ export class Vegetation {
     setGhostBand(treelineOf(pack.meta)); // DATA-021: the uniform is shared, so each pack sets its own
     // packs from before DATA-020 have 0 conifer, 1 aspen, 2 krummholz only
     this.legacy = pack.meta.treeSpecies === undefined;
+    this.widths = crownWidthsOf(pack.meta);
+    kitUniforms.uKitCore.value = this.widths ? 1 : 0; // FEAT-298: module state, as the radii: this pack's own
     this.standCells = new Set(pack.meta.stands?.cells ?? []);
   }
 
@@ -332,7 +351,7 @@ export class Vegetation {
       this.kit.setBands(band[0], band[1], band[2], band[3], this.impostorsOn);
       this.kit.setThin(THIN_RADIUS);
       // only a pack with stands has stems to stand in for (older packs hold fill trees instead)
-      this.kit.setStemGrow(this.pack.meta.stands && STAND_K > 0 ? NEAR_RADIUS + STAND_MID : 1e8, STEM_GROW);
+      this.kit.setStemGrow(this.pack.meta.stands && STAND_K > 0 ? NEAR_RADIUS + STAND_MID : 1e8, STEM_GROW / Math.sqrt(this.widths?.crownArea ?? 1));
       for (const n of this.near) n.dirty = true;
     }
     const b0 = band[0], b1 = band[1], b2 = band[2];
@@ -574,7 +593,7 @@ export class Vegetation {
   private regenerate(cell: Cell, k: number): void {
     const solid = cell.col !== null;
     if (solid) this.setSolid(cell, false);
-    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k) : null;
+    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths) : null;
     if (stems && stems.length) { const d = new Float32Array(base.length + stems.length); d.set(base); d.set(stems, base.length); cell.data = d; }
     else cell.data = base;
     cell.gen = k;
@@ -696,7 +715,7 @@ export class Vegetation {
       const o = i * 6, x = d[o], y = d[o + 1], h = d[o + 3];
       const s = speciesFor(d[o + 5], x, y, this.legacy);
       sp[i] = s; va[i] = variantFor(s, x, y);
-      cr[i] = crownRadius(s, h, d[o + 4]);
+      cr[i] = crownRadius(s, h, d[o + 4], this.widths !== null);
       yaw[i] = s === 2 ? FLAG_YAW + (hash01(x, y, 11) - 0.5) * 0.7 : hash01(x, y, 5) * Math.PI * 2;
       // colour variation: about +-6% brightness and a slight hue shift
       const b = 0.94 + 0.12 * hash01(x, y, 13);

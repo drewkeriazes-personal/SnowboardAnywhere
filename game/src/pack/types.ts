@@ -1,4 +1,5 @@
 import type { Landmark } from '../world/Landmarks';
+import type { CrownWidthsMeta } from '../world/trees/widths';
 
 export interface HeightSetMeta {
   res: number;
@@ -78,6 +79,9 @@ export interface InstancesMeta {
   treeRing?: number;
   farTreeCount?: number;
   farTreeCells?: string[];
+  /** FEAT-298: crown width by openness (world/trees/widths.ts). Present: record field 4 of trees/ and farTrees/ is the
+   * crown radius to draw (m), and B of a stand image's lower half the cell's width factor x 100 (0 = 1). Absent in older packs */
+  crownWidths?: CrownWidthsMeta;
 }
 
 export interface PackMeta {
@@ -193,4 +197,6 @@ export interface Features {
   water: { name?: string; points: [number, number][]; z: number }[];
   peaks: PeakFeature[];
   labels: { name: string; kind: string; x: number; y: number; z: number }[];
+  /** FEAT-305 / MapPacker FEAT-313 (optional, not in packs yet): the ski area's rings, local metres: any winding; a ring inside an odd number of the others is a hole (out of bounds) */
+  boundary?: { name?: string | null; points: [number, number][] }[];
 }

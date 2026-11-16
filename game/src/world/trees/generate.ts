@@ -38,6 +38,12 @@ export class Builder {
   readonly idxInner: number[] = [];
   /** FEAT-157: the snow hold the next vertices get (times what `card` adds along the branch) */
   holdK = 1;
+  /**
+   * FEAT-298: (natural crown radius / height, core radius, lean x, lean z per unit height), all in the height frame;
+   * written as `kCore` in the crown-radius frame so the kit shader can keep the trunk at its natural width when a
+   * crown is drawn wider than its species. Null: no core (krummholz, snags, shrubs).
+   */
+  core: [number, number, number, number] | null = null;
   /** the crown's reference for the bent normals: radius and the height of its centre */
   normR = 0.15;
   normY = 0.5;
@@ -73,6 +79,9 @@ export class Builder {
     g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(this.uv), 2));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.col), 3));
     g.setAttribute('snowHold', new THREE.BufferAttribute(new Float32Array(this.hold), 1));
+    const kc = new Float32Array((p.length / 3) * 4), c = this.core;
+    if (c) for (let i = 0; i < kc.length; i += 4) { kc[i] = c[0]; kc[i + 1] = c[1] / radius; kc[i + 2] = (c[2] * top) / radius; kc[i + 3] = (c[3] * top) / radius; }
+    g.setAttribute('kCore', new THREE.BufferAttribute(kc, 4));
     g.setIndex(this.idx.concat(this.idxInner));
     g.userData.castCount = this.idx.length; // FEAT-158: the shadow pass draws this many indices
     g.computeBoundingSphere();
@@ -254,8 +263,8 @@ export function crownProfile(form: Species['form'], t: number): number {
     case 'douglas': return t < 0.12 ? 0.85 + 0.15 * t / 0.12 : Math.pow(1 - (t - 0.12) / 0.88, 0.8);
     case 'lodgepole': return Math.pow(Math.sin(Math.PI * Math.min(1, 0.12 + t * 0.95)), 0.7);
     case 'hemlock': return t < 0.1 ? 0.88 + 0.12 * t / 0.1 : Math.pow(1 - (t - 0.1) / 0.9, 0.85);
-    // BUG-129: a broad, rounded crown, widest a third of the way up, with a blunt top
-    case 'limber': return Math.pow(Math.sin(Math.PI * Math.min(1, 0.22 + t * 0.8)), 0.6);
+    // BUG-129: a broad crown, widest low, tapering to a blunt top (a quarter of the widest) rather than a dome
+    case 'limber': return t < 0.15 ? 0.8 + 0.2 * t / 0.15 : 0.25 + 0.75 * Math.pow(1 - (t - 0.15) / 0.85, 0.75);
     case 'hardwood': return Math.sqrt(Math.max(0, Math.sin(Math.PI * Math.min(1, 0.25 + 0.75 * t)))); // a rounded dome over the fork
     default: return 1 - t;
   }
@@ -317,7 +326,7 @@ function makePlan(sp: Species, variant: number): Plan {
     const n = Math.round(lerp(sp.whorls[0], sp.whorls[1], (variant + r()) / 4));
     const y0 = sp.crownBase + (form === 'lodgepole' ? (r() - 0.5) * 0.06 : 0), y1 = plan.crownTop - (plan.top === 'broken' ? 0 : 0.03);
     for (let i = 0; i < n; i++) {
-      if (i > 1 && i < n - 2 && r() < 0.08 + 0.04 * variant + (form === 'limber' ? 0.1 : 0)) continue; // an irregular gap
+      if (i > 1 && i < n - 2 && r() < 0.08 + 0.04 * variant + (form === 'limber' ? 0.16 : 0)) continue; // an irregular gap
       const t = (i + 0.3 + (r() - 0.5) * 0.5) / n;
       const y = lerp(y0, y1, t);
       const rr = R * crownProfile(form, clamp01(t)) * (form === 'limber' ? 0.7 + 0.6 * r() : 0.88 + 0.24 * r()); // limber: ragged
@@ -535,9 +544,11 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
       let rr = 0;
       for (const w of ws) if (w.y >= ya - 0.02 && w.y < yb + 0.02) rr = Math.max(rr, w.r);
       if (rr === 0) rr = R * crownProfile(form, ta);
-      const top = k === tiers - 1 ? (plan.top === 'broken' ? y1 : 1) : lerp(y0, y1, Math.min(1, tb + 0.18));
+      const top = k === tiers - 1 ? (plan.top === 'broken' ? y1 : form === 'limber' ? y1 : 1) : lerp(y0, y1, Math.min(1, tb + 0.18));
       const droop = form === 'spruce' ? 0.35 : form === 'fir' ? 0.12 : lodge ? 0 : form === 'hemlock' ? 0.3 : form === 'limber' ? -0.05 : 0.15;
-      starCone(b, ya - (form === 'spruce' ? 0.03 : 0.015), top, rr * (lodge ? 0.9 : 0.86), 5, r() * 6.28, droop, dense, c, 0.6, 0, 0, lodge && k === 0 ? 0.1 : 0.25);
+      // BUG-129: limber's top tier is a rounded blob, so its blunt top matches LOD0 (a cone always ends in a point)
+      if (form === 'limber' && k === tiers - 1) blob(b, 0, ya, 0, rr, (top - ya) * 0.6, 0.03, 5, r() * 6.28, dense, c);
+      else starCone(b, ya - (form === 'spruce' ? 0.03 : 0.015), top, rr * (lodge ? 0.9 : 0.86), 5, r() * 6.28, droop, dense, c, 0.6, 0, 0, lodge && k === 0 ? 0.1 : 0.25);
     }
   } else if (form === 'krummholz') {
     for (const cl of plan.clumps.slice(0, 3)) blob(b, cl.x + cl.r * 0.35, cl.y * 0.55, cl.z, cl.r * 1.2, cl.y * 0.45, cl.y * 0.55, 5, r() * 6.28, dense, c);
@@ -571,6 +582,9 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
   return b;
 }
 
+/** FEAT-298: the core a widened crown keeps at its natural width, in trunk radii (the base flare is 1.25) */
+const CORE_K = 1.6;
+
 export interface TreeGeometrySet {
   /** [species][variant] */
   lod0: THREE.BufferGeometry[][];
@@ -590,6 +604,11 @@ export function buildTreeGeometries(cellMean: number[], barkMean: number[]): Tre
     for (let v = 0; v < 4; v++) {
       const plan = makePlan(sp, v);
       const b0 = lod0(plan, cellMean, barkMean), b1 = lod1(plan, cellMean, barkMean);
+      if (sp.form !== 'krummholz' && sp.form !== 'snag') {
+        // FEAT-298: the trunk and the roots of the branches, round the leaned axis (applyLean)
+        const lx = Math.tan(plan.lean) * Math.cos(plan.leanAz), lz = Math.tan(plan.lean) * Math.sin(plan.leanAz);
+        b0.core = b1.core = [sp.radius, Math.min(0.5 * sp.radius, sp.trunk * CORE_K), lx, lz];
+      }
       t0max = Math.max(t0max, b0.triangles); t1max = Math.max(t1max, b1.triangles);
       a.push(b0.build(sp.radius)); c.push(b1.build(sp.radius));
     }

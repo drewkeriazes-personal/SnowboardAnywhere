@@ -10,6 +10,7 @@ export { kitUniforms, treeMaterial, treeDepthMaterial, newBand } from './materia
 export { SHRUBS, SHRUB_KINDS, WILLOW, JUNIPER, SAGE, YOUNG_CONIFER, OAK, buildShrubGeometries, type ShrubKind, type ShrubGeometrySet } from './shrubs';
 export { treeSnowState, winterDepth, setGhostBand, type TreeSnowState } from './snow';
 export { generateStems, type StandGrid } from './stands';
+export { crownWidthsOf, type CrownWidthsMeta } from './widths';
 
 /**
  * FEAT-156: the procedural tree kit. Builds the atlas, every species x variant x LOD geometry and the
@@ -17,7 +18,7 @@ export { generateStems, type StandGrid } from './stands';
  * once a renderer is given (`bake`): albedo, normals and (FEAT-157) the snow mask. Vegetation.ts draws with it; tools/treeshot.mjs renders it alone.
  *
  * LOD bands (m from the camera, scaled by the graphics setting through `setBands`):
- *   LOD0 cards 0..b0 (80), LOD1 cones b0..b1 (400), LOD2 crossed quads b1..b2 (1500), impostors b2..b3 (4500),
+ *   LOD0 cards 0..b0 (800 on High, BUG-107), LOD1 cones b0..b1 (400), LOD2 crossed quads b1..b2 (1500), impostors b2..b3 (4500),
  *   each edge a dither crossfade `fade(edge)` metres wide; the trees end over `farFadeWidth(b3)` before b3.
  */
 
@@ -227,11 +228,17 @@ export function farAttrs(n: number): FarAttrs {
     count: n,
   };
 }
-/** a far-LOD geometry: the template (crossed quads or the billboard) with these instances */
+/**
+ * a far-LOD geometry: a copy of the template (crossed quads or the billboard) with these instances.
+ * BUG-128: the template's index and vertex attributes are copied, not shared: a dropped cell's
+ * `geometry.dispose()` deletes the GL buffers of every attribute it holds, and the other cells'
+ * vertex array objects kept pointing at the deleted shared buffer (WebGL INVALID_OPERATION, the draw
+ * dropped). The template is a few vertices, so the copy costs nothing.
+ */
 export function farGeometry(template: THREE.InstancedBufferGeometry, a: FarAttrs): THREE.InstancedBufferGeometry {
   const g = new THREE.InstancedBufferGeometry();
-  g.index = template.index;
-  for (const name of Object.keys(template.attributes)) g.setAttribute(name, template.getAttribute(name));
+  g.index = template.index!.clone();
+  for (const name of Object.keys(template.attributes)) g.setAttribute(name, (template.getAttribute(name) as THREE.BufferAttribute).clone());
   g.setAttribute('iPos', a.iPos); g.setAttribute('iScale', a.iScale); g.setAttribute('iYaw', a.iYaw); g.setAttribute('iColor', a.iColor); g.setAttribute('iSpec', a.iSpec);
   g.instanceCount = a.count;
   return g;
