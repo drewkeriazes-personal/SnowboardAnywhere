@@ -1,6 +1,6 @@
 ---
 name: render-check
-description: Verify the game renders and rides correctly without a human watching: build the client, run the headless Playwright screenshot and ride test (game/tools/shoot.mjs), read the stats, and judge the screenshots. Use after any change to terrain, materials, vegetation, physics or the pack loader, and before committing client changes.
+description: "Verify the game renders and rides correctly without a human watching: build the client, run the headless Playwright screenshot and ride test (game/tools/shoot.mjs), read the stats, and judge the screenshots. Use after any change to terrain, materials, vegetation, physics or the pack loader, and before committing client changes."
 ---
 
 # Headless render and ride check
