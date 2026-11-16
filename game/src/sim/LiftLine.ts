@@ -33,6 +33,8 @@ export interface LiftLine {
 export interface LiftNetwork<L extends LiftLine = LiftLine> {
   /** Nearest lift whose loading point is within `maxDist` m of a point, or null. */
   nearestBoardable(x: number, y: number, maxDist?: number): L | null;
+  /** FEAT-323: every lift whose loading point is within `maxDist` m of a point, nearest first. */
+  boardableNear(x: number, y: number, maxDist: number): L[];
   rideLength(l: L): number;
   /** Rider position (pack coords) at distance `up` metres from the loading point along the line. */
   seatAt(l: L, up: number, out: Vec3): Vec3;

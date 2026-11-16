@@ -299,9 +299,9 @@ export class Rider {
   }
   /** off the board or getting on or off it: no board physics, tracks or spray */
   get unstrapped(): boolean { return this.onFoot || this.strapState !== 'none'; }
-  /** nearly stopped on the snow, so E (interact) unstraps */
+  /** nearly stopped on the snow, so the strap key (B, anywhere) or E (away from lifts) unstraps */
   get canUnstrap(): boolean { return !this.onFoot && this.strapState === 'none' && this.onGround && this.crashed <= 0 && this.speed < UNSTRAP_SPEED; }
-  /** standing still on foot, so B straps in */
+  /** standing still on foot, so the strap key (B) or E straps in */
   get canStrapIn(): boolean { return this.onFoot && this.strapState === 'none' && this.onGround && this.speed < STRAP_SPEED; }
 
   /** The board key: unstrap or strap in. Returns '' when it started, else why not ('fast', 'moving', 'air', 'busy'). */

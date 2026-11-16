@@ -20,6 +20,8 @@ export interface Settings {
   playlist: string;
   /** 2 once the Lofi hip-hop default has been applied to a save made while Ska-punk was the default */
   playlistDefault?: number;
+  /** FEAT-323: 2 once a saved keymap got the strap key's new defaults (B, L3) */
+  strapKeyDefault?: number;
   quality: Quality;
   shadows: boolean;
   /** cascaded shadow maps (experimental, off by default: turned the terrain black on Drew's GPU); off = single shadow camera around the rider */
@@ -125,7 +127,7 @@ export const OUTFIT_LENS: Record<string, LensSetting> = {
 export const DEFAULT_KEYS: Record<string, string[]> = {
   left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], tuck: ['KeyW', 'ArrowUp'], brake: ['KeyS', 'ArrowDown'], jump: ['Space'],
   grab: ['ShiftLeft', 'ShiftRight'], squat: [], pressNose: ['KeyQ'], pressTail: ['KeyZ'], skate: ['KeyX'],
-  lift: ['KeyE'], board: [], glance: ['KeyG'], look: ['AltLeft', 'Mouse2'],
+  lift: ['KeyE'], board: ['KeyB'], glance: ['KeyG'], look: ['AltLeft', 'Mouse2'],
   camera: ['KeyC'], map: ['KeyM'], piste: ['KeyP'], track: ['KeyN'], trial: ['KeyT'], restart: ['KeyR'], replay: ['KeyK'], rewind: ['Backspace'],
   boost: ['KeyF'], fly: ['Backquote'],
 };
@@ -137,7 +139,7 @@ const OLD_DEFAULT_KEYS: Record<string, string> = {
 /** the Controls rows, grouped by when each action applies */
 export const KEY_GROUPS: [string, [string, string][]][] = [
   ['Board', [['left', 'Steer left'], ['right', 'Steer right'], ['tuck', 'Tuck (front flip in the air)'], ['brake', 'Brake (backflip in the air)'], ['jump', 'Jump (hold, release)'], ['grab', 'Squat on the snow / grab in the air / sprint on foot'], ['squat', 'Squat only (optional)'], ['pressNose', 'Nose press (hold)'], ['pressTail', 'Tail press (hold)'], ['skate', 'Skate on the flat (hold)']]],
-  ['Everywhere', [['lift', 'Interact: ride lift, skip, strap in or out'], ['board', 'Strap in or out only (optional)'], ['glance', 'Look behind (hold)'], ['look', 'Free look (hold, move mouse)']]],
+  ['Everywhere', [['lift', 'Interact: ride lift, skip, strap in or out away from lifts'], ['board', 'Strap in or out (anywhere, by a lift too)'], ['glance', 'Look behind (hold)'], ['look', 'Free look (hold, move mouse)']]],
   ['Camera and UI', [['camera', 'Camera'], ['map', 'Map'], ['piste', 'Piste lines'], ['track', 'Next track'], ['trial', 'Go to nearest time trial'], ['restart', 'Restart (hold)'], ['replay', 'Replay viewer'], ['rewind', 'Rewind (hold)'], ['fly', 'Free fly']]],
   ['Outrun', [['boost', 'Boost']]],
 ];
@@ -162,8 +164,20 @@ export function migrateKeys(raw: Record<string, unknown> | undefined): { keys: R
   return { keys, custom: true };
 }
 
+/**
+ * FEAT-323: give a saved keymap and controller map the strap key's defaults (DEFAULT_KEYS.board, DEFAULT_PAD.board)
+ * when its strap slots are empty and nothing else uses them (the controller's L3 is shared with Outrun's boost,
+ * which takes it while a chase runs).
+ */
+export function addStrapDefaults(keys: Record<string, string[]>, padKeys: Record<string, number[]>): void {
+  const keyUsed = (c: string) => Object.entries(keys).some(([a, v]) => a !== 'board' && v.includes(c));
+  if (!keys.board?.length) keys.board = DEFAULT_KEYS.board.filter((c) => !keyUsed(c));
+  const padUsed = (b: number) => Object.entries(padKeys).some(([a, v]) => a !== 'board' && a !== 'boost' && v.includes(b));
+  if (!padKeys.board?.length) padKeys.board = DEFAULT_PAD.board.filter((b) => !padUsed(b));
+}
+
 const DEFAULTS: Settings = {
-  v: 1, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'high', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 1, forestDensity: 1, pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+  v: 1, strapKeyDefault: 2, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'high', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 1, forestDensity: 1, pixelRatio: Math.min(2, window.devicePixelRatio || 1),
   fov: 68, targetFps: 60, speedFov: true, camShake: true, speedLines: true, invertSteer: false, camera: 'chase', seeThroughTrees: true, fpVignette: true, goggleStrength: 0.6, goggleLens: 'rose', lensStrength: 1, fpShake: 0.3, showMarkers: true, showLabels: true, roadsOnSnow: false, liftLines: true, timeTrials: false, pressBalance: 'on', outfit: { ...OUTFIT_PRESETS['Classic red'] }, discipline: 'board', stance: 'regular', fallLine: 'real', jumpMode: 'real', timeOfDay: 'pack', month: 2, units: 'imperial', keys: migrateKeys(undefined).keys,
   outrun: { difficulty: 'normal', escape: 'base', gentle: false },
   padKeys: migratePadKeys(undefined), rumble: true, vibration: 0.8, padDead: 0.18, padTrigDead: 0.3, lookSens: 1, invertLookY: false,
@@ -188,7 +202,10 @@ export function loadSettings(): Settings {
       if (!['files', 'builtin', 'off'].includes(raw.musicSource)) raw.musicSource = 'files';
       delete raw.autoQuality; // FEAT-284: auto quality is gone; old saves drop the field
       const mk = migrateKeys(raw.keys);
-      return { ...DEFAULTS, ...raw, keys: mk.keys, keysNote: raw.keysNote ?? (mk.custom ? true : undefined), padKeys: migratePadKeys(raw.padKeys), outfit: { ...DEFAULTS.outfit, ...(raw.outfit ?? {}) }, outrun: { ...DEFAULTS.outrun, ...(raw.outrun ?? {}) } };
+      const padKeys = migratePadKeys(raw.padKeys);
+      // FEAT-323: the strap key had no default before (E did both); give a saved map B and L3 once, where they are free
+      if (raw.strapKeyDefault !== 2) { addStrapDefaults(mk.keys, padKeys); raw.strapKeyDefault = 2; }
+      return { ...DEFAULTS, ...raw, keys: mk.keys, keysNote: raw.keysNote ?? (mk.custom ? true : undefined), padKeys, outfit: { ...DEFAULTS.outfit, ...(raw.outfit ?? {}) }, outrun: { ...DEFAULTS.outrun, ...(raw.outrun ?? {}) } };
     }
     // migrate the older separate keys
     const s = { ...DEFAULTS, keys: migrateKeys(undefined).keys, padKeys: migratePadKeys(undefined), outfit: { ...DEFAULTS.outfit }, outrun: { ...DEFAULTS.outrun } };
