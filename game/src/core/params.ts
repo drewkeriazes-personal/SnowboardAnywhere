@@ -63,6 +63,8 @@ export interface Params {
   yetiodds: number | null;
   /** FEAT-307 ?people=center|sitters|off: every static-people spot a skier pair across the middle of its run, or a sitting snowboarder, or none (null: as planned) */
   people: string | null;
+  /** FEAT-323 ?boardRange=<m>: the lift boarding zone radius (default BOARD_RANGE, 28 m) */
+  boardRange: number | null;
 }
 
 export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOST_NAME || import.meta.env.VITE_HOSTED)): Params {
@@ -104,5 +106,6 @@ export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOS
     shadowahead: num('shadowahead'),
     yetiodds: num('yetiodds') === null ? null : Math.max(0, Math.min(1, num('yetiodds')!)),
     people: p.get('people'),
+    boardRange: num('boardRange') !== null && num('boardRange')! > 0 ? num('boardRange') : null,
   };
 }

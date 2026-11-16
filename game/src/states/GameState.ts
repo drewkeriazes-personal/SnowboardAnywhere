@@ -5,9 +5,9 @@ import type { TouchControls } from '../ui/TouchControls';
 /**
  * FEAT-162: the session's states. `loading` until the start area has streamed in; `attract` is the main menu
  * over the live resort; `riding`; `rewind` while the rewind is held; `paused` (the pause menu); `replay` (the
- * replay viewer, K); `map` (the full resort map, M).
+ * replay viewer, K); `map` (the full resort map, M); `liftpick` (FEAT-323: the lift picker, E with two or more lifts in range).
  */
-export type GameStateName = 'loading' | 'attract' | 'riding' | 'rewind' | 'paused' | 'replay' | 'map';
+export type GameStateName = 'loading' | 'attract' | 'riding' | 'rewind' | 'paused' | 'replay' | 'map' | 'liftpick';
 export type GameState = State<GameStateName>;
 export type GameStates = StateMachine<GameStateName>;
 

@@ -4,12 +4,16 @@ import type { Collider } from './Collider';
 import { LOAD_OFFSET, type LiftLine, type LiftNetwork, type Vec3 } from './LiftLine';
 
 /**
- * Riding a lift back up. Near a bottom terminal and slow, pressing the board key puts the rider
- * on a chair; the rider then follows the cable at chair speed. Pressing the key again skips to
+ * Riding a lift back up. In a bottom terminal's boarding zone and slow, pressing E puts the rider
+ * on a chair (FEAT-323: with two or more lifts in range, on the one picked from a list); the rider then follows the cable at chair speed. Pressing the key again skips to
  * the top; lifts run at RIDE_SPEEDUP x real speed and holding the tuck key multiplies that by FAST_FORWARD. At the top the rider is placed a few metres past the terminal, facing downhill.
  */
 export const PROMPT_RANGE = 60; // m: show the boarding card
-export const BOARD_RANGE = 14; // m: can press E
+/**
+ * FEAT-323: the boarding zone, metres from a lift's loading point where E boards (14 m before, doubled).
+ * The tuning knob: `?boardRange=<m>` overrides it for a session (LiftRide.boardRange) to try other sizes.
+ */
+export const BOARD_RANGE = 28;
 export const BOARD_SPEED = 6; // m/s
 export const RIDE_SPEEDUP = 4; // real lift speeds feel far too slow in a game: ride at 4x
 export const FAST_FORWARD = 5; // extra multiplier while the tuck key is held (20x real)
@@ -32,6 +36,10 @@ export class LiftRide<L extends LiftLine = LiftLine> {
   get airborneRide(): boolean { return !!this.lift && (this.lift.kind === 'chair' || this.lift.kind === 'gondola'); }
   /** true when `nearby` is close and slow enough to board */
   canBoard = false;
+  /** FEAT-323: the boarding zone radius in metres (BOARD_RANGE, or ?boardRange=) */
+  boardRange = BOARD_RANGE;
+  /** FEAT-323: every lift whose boarding zone the rider is in, nearest first; two or more open the lift picker on E */
+  choices: L[] = [];
   /** reason shown when in range but not boardable: 'fast' | 'air' | '' */
   blocker: 'fast' | 'air' | '' = '';
   private readonly seat: Vec3 = { x: 0, y: 0, z: 0 };
@@ -49,15 +57,19 @@ export class LiftRide<L extends LiftLine = LiftLine> {
 
   update(rider: Rider, dt: number, boardPressed: boolean, fastHeld = false): boolean {
     if (!this.lift) {
-      this.nearby = this.lifts.nearestBoardable(rider.x, rider.y, PROMPT_RANGE);
+      // FEAT-323: every lift whose zone the rider is in (FEAT-073: with a lift-line maze built, only inside
+      // its corral or at the loading line), nearest first; else the nearest within the prompt range
+      const gate = this.gate;
+      this.choices = this.lifts.boardableNear(rider.x, rider.y, this.boardRange).filter((l) => !gate || gate(l, rider.x, rider.y));
+      this.nearby = this.choices[0] ?? this.lifts.nearestBoardable(rider.x, rider.y, PROMPT_RANGE);
       this.nearbyDist = this.nearby ? Math.hypot(this.nearby.bottom[0] - rider.x, this.nearby.bottom[1] - rider.y) : Infinity;
-      // FEAT-073: with a lift-line maze built, only inside the corral or at the loading line
-      const inZone = this.nearbyDist < BOARD_RANGE && (!this.gate || !this.nearby || this.gate(this.nearby, rider.x, rider.y));
+      const inZone = this.choices.length > 0;
       this.blocker = !inZone ? '' : !rider.onGround ? 'air' : rider.speed > BOARD_SPEED ? 'fast' : '';
       this.canBoard = inZone && this.blocker === '';
       // loading maze: coast to a stop inside the zone
       if (inZone && rider.onGround && rider.speed > 0.5) { const f = Math.exp(-dt * 1.2); rider.vx *= f; rider.vy *= f; }
-      if (boardPressed && this.canBoard && this.nearby) this.board(rider, this.nearby);
+      // two or more lifts in range: E opens the lift picker (states/LiftPickState.ts), which boards with boardLift
+      if (boardPressed && this.canBoard && this.nearby && this.choices.length === 1) this.board(rider, this.nearby);
       return this.lift !== null;
     }
     const len = this.lifts.rideLength(this.lift);
@@ -71,10 +83,18 @@ export class LiftRide<L extends LiftLine = LiftLine> {
     return true;
   }
 
+  /** FEAT-323: board a lift picked from `choices` (the lift picker). False when it is no longer in reach. */
+  boardLift(rider: Rider, l: L): boolean {
+    if (this.lift || !this.canBoard || !this.choices.includes(l)) return false;
+    this.board(rider, l);
+    return true;
+  }
+
   private board(rider: Rider, l: L): void {
     rider.strapInNow(); // walked up on foot: strap in as you load
     this.lift = l;
     this.up = 0;
+    this.choices = []; this.canBoard = false;
     rider.vx = rider.vy = rider.vz = 0; rider.speed = 0; rider.skid = 0; rider.crashed = 0;
     this.place(rider);
   }
