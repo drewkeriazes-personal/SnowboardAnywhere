@@ -46,6 +46,8 @@ page.on('pageerror', (e) => pageErrors.push(`pageerror: ${e.message}`));
 await page.goto(`http://localhost:${server.address().port}/index.html?pack=${pack}&headless&lowgfx&weather=clear&time=12${process.env.SHOT_QUERY ?? ''}`);
 await page.waitForFunction(() => window.__step, null, { timeout: 120000 });
 page.setDefaultTimeout(600000);
+// BUG-078: the chairs move with the sim time, which depends on how many settle frames ran: hold them at 0
+await page.evaluate(() => { if (window.__sim.lifts) window.__sim.lifts.carrierTime = 0; });
 const spawn = await page.evaluate(() => { const r = window.__sim.rider; return { x: r.x, y: r.y, heading: r.heading }; });
 
 /**

@@ -205,6 +205,8 @@ async function shoot(browser, sd, cam, pack, worldZ, outFile) {
   await page.goto(`${srv.base}/index.html?pack=${pack}&headless${cam.chase ? '' : '&cam=eye'}&x=${cam.x}&y=${cam.y}&h=${cam.h}${sd.query}${process.env.SHOT_QUERY ?? ''}`);
   await page.waitForFunction(() => window.__step, null, { timeout: 180000 });
   page.setDefaultTimeout(300000);
+  // BUG-078: hold the chairs at sim time 0 so both sides' lifts match (builds before BUG-078 ignore it)
+  await page.evaluate(() => { if (window.__sim?.lifts) window.__sim.lifts.carrierTime = 0; });
   await page.evaluate(() => window.__step(1, 1 / 60));
   const driver = await page.evaluate(() => (typeof window.__sim?.eyeAt === 'function' ? 'eye' : window.__sim?.cam?.updateFree ? 'free' : 'none'));
   if (driver === 'none') throw new Error(`${sd.label}: this build exposes neither __sim.eyeAt nor a free camera`);

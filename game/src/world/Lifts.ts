@@ -3,6 +3,7 @@ import type { LiftFeature } from '../pack/types';
 import type { Pack } from '../pack/Pack';
 import type { Ground } from '../terrain/Terrain';
 import { LOAD_OFFSET, rideLength, type LiftKind, type LiftLine, type LiftNetwork, type Vec3 } from '../sim/LiftLine';
+import { hash01 } from './slowSignSites';
 import { towerGeometry, towerHeadGeometry, footingGeometry, chairGeometry, gondolaGeometry, surfaceHangerGeometry, terminalGeometry, carpetGeometry } from './LiftModels';
 
 /**
@@ -266,7 +267,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     group.add(carriers);
     const riderDrop = kind === 'gondola' ? 3.3 : kind === 'surface' ? 0 : SEAT_DROP;
     const towerUp = towers.map((t) => Math.hypot(t[0] - lo[0], t[1] - lo[1])).sort((p, q) => p - q);
-    const rt: LiftRuntime = { feature: lift, kind, speed: SPEEDS[kind], riderDrop, curve: pts, cum, length, carriers, nCarriers, spacing, offset: Math.random() * spacing, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp };
+    const rt: LiftRuntime = { feature: lift, kind, speed: SPEEDS[kind], riderDrop, curve: pts, cum, length, carriers, nCarriers, spacing, offset: liftPhase(lift) * spacing, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp };
     (rt as any).lateralOff = lateralOff;
     return { rt, group };
   }
@@ -416,6 +417,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
 
   /** Move the carriers. `hide`: the rider's own chair position; the line's carrier nearest it is hidden. */
   update(time: number, hide: THREE.Vector3 | null = null): void {
+    if (this.carrierTime !== null) time = this.carrierTime;
     this.time = time;
     this.reveal();
     for (const l of this.lifts) this.placeCarriers(l, time, hide);
@@ -433,6 +435,8 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     }
   }
 
+  /** BUG-078: the still tools (cishot.mjs, compare.mjs) set this so the carriers sit at that time whatever the sim time; null: the sim time */
+  carrierTime: number | null = null;
   /** sim time of the last update(), for carriers placed by a rebuild */
   private time = 0;
   private placeCarriers(l: LiftRuntime, time: number, hide: THREE.Vector3 | null): void {
@@ -455,6 +459,12 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     if (hideI >= 0) { this.m.makeScale(0, 0, 0); l.carriers.setMatrixAt(hideI, this.m); }
     l.carriers.instanceMatrix.needsUpdate = true;
   }
+}
+
+/** BUG-078: where a lift's carriers start along their spacing, 0..1, from its name and bottom station, so they sit in the same place on every load */
+function liftPhase(lift: LiftFeature): number {
+  const st = lift.stations[0];
+  return hash01(`${lift.name ?? ''}|${lift.type}|${st ? st.map((v) => Math.round(v)).join(',') : ''}`);
 }
 
 /** Canvas texture: rounded label with a lift glyph and the name. */
