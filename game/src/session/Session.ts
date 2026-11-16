@@ -37,7 +37,7 @@ import { KeyLabels } from '../ui/KeyLabels';
 import { Toast } from '../ui/Toast';
 import { SceneRender } from '../world/SceneRender';
 import { SunClock } from '../world/SunClock';
-import { warmUp as warmUpWorld } from './warmUp';
+import { warmUp as warmUpWorld, streamUntilSettled } from './warmUp';
 import { saveShot as saveShotFile, saveTake as saveTakeFile, saveMenuShot } from './devSaves';
 import { askMenuShot } from '../ui/MenuShotForm';
 import { buildWorld } from './World';
@@ -495,6 +495,8 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         installSimDebug({ events, ghosts, menu, shot, rider, riderView, controls, padFx, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, people: world.people, map, liftRide, lifts, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
           setWeather: (w: string | null) => { weatherOverride = parseWeather(w) ?? initialWeather; applySettings(settings, 'weather'); },
+          /** shoot.mjs (FEAT-087): stream the scene round the camera until nothing is loading or building, without stepping the sim */
+          settleStreaming: (timeoutMs = 60000) => streamUntilSettled(world, pack, warmFocus, cam.camera, timeoutMs),
           /** snowcheck.mjs: apply a settings field changed in place (for example 'newSnow') as the settings panel would */
           applySettings: (what: string) => applySettings(settings, what),
           /** shoot_attract.mjs: draw the menu shot's conditions, from its start (as the live menu does) */
