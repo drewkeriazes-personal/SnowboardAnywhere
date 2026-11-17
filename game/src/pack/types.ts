@@ -45,6 +45,21 @@ export interface CoverMeta {
   levels: CoverLevelMeta[];
 }
 
+/**
+ * FEAT-330: the canopy score grid (MapPacker FEAT-331), `canopy.png` at the pack root: 8-bit greyscale, byte / 255 =
+ * canopy 0..1. Same frame and orientation as a cover level: lower-left corner in pack metres, row 0 the north edge.
+ */
+export interface CanopyMeta {
+  /** cell size (m), 10 */
+  res: number;
+  minX: number;
+  minY: number;
+  /** image size in pixels */
+  w: number;
+  h: number;
+  file: string;
+}
+
 /** FEAT-074: the stand images (MapPacker-SnowboardAnywhere/pipeline/stands.py) */
 export interface StandsMeta {
   /** 4 m cells, `size` per tree cell side */
@@ -108,6 +123,8 @@ export interface PackMeta {
   moguls?: MaskMeta;
   /** FEAT-153: forest cover levels for the terrain at a distance; absent in older packs */
   cover?: CoverMeta;
+  /** FEAT-330: canopy score grid for the darkening under dense glades; absent = no canopy anywhere (no darkening) */
+  canopy?: CanopyMeta;
   instances?: InstancesMeta;
   /** DATA-020: 2 = tree species ids 0..7, FEAT-233: 3 = 0..9 (see MapPacker's docs/pack-format.md); absent = 0..2 */
   treeSpecies?: number;
