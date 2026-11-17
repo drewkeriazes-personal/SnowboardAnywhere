@@ -16,7 +16,8 @@ import { finestChunkRes, gridOrigin } from './exposure';
 const CACHE_MAX = 64;
 
 export class DrawnGround {
-  private readonly cache = new Map<string, number>();
+  private readonly cache = new Map<number, Map<number, number>>(); // res -> (cell key -> bump)
+  private cacheSize = 0;
   private cacheScale = NaN;
   private cacheCreep = NaN;
   constructor(private readonly pack: Pack) {}
@@ -29,11 +30,11 @@ export class DrawnGround {
     const res = finestChunkRes(pack, x, y);
     if (res > MOGUL_MAX_RES) return -exact; // drawn without bump geometry
     if (pack.mogulScale !== this.cacheScale || pack.mogulCreep !== this.cacheCreep) {
-      this.cache.clear(); this.cacheScale = pack.mogulScale; this.cacheCreep = pack.mogulCreep;
+      this.cache.clear(); this.cacheSize = 0; this.cacheScale = pack.mogulScale; this.cacheCreep = pack.mogulCreep;
     }
     const [ox, oy] = gridOrigin(pack);
     const fi = (x - ox) / res, fj = (y - oy) / res, i = Math.floor(fi), j = Math.floor(fj), tx = fi - i, ty = fj - j;
-    const v = (di: number, dj: number) => this.vertex(ox + (i + di) * res, oy + (j + dj) * res, res);
+    const v = (di: number, dj: number) => this.vertex(i + di, j + dj, ox, oy, res);
     const a = v(0, 0), d = v(1, 1);
     if (exact === 0 && a === 0 && d === 0 && v(1, 0) === 0 && v(0, 1) === 0) return 0;
     const drawn = tx >= ty ? a * (1 - tx) + v(1, 0) * (tx - ty) + d * ty : a * (1 - ty) + v(0, 1) * (ty - tx) + d * tx;
@@ -47,13 +48,22 @@ export class DrawnGround {
     return g + this.bumpError(x, y);
   }
 
-  private vertex(x: number, y: number, res: number): number {
-    const key = `${res}/${x}/${y}`;
-    let h = this.cache.get(key);
+  /** Bump height at grid vertex (gi, gj); numeric keys so a lookup allocates nothing. */
+  private vertex(gi: number, gj: number, ox: number, oy: number, res: number): number {
+    let m = this.cache.get(res);
+    if (!m) { m = new Map(); this.cache.set(res, m); }
+    const key = (gi + 1048576) * 2097152 + (gj + 1048576);
+    let h = m.get(key);
     if (h !== undefined) return h;
-    h = this.pack.bumpAt(x, y);
-    if (this.cache.size >= CACHE_MAX) this.cache.delete(this.cache.keys().next().value!);
-    this.cache.set(key, h);
+    h = this.pack.bumpAt(ox + gi * res, oy + gj * res);
+    if (this.cacheSize >= CACHE_MAX) {
+      for (const mm of this.cache.values()) {
+        const k = mm.keys().next();
+        if (!k.done) { mm.delete(k.value); this.cacheSize--; break; }
+      }
+    }
+    m.set(key, h);
+    this.cacheSize++;
     return h;
   }
 }
