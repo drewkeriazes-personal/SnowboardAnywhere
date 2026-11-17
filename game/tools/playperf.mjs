@@ -2,7 +2,7 @@
 // main menu's Ride button to riding, in a browser with vsync and the frame-rate cap off, so the frame interval is
 // what the CPU and GPU allow, not the display. Nothing is read back from the canvas. Off screen (headless by
 // default), so a window in front of it cannot throttle it.
-// node tools/playperf.mjs [pack] [--at x,y,headingDeg] [--seconds 10] [--ablate] [--vsync] [--profile <out.json>] [--heap <out.json>] [--gpu | --headed]
+// node tools/playperf.mjs [pack] [--at x,y,headingDeg] [--seconds 10] [--ablate] [--variants <file.json>] [--vsync] [--profile <out.json>] [--heap <out.json>] [--gpu | --headed]
 //   (after `npx vite build`; for readable names in --profile build with `npx vite build --minify false --outDir dist-prof`
 //    and run with SHOT_DIST=dist-prof)
 // Two windows, each after a restart at the spot once nothing is loading: "stand" (no input; the rider may slide)
@@ -25,7 +25,7 @@ import { DIST, PACKS } from './paths.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : def);
-const valued = new Set(['--at', '--seconds', '--profile', '--heap']);
+const valued = new Set(['--at', '--seconds', '--profile', '--heap', '--variants']);
 const positional = args.filter((a, i) => !a.startsWith('--') && !valued.has(args[i - 1]));
 const pack = positional[0] ?? 'vail';
 const seconds = Number(opt('--seconds', 10));
@@ -166,6 +166,42 @@ if (args.includes('--ablate')) {
   ablation.rows.push({ group: '(shadow map pass)', ms: +(base.median - ns.median).toFixed(1), calls: base.calls - ns.calls, tris: base.tris - ns.tris });
   ablation.rows.sort((a, b) => b.ms - a.ms);
 }
+// FEAT-236 --variants <file.json>: at the same eye pose, the frame with the terrain's fragment shader patched, one
+// variant at a time: [{ "label": "nobump", "frag": [["from", "to"], ...] }, ...] (every "from" must be in the shader).
+// Each variant is timed between two runs of the unpatched shader, and its cost is the difference from their mean.
+let termRows = null;
+const variantsFile = opt('--variants', null);
+if (variantsFile) {
+  const variants = JSON.parse(fs.readFileSync(variantsFile, 'utf8'));
+  if (!ablation) {
+    await page.evaluate(() => { const s = window.__sim, [x, y] = s.map.spawnPos, n = s.pack.groundNormal(x, y); s.eyeAt(x, y, Math.atan2(n[0], n[1]) * 180 / Math.PI, -8, 75, 1.7); });
+    await settle(); await page.waitForTimeout(1500);
+  }
+  const patch = (v) => page.evaluate((v) => {
+    const m = window.__sim.terrain.material;
+    m.userData.obc0 ??= m.onBeforeCompile;
+    window.__patchMissing = [];
+    m.onBeforeCompile = (sh, r) => {
+      m.userData.obc0(sh, r);
+      for (const [a, b] of v?.frag ?? []) { if (!sh.fragmentShader.includes(a)) window.__patchMissing.push(a); sh.fragmentShader = sh.fragmentShader.split(a).join(b); }
+    };
+    m.customProgramCacheKey = () => (v ? `termperf ${v.label}` : '');
+    m.needsUpdate = true;
+  }, v);
+  const quickT = async () => (await measure(3000)).frame.median;
+  termRows = [];
+  await patch(null); await page.waitForTimeout(1000);
+  let before = await quickT();
+  for (const v of variants) {
+    await patch(v); await page.waitForTimeout(1500);
+    const ms = await quickT();
+    const missing = await page.evaluate(() => window.__patchMissing);
+    await patch(null); await page.waitForTimeout(1000);
+    const after = await quickT();
+    termRows.push({ label: v.label, ms, base: (before + after) / 2, missing });
+    before = after;
+  }
+}
 // garbage does not count: collect it before the heap read
 const heapBeforeGC = await page.evaluate(() => Math.round(performance.memory.usedJSHeapSize / 1048576));
 await cdpHeap.send('HeapProfiler.collectGarbage');
@@ -259,6 +295,10 @@ if (held) {
   for (const r of held.self.slice(0, 20)) console.log(`  ${String(r.MB).padStart(6)} MB  ${r.site}`);
   console.log('by the game code under it (top 25):');
   for (const r of held.game.slice(0, 25)) console.log(`  ${String(r.MB).padStart(6)} MB  ${r.site}`);
+}
+if (termRows) {
+  console.log('terrain shader variants (eye camera at the spot, 3 s each, against the unpatched shader just before and after):');
+  for (const r of termRows) console.log(`  ${String((r.base - r.ms).toFixed(1)).padStart(5)} ms saved  (${f(r.ms)} against ${f(r.base)})  ${r.label}${r.missing.length ? `  NOT APPLIED: ${r.missing.map((m) => m.slice(0, 50)).join(' | ')}` : ''}`);
 }
 if (top) { console.log('tuck, JavaScript self time (top 15):'); for (const t of top.slice(0, 15)) console.log(`  ${String(t.ms).padStart(6)} ms ${String(t.pct).padStart(5)}%  ${t.fn}`); }
 console.log('console issues:', warnings.length);

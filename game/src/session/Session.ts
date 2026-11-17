@@ -61,6 +61,8 @@ import { Modes } from '../modes/Modes';
 
 /** FEAT-105: the New snow setting as a snow cover amount */
 const NEW_SNOW: Record<string, number> = { none: 0, dusting: 0.25, '6in': 0.6, powder: 1 };
+/** FEAT-237 ?shadowtype=: the sun shadow filters to A/B */
+const SHADOW_TYPES: Record<string, THREE.ShadowMapType> = { basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, soft: THREE.PCFSoftShadowMap };
 
 /** How a session starts: in the main menu (attract) or riding, with the loading screen when there is no menu over it. */
 export interface SessionOpts { menu: MainMenu | null; attract: boolean; loading: LoadingScreen | null; attractFiles: AttractManifest; shots: AttractShot[] }
@@ -190,8 +192,13 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       const wantSize = (s.csmExperimental || params.csm) && !params.nocsm ? (s.quality === 'high' ? 2048 : 1024) : 0;
       if (csmSize !== wantSize) { csmSize = wantSize; if (wantSize) env.enableCSM(cam.camera, wantSize, 3); else env.disableCSM(); }
       env.sun.visible = wantSize === 0;
-      env.sun.shadow.mapSize.set(s.quality === 'high' ? 4096 : 2048, s.quality === 'high' ? 4096 : 2048);
-      env.setShadows(s.shadows);
+      // FEAT-237: the sun's shadow map size and filter per quality (?shadowsize=, ?shadowtype= override them). three.js
+      // allocates the map once, so a new size needs the old one dropped
+      const shadowSize = params.shadowsize ?? (s.quality === 'high' ? 4096 : 2048);
+      if (env.sun.shadow.mapSize.x !== shadowSize) { env.sun.shadow.map?.dispose(); env.sun.shadow.map = null; env.sun.shadow.mapSize.set(shadowSize, shadowSize); }
+      const shadowType = SHADOW_TYPES[params.shadowtype ?? ''] ?? THREE.PCFSoftShadowMap;
+      if (renderer.shadowMap.type !== shadowType) { renderer.shadowMap.type = shadowType; renderer.shadowMap.needsUpdate = true; scene.traverse((o) => { const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.needsUpdate = true; }); }
+      env.setShadows(s.shadows && params.shadowtype !== 'off'); // FEAT-237 ?shadowtype=off: no sun shadow pass, for an A/B
       if (s.quality === 'low') setVegetationBudget(250, 600, params.lowgfx ? 0 : 200); else setVegetationDensity(s.treeDensity); // BUG-107: Low's LOD0 cards to 200 m (none on ?lowgfx, the software-GPU runs, FEAT-158)
       setStandDensity(s.forestDensity ?? 1); // FEAT-074: only the generated stems
       cam.baseFov = s.fov;

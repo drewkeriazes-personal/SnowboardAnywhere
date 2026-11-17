@@ -81,13 +81,15 @@ export const NOISE_GLSL = /* glsl */ `
  * rockSurface(): cliff rock at world position `wp` with geometric world normal `ng`, `dist` metres
  * from the camera. Returns albedo; writes the world-space detail normal and roughness.
  * screeSurface(): talus, projected from above.
+ * rockSurfaceG() / screeSurfaceG(): the same, with `wp`'s screen derivatives passed in (dFdx, dFdy taken in uniform
+ * control flow) so they can be called inside a per-pixel branch (FEAT-236: the terrain skips them where there is no rock).
  */
 export const ROCK_GLSL = /* glsl */ `
   uniform sampler2D uRockAlb, uRockNrm, uScreeAlb, uScreeNrm;
   uniform vec3 uRockTint, uScreeTint;
   const float ROCK_TEX_MEAN = ${TEX_MEAN.toFixed(3)};
   vec3 unpackNrm(vec4 t) { vec2 xy = t.rg * 2.0 - 1.0; return vec3(xy, sqrt(max(0.0, 1.0 - dot(xy, xy)))); }
-  vec3 rockSurface(vec3 wp, vec3 ng, float dist, out vec3 nW, out float rough) {
+  vec3 rockSurfaceG(vec3 wp, vec3 ng, float dist, vec3 dpx, vec3 dpy, out vec3 nW, out float rough) {
     float sc = 1.0 / 5.5; // one texture repeat per 5.5 m of cliff
     vec3 w = pow(abs(ng), vec3(4.0)); w /= (w.x + w.y + w.z);
     vec3 s = vec3(ng.x >= 0.0 ? 1.0 : -1.0, ng.y >= 0.0 ? 1.0 : -1.0, ng.z >= 0.0 ? 1.0 : -1.0);
@@ -95,8 +97,11 @@ export const ROCK_GLSL = /* glsl */ `
     vec2 uvX = vec2(-wp.z * s.x, wp.y) * sc, uvY = vec2(wp.x * s.y, -wp.z) * sc, uvZ = vec2(wp.x * s.z, wp.y) * sc;
     // offset the projections so the three planes do not repeat the same patch at a corner
     uvY += vec2(0.37, 0.71); uvZ += vec2(0.53, 0.19);
-    vec3 aX = texture2D(uRockAlb, uvX).rgb, aY = texture2D(uRockAlb, uvY).rgb, aZ = texture2D(uRockAlb, uvZ).rgb;
-    vec4 tX = texture2D(uRockNrm, uvX), tY = texture2D(uRockNrm, uvY), tZ = texture2D(uRockNrm, uvZ);
+    vec2 gXx = vec2(-dpx.z * s.x, dpx.y) * sc, gXy = vec2(-dpy.z * s.x, dpy.y) * sc;
+    vec2 gYx = vec2(dpx.x * s.y, -dpx.z) * sc, gYy = vec2(dpy.x * s.y, -dpy.z) * sc;
+    vec2 gZx = vec2(dpx.x * s.z, dpx.y) * sc, gZy = vec2(dpy.x * s.z, dpy.y) * sc;
+    vec3 aX = textureGrad(uRockAlb, uvX, gXx, gXy).rgb, aY = textureGrad(uRockAlb, uvY, gYx, gYy).rgb, aZ = textureGrad(uRockAlb, uvZ, gZx, gZy).rgb;
+    vec4 tX = textureGrad(uRockNrm, uvX, gXx, gXy), tY = textureGrad(uRockNrm, uvY, gYx, gYy), tZ = textureGrad(uRockNrm, uvZ, gZx, gZy);
     vec3 nX = unpackNrm(tX), nY = unpackNrm(tY), nZ = unpackNrm(tZ);
     vec3 pert = w.x * vec3(0.0, nX.y, -s.x * nX.x) + w.y * vec3(s.y * nY.x, 0.0, -nY.y) + w.z * vec3(s.z * nZ.x, nZ.y, 0.0);
     float near = 1.0 - smoothstep(180.0, 900.0, dist);
@@ -113,10 +118,11 @@ export const ROCK_GLSL = /* glsl */ `
     tone *= 1.0 - 0.45 * streak;
     return alb * tone;
   }
-  vec3 screeSurface(vec3 wp, vec3 ng, float dist, out vec3 nW, out float rough) {
-    vec2 uv = vec2(wp.x, -wp.z) / 3.2;
-    vec3 a = texture2D(uScreeAlb, uv).rgb;
-    vec4 t = texture2D(uScreeNrm, uv);
+  vec3 rockSurface(vec3 wp, vec3 ng, float dist, out vec3 nW, out float rough) { return rockSurfaceG(wp, ng, dist, dFdx(wp), dFdy(wp), nW, rough); }
+  vec3 screeSurfaceG(vec3 wp, vec3 ng, float dist, vec3 dpx, vec3 dpy, out vec3 nW, out float rough) {
+    vec2 uv = vec2(wp.x, -wp.z) / 3.2, gx = vec2(dpx.x, -dpx.z) / 3.2, gy = vec2(dpy.x, -dpy.z) / 3.2;
+    vec3 a = textureGrad(uScreeAlb, uv, gx, gy).rgb;
+    vec4 t = textureGrad(uScreeNrm, uv, gx, gy);
     vec3 n = unpackNrm(t);
     float near = 1.0 - smoothstep(120.0, 600.0, dist);
     vec3 t0 = normalize(vec3(1.0, 0.0, 0.0) - ng * ng.x), b0 = normalize(cross(ng, t0));
@@ -126,4 +132,5 @@ export const ROCK_GLSL = /* glsl */ `
     vec3 alb = mix(vec3(1.0), a / ROCK_TEX_MEAN, 0.3 + 0.7 * near);
     return alb * uScreeTint * (0.85 + 0.3 * vnoise(wp * 0.15));
   }
+  vec3 screeSurface(vec3 wp, vec3 ng, float dist, out vec3 nW, out float rough) { return screeSurfaceG(wp, ng, dist, dFdx(wp), dFdy(wp), nW, rough); }
 `;
