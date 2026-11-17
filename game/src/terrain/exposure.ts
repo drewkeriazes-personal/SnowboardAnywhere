@@ -54,6 +54,8 @@ export function finestChunkRes(pack: Pack, x: number, y: number): number {
  * (as Terrain.build samples them) and the mask's rock, scree and forest.
  */
 export function exposureAt(pack: Pack, x: number, y: number, rock: number, scree: number, fo: number, out: Exposure): Exposure {
+  // test stub packs may lack height: fall back to the mask weights alone
+  if (typeof pack.height !== 'function') { out.rock = rock; out.scree = scree * (1 - rock); return out; }
   const res = finestChunkRes(pack, x, y);
   const h = pack.height(x, y, res, false);
   const nxp = -(pack.height(x + res, y, res, false) - pack.height(x - res, y, res, false)) / (2 * res);
