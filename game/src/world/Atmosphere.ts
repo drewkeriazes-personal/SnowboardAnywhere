@@ -19,10 +19,10 @@ import { buildSkyView, skyRadiance, toDisplay, transmittance, RAYLEIGH_SEA, RAYL
  *
  * Layout (vec4 each):
  *   0 haze density at ref height (1/m), haze 1/scale height, haze ref height (y), air density scale
- *   1 sun direction (three.js world), FEAT-330 canopy fog density (1/m, past CANOPY_FOG_NEAR from the camera)
+ *   1 sun direction (three.js world), -
  *   2..6 horizon colour (display space) at 0, 45, 90, 135, 180 degrees of azimuth from the sun
  *   7 Rayleigh extinction at sea level (rgb, 1/m), 1/scale height
- *   8 valley fog: density at ref, 1/scale height, ref height, FEAT-330 canopy fog brightness (x the in-scatter colour)
+ *   8 valley fog: density at ref, 1/scale height, ref height, -
  *   9 haze light colour (display), how much the haze takes it over the horizon colour
  */
 export const ATMO = new Float32Array(40);
@@ -53,14 +53,10 @@ vec3 atmoApply(vec3 col, vec3 ray) {
   float y0 = cameraPosition.y, y1 = y0 + ray.y;
   vec3 odA = uAtmo[7].rgb * (uAtmo[0].w * atmoLayer(1.0, uAtmo[7].w, 0.0, y0, y1, t));
   float odH = atmoLayer(uAtmo[0].x, uAtmo[0].y, uAtmo[0].z, y0, y1, t) + atmoLayer(uAtmo[8].x, uAtmo[8].y, uAtmo[8].z, y0, y1, t);
-  // FEAT-330: under a dense canopy, a uniform layer from 15 m out in a darker, cooler colour (0 in the open)
-  float odC = uAtmo[1].w * max(t - 15.0, 0.0);
-  vec3 T = exp(-(odA + vec3(odH + odC)));
-  float odAm = dot(odA, vec3(0.3333));
-  float wH = odH / (odH + odAm + 1e-6);
+  vec3 T = exp(-(odA + vec3(odH)));
+  float wH = odH / (odH + dot(odA, vec3(0.3333)) + 1e-6);
   vec3 sky = atmoHorizon(rd);
   vec3 inscat = mix(sky, mix(sky, uAtmo[9].rgb, uAtmo[9].w), wH);
-  inscat = mix(inscat, inscat * vec3(0.82, 0.9, 1.0) * uAtmo[8].w, odC / (odC + odH + odAm + 1e-6));
   return col * T + inscat * (1.0 - T);
 }
 `;
@@ -210,9 +206,6 @@ export class Atmosphere {
     // constant parts of the layout
     ATMO[28] = RAYLEIGH_SEA[0]; ATMO[29] = RAYLEIGH_SEA[1]; ATMO[30] = RAYLEIGH_SEA[2]; ATMO[31] = 1 / RAYLEIGH_H;
   }
-
-  /** FEAT-330: the canopy fog: density (1/m, 0 = none) and its colour as a share of the in-scatter colour */
-  setCanopyFog(density: number, light: number): void { ATMO[7] = density; ATMO[35] = light; }
 
   /** Recompute for a new sun / weather. Cheap when only the azimuth changed. */
   update(st: AtmoState): void {

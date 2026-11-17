@@ -20,10 +20,6 @@ export const CANOPY_SUN = 0.65;
 /** FEAT-330: and the sky fill 1 - this, shifted cooler by CANOPY_COOL (r, g lowered; blue kept) */
 export const CANOPY_HEMI = 0.3;
 const CANOPY_COOL: [number, number] = [0.16, 0.07];
-/** FEAT-330: fog density at full canopy (1/m, from 15 m out): about 43% of the scene left at 120 m, 9% at 300 m */
-export const CANOPY_FOG = 0.008;
-/** FEAT-330: the canopy fog's colour at full canopy, as a share of the open air's in-scatter colour */
-const CANOPY_FOG_LIGHT = 0.45;
 /** FEAT-330: how fast the light follows the canopy under the rider (1/s): about 2 s to settle */
 const CANOPY_RATE = 1.5;
 
@@ -245,7 +241,6 @@ export class Environment {
     this.hemi.intensity = this.baseHemi * (1 - CANOPY_HEMI * c);
     const b = this.baseHemiColor;
     this.hemi.color.setRGB(b.r * (1 - CANOPY_COOL[0] * c), b.g * (1 - CANOPY_COOL[1] * c), b.b);
-    this.atmo.setCanopyFog(CANOPY_FOG * c, 1 - (1 - CANOPY_FOG_LIGHT) * c);
   }
 
   /** Per frame: keep the sky box and storm dome around the camera. */
