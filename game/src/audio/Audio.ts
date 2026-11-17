@@ -57,6 +57,8 @@ export class GameAudio {
   /** FEAT-103 rock: edge grind (gritty band through a waveshaper), base drag (low, rough), and the
    *  sample-and-hold skip that makes the grind stutter, plus the tick timer */
   private rockGrind!: Layer; private rockDrag!: Layer;
+  /** FEAT-328: the board scraping sideways over rock (a brake, a skid), gritty and harsh */
+  private rockSkid!: Layer;
   private skipT = 0; private skipV = 1; private tickT = 0;
   private music: HTMLAudioElement | null = null;
   /** file tracks per playlist name, from playlist.json */
@@ -123,19 +125,31 @@ export class GameAudio {
     this.flowPow = layer('lowpass', 400, 0.5);
     this.flowHard = layer('highpass', 3500, 0.7);
     this.flowCrust = layer('bandpass', 1200, 2.5);
-    {
-      // FEAT-103: the edge grind gets a soft-clip waveshaper for grit
+    // FEAT-328: rock layers rasp instead of hiss. Noise through a band, a clipping waveshaper for grit, then an
+    // amplitude grain at audio rate (noise low-passed to `amHz`, added to a 0.5 base gain) so the level crackles
+    // irregularly the way a board base chattering over stone does; the snow layers are smooth noise, so this is
+    // what makes rock read as rock.
+    const grit = (type: BiquadFilterType, freq: number, q: number, drive: number, amHz: number, amDepth: number): Layer => {
       const src = ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = true;
-      const filter = ctx.createBiquadFilter(); filter.type = 'bandpass'; filter.frequency.value = 3000; filter.Q.value = 1.4;
+      const filter = ctx.createBiquadFilter(); filter.type = type; filter.frequency.value = freq; filter.Q.value = q;
       const shaper = ctx.createWaveShaper();
       const curve = new Float32Array(1024);
-      for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(4 * x) * 0.8; }
+      for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(drive * x) / Math.tanh(drive); }
       shaper.curve = curve;
+      const am = ctx.createGain(); am.gain.value = 1 - amDepth;
+      const mod = ctx.createBufferSource(); mod.buffer = this.noiseBuf; mod.loop = true;
+      const modF = ctx.createBiquadFilter(); modF.type = 'lowpass'; modF.frequency.value = amHz; modF.Q.value = 0.7;
+      // white noise (RMS 0.58) low-passed to amHz keeps sqrt(amHz / Nyquist) of it; scale it back so the grain swings
+      // the level by about +-amDepth (RMS 0.6 amDepth)
+      const modG = ctx.createGain(); modG.gain.value = (0.6 * amDepth) / (0.58 * Math.sqrt(amHz / (ctx.sampleRate / 2)));
+      mod.connect(modF).connect(modG).connect(am.gain);
       const gain = ctx.createGain(); gain.gain.value = 0;
-      src.connect(filter).connect(shaper).connect(gain).connect(this.sfx); src.start();
-      this.rockGrind = { gain, filter };
-    }
-    this.rockDrag = layer('lowpass', 900, 0.9);
+      src.connect(filter).connect(shaper).connect(am).connect(gain).connect(this.sfx); src.start(); mod.start(0, Math.random() * 1.5);
+      return { gain, filter };
+    };
+    this.rockGrind = grit('bandpass', 3000, 2.2, 5, 90, 0.6); // edge on stone: metallic, narrow, louder on edge
+    this.rockDrag = grit('bandpass', 1100, 0.9, 3.5, 45, 0.7); // base drag: broad and rough, mid band (the powder hush sits below 750 Hz)
+    this.rockSkid = grit('bandpass', 2200, 1.4, 7, 140, 0.75); // a sideways scrape: harsh and clipped
     this.carveToe = layer('bandpass', 3000, 1.6);
     this.carveHeel = layer('bandpass', 1900, 1.6);
     this.skidL = layer('bandpass', 5200, 1.2);
@@ -419,25 +433,32 @@ export class GameAudio {
   private rockScrape(r: Rider, onSnow: boolean, dt: number): void {
     const s = r.surface, spd = r.speed;
     const rock = onSnow ? s.rock : 0, scree = onSnow ? s.scree : 0;
-    const v = Math.min(1, spd / 20), edge = Math.min(1, Math.abs(r.edgeAngle));
+    // FEAT-328: a slow slide still scrapes (a floor from walking pace), full by 14 m/s
+    const v = spd > 0.3 ? Math.max(0.35, Math.min(1, spd / 14)) : 0;
+    const edge = Math.min(1, Math.abs(r.edgeAngle));
+    const scrub = Math.min(1, Math.max(r.skid, r.scrape));
     const load = (RIDER_KG / 82) * (1 + 0.5 * Math.min(1.5, Math.abs(r.lateralG)) + r.landingShock);
     this.skipT -= dt;
-    if (this.skipT <= 0) { this.skipT = 1 / (8 + 22 * v) * (0.6 + 0.8 * Math.random()); this.skipV = 0.35 + 0.65 * Math.random(); }
+    if (this.skipT <= 0) { this.skipT = 1 / (8 + 22 * v) * (0.6 + 0.8 * Math.random()); this.skipV = 0.45 + 0.55 * Math.random(); }
     const ease = (g: GainNode, target: number) => { const k = Math.min(1, dt / (target > g.gain.value ? 0.03 : 0.12)); g.gain.value += (target - g.gain.value) * k; };
     const metal = rock + 0.25 * scree; // scree rings far less
-    ease(this.rockGrind.gain, Math.min(0.45, metal * v * (0.25 + 0.75 * edge) * load * 0.5 * this.skipV));
-    this.rockGrind.filter.frequency.value = 1800 + 3200 * v * (0.7 + 0.3 * edge);
-    ease(this.rockDrag.gain, Math.min(0.4, (rock + 0.7 * scree) * v * (1 - 0.7 * edge) * load * 0.45 * (0.6 + 0.4 * this.skipV)));
-    this.rockDrag.filter.frequency.value = 300 + 1200 * v;
-    // ticks and pebbles
+    ease(this.rockGrind.gain, Math.min(0.5, metal * v * (0.45 + 0.55 * edge) * load * 0.55 * this.skipV));
+    this.rockGrind.filter.frequency.value = 2200 + 2800 * v * (0.7 + 0.3 * edge);
+    ease(this.rockDrag.gain, Math.min(0.55, (rock + 0.7 * scree) * v * (1 - 0.5 * edge) * load * 0.6 * (0.6 + 0.4 * this.skipV)));
+    this.rockDrag.filter.frequency.value = 800 + 900 * v;
+    // a brake or skid on rock: the edge scraped sideways across stone, louder with the skid and the load
+    ease(this.rockSkid.gain, Math.min(0.6, (rock + 0.5 * scree) * scrub * (0.5 + 0.5 * v) * load * 0.8));
+    this.rockSkid.filter.frequency.value = 1600 + 1600 * scrub + 800 * v;
+    // ticks and pebbles, more of them in a skid
     const hit = rock + 1.6 * scree;
-    if (hit > 0.15 && spd > 1) {
+    if (hit > 0.15 && spd > 0.3) {
       this.tickT -= dt;
       if (this.tickT <= 0) {
-        this.tickT = (1 / (5 + 35 * v)) * (0.4 + 1.2 * Math.random()) / Math.min(1.5, hit);
+        this.tickT = (1 / (8 + 40 * v + 30 * scrub)) * (0.4 + 1.2 * Math.random()) / Math.min(1.5, hit);
         const looseness = scree / Math.max(1e-3, rock + scree);
-        this.burst('highpass', 2500 + 3500 * Math.random() * (1 - 0.4 * looseness), 0.01 + 0.02 * Math.random(), 0.12 * Math.min(1, hit) * (0.5 + 0.5 * v));
-        if (Math.random() < 0.35 * (1 - looseness)) this.tone(2200 + 2400 * Math.random(), 0.012, 0.03 * v, 'square'); // a steel click
+        this.burst('highpass', 2500 + 3500 * Math.random() * (1 - 0.4 * looseness), 0.01 + 0.025 * Math.random(), 0.2 * Math.min(1, hit) * (0.5 + 0.5 * v));
+        if (Math.random() < 0.45 * (1 - looseness)) this.tone(2200 + 2400 * Math.random(), 0.014, 0.05 * v, 'square'); // a steel click
+        if (Math.random() < 0.12 * (1 - 0.5 * looseness)) this.burst('bandpass', 500 + 400 * Math.random(), 0.04, 0.18 * Math.min(1, hit) * v, 1.5); // the base knocking a stone
       }
     } else this.tickT = 0;
   }
@@ -496,11 +517,11 @@ export class GameAudio {
     this.carveHeel.filter.frequency.value = 1700 + 900 * edge + 30 * spd + 1200 * hiss;
     // skid chatter, and the edge scraping through a brake (louder and higher on hard snow)
     const scrub = Math.max(r.skid, r.scrape);
-    lerp(this.skidL.gain, onSnow ? Math.min(0.5, scrub * 0.5 * (0.6 + 0.4 * v) * (1 + hard)) : 0);
+    lerp(this.skidL.gain, onSnow ? Math.min(0.5, scrub * 0.5 * (0.6 + 0.4 * v) * (1 + hard)) * (0.25 + 0.75 * snowLeft) : 0); // FEAT-328: rockSkid takes over on rock
     this.skidL.filter.frequency.value = 4500 + 2000 * scrub;
     this.rockScrape(r, onSnow, dt);
     // wind
-    const windV = riding ? 0.25 : 1;
+    const windV = (riding ? 0.25 : 1) * (onSnow ? 1 - 0.45 * Math.min(1, s.rock + 0.5 * s.scree) : 1); // FEAT-328: the scrape carries over the wind on rock
     lerp(this.windLo.gain, Math.min(0.5, Math.max(0, spd - 6) * 0.018 * (tuck ? 1.4 : 1)) * windV);
     this.windLo.filter.frequency.value = 200 + 25 * spd;
     lerp(this.windHi.gain, Math.min(0.12, Math.max(0, spd - 20) * 0.012) * windV);
