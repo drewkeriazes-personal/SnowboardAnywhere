@@ -5,7 +5,7 @@ import { rockCover } from '../terrain/rockCover';
 import { DEFAULT_SNOW_WORLD, newSnowState, snowAt, type SnowState, type SnowWorld } from './SnowConditions';
 import type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
 import type { JumpMode } from './rider/tuning';
-import { EDGE_FULL, LEAN_IN, SQUAT_IN, STAMINA, STEP, STOP_GAMMA, STRAP_SPEED, STRAP_TIME, UNSTRAP_SPEED, UNSTRAP_TIME } from './rider/tuning';
+import { EDGE_FULL, LEAN_IN, SKATE_CLIP, SKATE_HYST, SKATE_MAX, SKATE_SLOPE, SKATE_STEER, SKATE_UNCLIP, SQUAT_IN, STAMINA, STEP, STOP_GAMMA, STRAP_SPEED, STRAP_TIME, UNSTRAP_SPEED, UNSTRAP_TIME } from './rider/tuning';
 import { rideStep } from './rider/Ride';
 import { edgeIn, inclineIn, leanIn } from './rider/EdgeModel';
 import { pressStep } from './rider/Press';
@@ -14,7 +14,7 @@ import { strapStep, walkStep } from './rider/OnFoot';
 import { groundAt } from './rider/Collision';
 import { crashStep, startCrash } from './rider/Crash';
 export type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
-export { EDGE_FULL, PLANE_SPEED, PRESS_MIN_REPORT, PRESS_RANGE, STAMINA, STRAP_TIME, UNSTRAP_TIME } from './rider/tuning';
+export { EDGE_FULL, PLANE_SPEED, PRESS_MIN_REPORT, PRESS_RANGE, SKATE_PUSH, STAMINA, STRAP_TIME, UNSTRAP_TIME } from './rider/tuning';
 export { bootSink } from './rider/OnFoot';
 export { trickName, spinName, switchName } from './rider/Tricks';
 
@@ -113,8 +113,12 @@ export class Rider {
   onPress: ((end: PressEnd, dir: number, t: number, dist: number, switchStance: boolean, from: string) => void) | null = null;
   /** the trick this press was landed into from ('' if none) */
   pressFrom = '';
-  /** FEAT-085: skating now, the stroke phase (0..1, a push at 0), and a callback on each push for sound */
-  skating = false;
+  /** BUG-054 (FEAT-085): skating with the back foot out of its binding. 'unclip' bending down to take it
+   *  out, 'on' pushing, 'clip' stepping back on and strapping in; seconds into the phase. A snowboarder
+   *  is one-footed in all three (riding inputs ignored); skis go straight to 'on'. */
+  skate: 'none' | 'unclip' | 'on' | 'clip' = 'none';
+  skateT = 0;
+  /** the stroke phase while pushing (0..1: the boot plants at 0 and pushes until SKATE_PUSH, then swings forward), and a callback on each plant for sound */
   skatePhase = 0;
   onSkateStroke: (() => void) | null = null;
   /** FEAT-110: called on landing a flip ("Backflip", "Double front flip", "Rodeo 540"), clean or sketchy */
@@ -283,6 +287,7 @@ export class Rider {
     this.onFoot = false; this.strapState = 'none'; this.strapT = 0; this.stamina = STAMINA; this.tired = false; this.mantle = 0; this.stepT = 0;
     this.sprinting = false; this.crawling = false; this.slipT = 0; this.exertion = 0; this.slideVx = this.slideVy = this.walkVx = this.walkVy = 0;
     this.chop = 0; this.noseSink = 0; this.chopT = 0;
+    this.endSkate();
     this.rng.seed(seed);
     this.squareBoard();
     this.snapPose();
@@ -311,6 +316,7 @@ export class Rider {
     if (!this.onFoot) {
       if (!this.canUnstrap) return 'fast';
       this.strapState = 'off'; this.strapT = 0;
+      this.endSkate(); // BUG-054: the back foot goes in with the rest of the unstrap
       // FEAT-139: on foot the body is drawn along the heading, so a rider drawn turned round (switch,
       // or goofy) takes the heading the way they face; nearly stopped, so nothing else moves
       if (this.toeSign < 0) this.heading += Math.PI;
@@ -323,8 +329,23 @@ export class Rider {
     return '';
   }
 
-  /** Back on the board at once (boarding a lift on foot). */
+  /** BUG-054: pushing with the back foot this step */
+  get skating(): boolean { return this.skate === 'on'; }
+  /** BUG-054: one-footed, the back boot out of its binding or on its way out or in (snowboard only) */
+  get oneFooted(): boolean { return this.skate !== 'none' && this.discipline === 'board'; }
+  /** BUG-054: how far the back foot is out, 0 strapped in .. 1 on the snow skating (the view's unclip and clip-in play off it) */
+  get skateFoot(): number {
+    if (this.discipline !== 'board') return 0;
+    if (this.skate === 'unclip') return Math.min(1, this.skateT / SKATE_UNCLIP);
+    if (this.skate === 'clip') return Math.max(0, 1 - this.skateT / SKATE_CLIP);
+    return this.skate === 'on' ? 1 : 0;
+  }
+  /** BUG-054: both feet back in at once (a crash, a reset, unstrapping, a lift) */
+  endSkate(): void { this.skate = 'none'; this.skateT = 0; this.skatePhase = 0; }
+
+  /** Back on the board at once (boarding a lift on foot, or skating onto it: BUG-054). */
   strapInNow(): void {
+    this.endSkate();
     if (!this.unstrapped) return;
     this.onFoot = false; this.strapState = 'none'; this.strapT = 0;
     this.walkVx = this.walkVy = this.slideVx = this.slideVy = 0;
@@ -352,8 +373,11 @@ export class Rider {
     this.alpha = this.accum / STEP;
   }
 
-  private runSteps(input: Input): void {
+  private runSteps(raw: Input): void {
     while (this.accum >= STEP) {
+      // BUG-054: one-footed (the back boot out to skate) the riding inputs are off: a weak steer, no
+      // tuck, brake, jump, squat, hard carve or press, until the back foot is strapped in again
+      const input = this.oneFooted ? this.skateInput(raw) : raw;
       this.prev[0] = this.x; this.prev[1] = this.y; this.prev[2] = this.z; this.prev[3] = this.heading; this.prev[4] = this.boardYaw;
       const fb = this.pack.coarseFallbacks;
       // FEAT-124: the squat key grabs in the air and sprints on foot, so it only squats riding on the snow
@@ -369,8 +393,43 @@ export class Rider {
       this.steps++;
       if (this.pack.coarseFallbacks !== fb) this.onCoarse();
       this.accum -= STEP;
-      input.jumpReleased = false; // consume the release edge
+      raw.jumpReleased = false; // consume the release edge
     }
+  }
+
+  private readonly skateIn: Input = { steer: 0, tuck: false, brake: false, jumpHeld: false, jumpReleased: false, grab: false, skate: false };
+  /** BUG-054: the inputs a one-footed rider still has (the skate key and a weak steer) */
+  private skateInput(raw: Input): Input {
+    const s = this.skateIn;
+    s.steer = raw.steer * SKATE_STEER; s.skate = raw.skate;
+    return s;
+  }
+
+  /**
+   * BUG-054: the back foot out and back in. Holding skate on the snow below SKATE_SLOPE and SKATE_MAX
+   * unclips it (SKATE_UNCLIP s) and pushes; letting go, going faster than SKATE_MAX, steeper than
+   * SKATE_SLOPE or leaving the snow clips it back in (SKATE_CLIP s) on its own. Either transition
+   * turns round part way from where it is. Skis have no binding to open: they skate while held.
+   */
+  private skateStep(dt: number, input: Input): void {
+    const spd = Math.hypot(this.vx, this.vy);
+    const can = !!input.skate && this.onGround && this.slopeDeg < SKATE_SLOPE;
+    const keep = can && spd < SKATE_MAX, start = can && spd < SKATE_MAX - SKATE_HYST;
+    if (this.discipline !== 'board') {
+      if (!keep) this.endSkate();
+      else if (this.skate !== 'on') { this.skate = 'on'; this.skatePhase = 0; }
+      return;
+    }
+    const s = this.skate;
+    if (s === 'none') { if (start) { this.skate = 'unclip'; this.skateT = 0; } return; }
+    this.skateT += dt;
+    if (s === 'unclip') {
+      if (!keep) { this.skate = 'clip'; this.skateT = (1 - Math.min(1, this.skateT / SKATE_UNCLIP)) * SKATE_CLIP; }
+      else if (this.skateT >= SKATE_UNCLIP) { this.skate = 'on'; this.skateT = 0; this.skatePhase = 0; this.onSkateStroke?.(); }
+    } else if (s === 'on') {
+      if (!keep) { this.skate = 'clip'; this.skateT = 0; }
+    } else if (start) { this.skate = 'unclip'; this.skateT = Math.max(0, 1 - this.skateT / SKATE_CLIP) * SKATE_UNCLIP; }
+    else if (this.skateT >= SKATE_CLIP) this.endSkate();
   }
 
   /** FEAT-111: blend into or out of the squat, and time how long ago a deep squat was released */
@@ -437,12 +496,14 @@ export class Rider {
     if (this.strapState !== 'none') { strapStep(this, dt, ground); return; }
     if (this.onFoot) { walkStep(this, dt, input, n, ground); return; }
     if (this.crashed > 0) {
+      this.endSkate(); // BUG-054: the back foot clips in as part of getting up
       // FEAT-288: slide and tumble down the hill. A crash set straight on `crashed` (tools, old callers) starts its clock here
       if (!this.crashing) { this.crashT = 0; this.crashAir = false; this.crashing = true; }
       crashStep(this, dt, n);
       return;
     }
     this.crashing = false;
+    this.skateStep(dt, input);
     // ---------------------------------------------------------------- airborne (rider/Jumps.ts), else on the snow (rider/Ride.ts)
     if (!this.onGround) { airStep(this, dt, input); return; }
     rideStep(this, dt, input, n, ground);

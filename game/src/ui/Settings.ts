@@ -138,7 +138,7 @@ const OLD_DEFAULT_KEYS: Record<string, string> = {
 };
 /** the Controls rows, grouped by when each action applies */
 export const KEY_GROUPS: [string, [string, string][]][] = [
-  ['Board', [['left', 'Steer left'], ['right', 'Steer right'], ['tuck', 'Tuck (front flip in the air)'], ['brake', 'Brake (backflip in the air)'], ['jump', 'Jump (hold, release)'], ['grab', 'Squat on the snow / grab in the air / sprint on foot'], ['squat', 'Squat only (optional)'], ['pressNose', 'Nose press (hold)'], ['pressTail', 'Tail press (hold)'], ['skate', 'Skate on the flat (hold)']]],
+  ['Board', [['left', 'Steer left'], ['right', 'Steer right'], ['tuck', 'Tuck (front flip in the air)'], ['brake', 'Brake (backflip in the air)'], ['jump', 'Jump (hold, release)'], ['grab', 'Squat on the snow / grab in the air / sprint on foot'], ['squat', 'Squat only (optional)'], ['pressNose', 'Nose press (hold)'], ['pressTail', 'Tail press (hold)'], ['skate', 'Skate on the flat: unclip the back foot and push (hold)']]],
   ['Everywhere', [['lift', 'Interact: ride lift, skip, strap in or out away from lifts'], ['board', 'Strap in or out (anywhere, by a lift too)'], ['glance', 'Look behind (hold)'], ['look', 'Free look (hold, move mouse)']]],
   ['Camera and UI', [['camera', 'Camera'], ['map', 'Map'], ['piste', 'Piste lines'], ['track', 'Next track'], ['trial', 'Go to nearest time trial'], ['restart', 'Restart (hold)'], ['replay', 'Replay viewer'], ['rewind', 'Rewind (hold)'], ['fly', 'Free fly']]],
   ['Outrun', [['boost', 'Boost']]],
