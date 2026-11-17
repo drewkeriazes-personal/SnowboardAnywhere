@@ -11,6 +11,15 @@ import type { TreeShade } from '../world/TreeShade';
 import { snowpackUniform, type SnowpackState } from '../sim/Snowpack';
 
 /**
+ * BUG-090: a chunk's vertex and index arrays are only read by the GPU upload (nothing reads a chunk's geometry back;
+ * its bounding sphere is computed before), so each lets go of its CPU copy once uploaded: about 100 MB of heap on Vail.
+ * A lost and restored WebGL context would re-upload from them, so `dropAll` rebuilds every chunk then.
+ */
+function freeAfterUpload(this: THREE.BufferAttribute): void {
+  (this as unknown as { array: null }).array = null;
+}
+
+/**
  * Chunked quadtree terrain. The root covers the far height set (262 km). Each chunk is an
  * N x N quad grid built on the CPU from pack.height() at the chunk's resolution, with a skirt
  * to hide cracks between LOD levels. World axes: three.js x = east, y = up, z = south (so
@@ -343,6 +352,21 @@ export class Terrain implements Ground {
     return true;
   }
 
+  /**
+   * BUG-090: drop every chunk, so the next updates build them again (their CPU arrays are freed once uploaded,
+   * so after a restored WebGL context the old geometry has nothing to upload from).
+   */
+  dropAll(): void {
+    for (const c of this.chunks.values()) {
+      if (!c.mesh) continue;
+      c.mesh.geometry.dispose();
+      this.group.remove(c.mesh);
+    }
+    this.chunks.clear();
+    this.dirty.clear();
+    this.visible = [];
+  }
+
   private isAncestor(a: Chunk, d: Chunk): boolean {
     return d.minX >= a.minX && d.minY >= a.minY && d.minX + d.size <= a.minX + a.size && d.minY + d.size <= a.minY + a.size;
   }
@@ -554,6 +578,8 @@ export class Terrain implements Ground {
     geo.setAttribute('mogul', new THREE.BufferAttribute(mogul, 4));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
+    for (const a of Object.values(geo.attributes)) (a as THREE.BufferAttribute).onUpload(freeAfterUpload);
+    geo.index!.onUpload(freeAfterUpload);
     if (c.mesh) {
       c.mesh.geometry.dispose();
       c.mesh.geometry = geo;

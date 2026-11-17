@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { StandsMeta } from '../pack/types';
 import { decodeRGBA } from '../pack/MaskSet';
-import type { Collider } from '../sim/Collider';
+import { type Collider, CYLINDER } from '../sim/Collider';
 import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, setGhostBand, crownWidthsOf, kitUniforms, type FarAttrs, type StandGrid, type CrownWidthsMeta } from './trees';
 import { treelineOf } from '../pack/treeline';
 import { TreeShade } from './TreeShade';
@@ -578,10 +578,11 @@ export class Vegetation {
       this.prepare(cell);
       if (this.collider && own) {
         // the far crowns stand outside the pack, where nobody rides
-        const d = own, col: Float32Array[] = cell.own = new Array(d.length / 6);
+        // BUG-090: the entries share one buffer per cell
+        const d = own, col: Float32Array[] = cell.own = new Array(d.length / 6), buf = new Float32Array(col.length * CYLINDER);
         for (let i = 0, k = 0; i < d.length; i += 6, k++) {
           const h = d[i + 3];
-          col[k] = this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h);
+          col[k] = this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h, 0, NaN, buf.subarray(k * CYLINDER, (k + 1) * CYLINDER));
         }
       }
       for (const n of this.near) n.dirty = true;
@@ -632,10 +633,10 @@ export class Vegetation {
     if (!on) { if (cell.col && this.collider) this.collider.removeAll(cell.col); cell.col = null; return; }
     const col: Float32Array[] = [];
     if (this.collider) {
-      const d = cell.data!;
-      for (let i = cell.base!.length; i < d.length; i += 6) {
+      const d = cell.data!, b0 = cell.base!.length, buf = new Float32Array((d.length - b0) / 6 * CYLINDER); // BUG-090: one buffer
+      for (let i = b0, k = 0; i < d.length; i += 6, k++) {
         const h = d[i + 3];
-        col.push(this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h));
+        col.push(this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h, 0, NaN, buf.subarray(k * CYLINDER, (k + 1) * CYLINDER)));
       }
     }
     cell.col = col;

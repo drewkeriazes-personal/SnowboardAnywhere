@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Rider } from '../sim/Rider';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
+import type { BumpAbsorb } from './BumpAbsorb';
 
 /** BUG-032: clearance kept from a trunk, and the closest the chase camera gets to the rider's head when pulled in */
 const CAM_PAD = 1.0;
@@ -64,6 +65,8 @@ function lagTime(dt: number, kf: number): number {
 /** Third-person chase camera with lag, speed-dependent FOV and terrain avoidance. */
 /** BUG-051: first-person head steadying time (s) and the slope pitch easing (s) */
 const FP_STEADY = 0.12, FP_PITCH_TAU = 0.4;
+/** BUG-065: rate (1/s) the chase cameras turn toward the travel direction on a full mogul field (about a 0.3 s lag) */
+const BUMP_YAW_RATE = 3.3;
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera;
   mode: CameraMode = 'chase';
@@ -336,6 +339,9 @@ export class ChaseCamera {
 
   /** Chase-camera orbit while free look is held (radians); eases back to centre on release. */
   orbitYaw = 0; orbitPitch = 0;
+  /** BUG-065: the player's rider view's bump absorb (Session sets it): the smoothed ground the chase cameras follow */
+  absorb: BumpAbsorb | null = null;
+  private readonly v3 = new THREE.Vector3();
   /** Outrun (FEAT-101): footfall kick 0..1 on the chase cameras, decays on its own */
   kick = 0;
   /** BUG-057: how far into look behind the chase cameras are, 0..1 (lowers the camera, aims up the hill) */
@@ -396,9 +402,15 @@ export class ChaseCamera {
     const g = this.glanceW;
     height += (Math.min(height, GLANCE_HEIGHT) - height) * g;
     // on foot it stays behind where you face (walking backwards or slipping must not swing it round)
-    if (spd > 2.5 && !r.onFoot) this.fwd.set(r.vx / spd, 0, -r.vy / spd);
-    else this.fwd.lerp(new THREE.Vector3(Math.sin(r.heading), 0, -Math.cos(r.heading)), Math.min(1, dt * 2)).normalize();
-    const riderPos = new THREE.Vector3(r.x, r.z, -r.y);
+    // BUG-065: on a mogul field the bumps knock the travel direction about many times a second; the camera
+    // follows the smoothed ground (world/BumpAbsorb.ts) and eases its heading instead of swinging with each bump
+    const ab = this.absorb && this.absorb.current(r.x, r.y) ? this.absorb : null;
+    const bw = ab ? ab.weight : 0;
+    if (spd > 2.5 && !r.onFoot) {
+      if (bw > 0.001) this.fwd.lerp(this.v3.set(r.vx / spd, 0, -r.vy / spd), 1 - Math.exp(-dt * (BUMP_YAW_RATE + (1 - bw) * 30))).normalize();
+      else this.fwd.set(r.vx / spd, 0, -r.vy / spd);
+    } else this.fwd.lerp(new THREE.Vector3(Math.sin(r.heading), 0, -Math.cos(r.heading)), Math.min(1, dt * 2)).normalize();
+    const riderPos = new THREE.Vector3(r.x, ab ? ab.z : r.z, -r.y);
     // free look: swing the camera around the rider (yaw) and up over them (pitch)
     const back = this.fwd.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), -this.orbitYaw);
     const cp = Math.cos(this.orbitPitch), sp = Math.sin(this.orbitPitch);
@@ -415,7 +427,7 @@ export class ChaseCamera {
     // FEAT-122: lead the target by the steady-state lag (about speed / rate, 3 m at 15 m/s) so the
     // camera holds its distance at speed instead of drifting back; the ease still smooths turns and
     // swings. In the air only the horizontal lag is cancelled, so the camera still floats over jumps.
-    const vz = r.onGround ? r.vz : 0;
+    const vz = r.onGround ? (ab ? ab.vz : r.vz) : 0;
     const lead = f.lead * lagTime(dt, k);
     this.pos.lerp(this.desired.set(this.desired.x + r.vx * lead, this.desired.y + vz * lead, this.desired.z - r.vy * lead), k);
     // a transient (crest, a lead that just changed) must not dip the lens into the snow
@@ -426,8 +438,9 @@ export class ChaseCamera {
     const lookTarget = riderPos.clone().addScaledVector(back, ahead);
     if (f.aimGround && !orbiting) {
       // over the head at the snow ahead: follows the slope down, within AIM_DROP / AIM_RISE of the rider
-      const ga = this.pack.groundHeight(lookTarget.x, -lookTarget.z);
-      lookTarget.y = THREE.MathUtils.clamp(Number.isFinite(ga) ? ga : r.z, r.z - ahead * AIM_DROP, r.z + ahead * AIM_RISE) + f.lookUp;
+      // BUG-065: on a bump field, at the snow under the bumps there (the aim does not bob with each one)
+      const ga = this.pack.groundHeight(lookTarget.x, -lookTarget.z) - (bw > 0.001 ? bw * this.pack.bumpAt(lookTarget.x, -lookTarget.z) : 0);
+      lookTarget.y = THREE.MathUtils.clamp(Number.isFinite(ga) ? ga : riderPos.y, riderPos.y - ahead * AIM_DROP, riderPos.y + ahead * AIM_RISE) + f.lookUp;
     } else lookTarget.y += orbiting ? 1.0 : f.lookUp;
     if (g > 0.001) lookTarget.lerp(this.glanceAim(r, back), g);
     const kl = 1 - Math.exp(-dt * 8), ll = f.lead * lagTime(dt, kl);

@@ -2,7 +2,7 @@
 // main menu's Ride button to riding, in a browser with vsync and the frame-rate cap off, so the frame interval is
 // what the CPU and GPU allow, not the display. Nothing is read back from the canvas. Off screen (headless by
 // default), so a window in front of it cannot throttle it.
-// node tools/playperf.mjs [pack] [--at x,y,headingDeg] [--seconds 10] [--ablate] [--vsync] [--profile <out.json>] [--gpu | --headed]
+// node tools/playperf.mjs [pack] [--at x,y,headingDeg] [--seconds 10] [--ablate] [--vsync] [--profile <out.json>] [--heap <out.json>] [--gpu | --headed]
 //   (after `npx vite build`; for readable names in --profile build with `npx vite build --minify false --outDir dist-prof`
 //    and run with SHOT_DIST=dist-prof)
 // Two windows, each after a restart at the spot once nothing is loading: "stand" (no input; the rider may slide)
@@ -14,6 +14,9 @@
 // repacks and cells, decoded tiles, terrain builds. --ablate then poses the eye camera at the spot and times the frame
 // with each scene group hidden in turn, and without the shadow map pass (the cost of each, GPU included).
 // --profile also samples the JavaScript during the tuck and writes the top functions by self time.
+// --heap <out.json> (BUG-090) runs V8's sampling heap profiler from page load and, after a forced garbage collection
+// at the end, prints what is still held by the function that allocated it and by the game file and line under it
+// (build with --minify false, as for --profile, for names). The heap is always read after a forced collection too.
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -22,12 +25,13 @@ import { DIST, PACKS } from './paths.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => (args.includes(name) ? args[args.indexOf(name) + 1] : def);
-const valued = new Set(['--at', '--seconds', '--profile']);
+const valued = new Set(['--at', '--seconds', '--profile', '--heap']);
 const positional = args.filter((a, i) => !a.startsWith('--') && !valued.has(args[i - 1]));
 const pack = positional[0] ?? 'vail';
 const seconds = Number(opt('--seconds', 10));
 const at = opt('--at', null)?.split(',').map(Number) ?? null;
 const profileOut = opt('--profile', null);
+const heapOut = opt('--heap', null);
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp', '.bin': 'application/octet-stream', '.css': 'text/css', '.jpg': 'image/jpeg', '.mp3': 'audio/mpeg' };
 const server = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0]);
@@ -52,6 +56,10 @@ await page.addInitScript(() => {
   w.__rafMs = 0;
   w.requestAnimationFrame = (cb) => raf((t) => { const a = performance.now(); try { cb(t); } finally { w.__rafMs += performance.now() - a; } });
 });
+// a CDP session from the start: the forced collection before the heap read, and --heap's sampling from page load
+const cdpHeap = await page.context().newCDPSession(page);
+await cdpHeap.send('HeapProfiler.enable');
+if (heapOut) await cdpHeap.send('HeapProfiler.startSampling', { samplingInterval: 16384 });
 const q = at ? `&x=${at[0]}&y=${at[1]}${at[2] === undefined ? '' : `&h=${at[2]}`}` : '';
 await page.goto(`http://localhost:${server.address().port}/index.html?pack=${pack}${q}${process.env.SHOT_QUERY ?? ''}`);
 await page.waitForFunction(() => window.__sim && window.__sim.state === 'attract', null, { timeout: 180000 });
@@ -158,6 +166,10 @@ if (args.includes('--ablate')) {
   ablation.rows.push({ group: '(shadow map pass)', ms: +(base.median - ns.median).toFixed(1), calls: base.calls - ns.calls, tris: base.tris - ns.tris });
   ablation.rows.sort((a, b) => b.ms - a.ms);
 }
+// garbage does not count: collect it before the heap read
+const heapBeforeGC = await page.evaluate(() => Math.round(performance.memory.usedJSHeapSize / 1048576));
+await cdpHeap.send('HeapProfiler.collectGarbage');
+await page.waitForTimeout(200);
 // where the JS heap goes: typed arrays held by the tile sets, scene geometry and the trees' records
 const heap = await page.evaluate(() => {
   const s = window.__sim, seen = new Set(), mb = (b) => Math.round(b / 1048576);
@@ -174,10 +186,41 @@ const heap = await page.evaluate(() => {
     geo[k] = (geo[k] ?? 0) + b;
   });
   for (const [k, b] of Object.entries(geo)) out[k] = mb(b);
-  let cellBytes = 0; for (const c of s.veg.cells.values()) for (const v of Object.values(c)) { if (ArrayBuffer.isView(v)) cellBytes += add(v); else if (v && typeof v === 'object') for (const w of Object.values(v)) if (ArrayBuffer.isView(w)) cellBytes += add(w); }
+  // per field, so the biggest record shows (BUG-090)
+  let cellBytes = 0; const byField = {};
+  for (const c of s.veg.cells.values()) for (const [f, v] of Object.entries(c)) {
+    let b = 0;
+    if (ArrayBuffer.isView(v)) b = add(v); else if (v && typeof v === 'object') for (const w of Object.values(v)) if (ArrayBuffer.isView(w)) b += add(w);
+    cellBytes += b; byField[f] = (byField[f] ?? 0) + b;
+  }
   out['tree cell records'] = mb(cellBytes);
-  return { usedMB: mb(performance.memory.usedJSHeapSize), totalMB: mb(performance.memory.totalJSHeapSize), counted: Object.entries(out).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]) };
+  const fields = Object.entries(byField).map(([k, b]) => [k, mb(b)]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  return { cells: s.veg.cells.size, cylinders: s.collider?.cylinderCount ?? null, fields, usedMB: mb(performance.memory.usedJSHeapSize), totalMB: mb(performance.memory.totalJSHeapSize), counted: Object.entries(out).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]) };
 });
+let held = null;
+if (heapOut) {
+  // live sampled bytes per allocating function (self), and per first frame in the game's own code (src)
+  const { profile } = await cdpHeap.send('HeapProfiler.stopSampling');
+  const self = new Map(), game = new Map();
+  const site = (f) => `${f.functionName || '(anonymous)'} ${f.url.split('/').pop()}:${f.lineNumber + 1}`;
+  const walk = (n, stack) => {
+    const st = [...stack, n.callFrame];
+    const bytes = n.selfSize;
+    if (bytes > 0) {
+      self.set(site(n.callFrame), (self.get(site(n.callFrame)) ?? 0) + bytes);
+      // the deepest frame in a game module (not three, not the runtime): who asked for it
+      const g = [...st].reverse().find((f) => f.url && !/three|node_modules|vendor/.test(f.url) && f.functionName !== '');
+      const k = g ? site(g) : '(no game frame)';
+      game.set(k, (game.get(k) ?? 0) + bytes);
+    }
+    for (const c of n.children) walk(c, st);
+  };
+  walk(profile.head, []);
+  const rows = (m) => [...m].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, b]) => ({ site: k, MB: +(b / 1048576).toFixed(1) }));
+  const total = [...self.values()].reduce((a, b) => a + b, 0);
+  held = { totalMB: +(total / 1048576).toFixed(0), self: rows(self), game: rows(game) };
+  fs.writeFileSync(heapOut, JSON.stringify({ pack, at, held, profile }));
+}
 let top = null;
 if (cdp) {
   const { profile } = await cdp.send('Profiler.stop');
@@ -204,10 +247,18 @@ for (const [label, r] of [['stand', stand], ['tuck', tuck]]) {
   console.log(`  slowest: ${r.slowest.map((x) => `${x.dt} ms (GC ${x.gc} MB, programs ${x.programs}, geometries ${x.geometries}, textures ${x.textures}, repacks ${x.repacks}, tiles ${x.tiles}, builds ${x.builds})`).join('; ')}`);
   console.log(`  calls ${r.calls}, triangles ${(r.tris / 1e6).toFixed(2)} M, chunks ${r.chunks}, tree instances ${r.veg.instances} (lod0 ${r.veg.lod0}, lod1 ${r.veg.lod1}, far ${r.veg.far}), JS heap ${r.heapMB} MB, rider ${r.rider.slice(0, 2).join(', ')} at ${r.rider[2]} km/h`);
 }
+console.log(`JS heap ${heapBeforeGC} MB used before a forced garbage collection`);
+console.log(`tree cells ${heap.cells}, by field: ${heap.fields.map(([k, v]) => `${k} ${v}`).join(', ')} MB; collider cylinders ${heap.cylinders}`);
 console.log(`JS heap ${heap.usedMB} MB used (${heap.totalMB} MB allocated); typed arrays found: ${heap.counted.map(([k, v]) => `${k} ${v}`).join(', ')} MB`);
 if (ablation) {
   console.log(`ablation (eye camera at the spot, 3 s each): all drawn ${f(ablation.base.median)} ms, ${ablation.base.calls} calls, ${(ablation.base.tris / 1e6).toFixed(2)} M triangles; hiding each group saves:`);
   for (const r of ablation.rows) console.log(`  ${String(r.ms).padStart(5)} ms  ${String(r.calls).padStart(4)} calls  ${(r.tris / 1e6).toFixed(2).padStart(5)} M tris  ${r.group}`);
+}
+if (held) {
+  console.log(`held after collection (sampled, ${held.totalMB} MB), by allocating function (top 20):`);
+  for (const r of held.self.slice(0, 20)) console.log(`  ${String(r.MB).padStart(6)} MB  ${r.site}`);
+  console.log('by the game code under it (top 25):');
+  for (const r of held.game.slice(0, 25)) console.log(`  ${String(r.MB).padStart(6)} MB  ${r.site}`);
 }
 if (top) { console.log('tuck, JavaScript self time (top 15):'); for (const t of top.slice(0, 15)) console.log(`  ${String(t.ms).padStart(6)} ms ${String(t.pct).padStart(5)}%  ${t.fn}`); }
 console.log('console issues:', warnings.length);

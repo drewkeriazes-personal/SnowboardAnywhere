@@ -94,6 +94,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     const prefetch = new Prefetch();
     const cam = new ChaseCamera(pack, window.innerWidth / window.innerHeight);
     cam.collider = collider; // BUG-032: keep the chase camera out of trees
+    cam.absorb = riderView.absorb; // BUG-065: follow the smoothed ground on a mogul field
     const controls = new Controls(canvas);
     const touch = TouchControls.wanted(params.touch) ? new TouchControls(controls) : null;
     let csmSize = 0;
@@ -337,7 +338,11 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     };
     if (menu) {
       menu.onChoice = leaveAttract;
-      menu.onSettingsChange = (s, what) => applySettings(s, what);
+      menu.onSettingsChange = (s, what) => {
+        applySettings(s, what);
+        // BUG-055: the bests shown follow the Jump height; the Feel row reports 'pressBalance' but also sets jumpMode
+        if (what === 'jumpMode' || what === 'pressBalance' || what === 'units') menu.setCourses(modes.trials.list(), s.units === 'metric');
+      };
       menu.onSettingsApply = applyGraphics;
       menu.onResetStart = () => {
         resetStart(pack.meta.slug);
@@ -387,7 +392,9 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     const onClick = () => { if (!states.is('paused') && (cam.mode === 'free' || cam.firstPerson || cam.mode === 'eye')) canvas.requestPointerLock(); };
     const onMove = (e: MouseEvent) => { if (document.pointerLockElement === canvas || (controls.looking && !states.is('paused'))) { look.dx += e.movementX; look.dy += e.movementY; } };
     const onResize = () => { renderer.setSize(window.innerWidth, window.innerHeight); cam.camera.aspect = window.innerWidth / window.innerHeight; cam.camera.updateProjectionMatrix(); env.onCameraChanged(); };
+    const onContextRestored = () => terrain.dropAll(); // BUG-090: the chunks' CPU arrays are gone after upload
     canvas.addEventListener('click', onClick);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('resize', onResize);
 
@@ -420,6 +427,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       alive = false;
       loop.stop();
       canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('resize', onResize);
       controls.dispose();
