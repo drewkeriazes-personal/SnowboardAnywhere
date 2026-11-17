@@ -13,6 +13,8 @@ import type { SurfaceInfo } from './Rider';
  *  - ice: wind-scoured exposed ridges, and spring refreeze first thing: little edge grip, skids sooner
  *  - slush: low, sunny, late in the day, most of all in spring: heavy, slow, soft
  *  - rock: bare rock and scree (the grip and sound for it are FEAT-103's; it is here for the readout)
+ * FEAT-333: a worn tree line through the forest (`worn`) is ridden all season: packed and tracked (chop) on the line,
+ * whatever the day, while the trees either side keep their powder.
  * Shifts with the weather and the time of day: a storm adds powder everywhere, the afternoon sun
  * softens the south faces and the morning refreezes them in spring, and open off-piste gets tracked
  * out as the day goes on.
@@ -72,6 +74,8 @@ const K: Record<SnowKind, [number, number, number, number, number, number]> = {
 /** the jolts start once the chop weight passes JOLT_FROM and are full by JOLT_FROM + JOLT_RANGE: a
  *  third of chop mixed into powder rides smooth */
 const JOLT_FROM = 0.3, JOLT_RANGE = 0.5;
+/** FEAT-333: the share of the off-piste snow a fully worn tree line has tracked out */
+const WORN_CHOP = 0.75;
 const KINDS: SnowKind[] = ['groomed', 'powder', 'chop', 'ice', 'slush', 'rock'];
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -109,7 +113,9 @@ export function snowAt(s: SurfaceInfo, n: ArrayLike<number>, z: number, w: SnowW
   // ground gets tracked out into chop as the day goes on (less when it is still snowing)
   const keep = clamp01(0.15 + 0.25 * shade + 0.15 * e + 0.45 * trees + fresh);
   const tracked = (w.day === 'fresh' ? 0.4 : w.day === 'mid' ? 0.9 : 0.75) * (0.05 + 0.95 * skiedDay) * (1 - trees) * (1 - fresh) * (1 - w.storm);
-  const chopShare = clamp01(tracked * (1 - keep));
+  // FEAT-333: on a worn tree line most of the snow is tracked, on any day (a storm still covers it)
+  const worn = (s.worn ?? 0) * (1 - 0.6 * fresh);
+  const chopShare = Math.max(clamp01(tracked * (1 - keep)), WORN_CHOP * worn);
   // on the groomers a real fall of new snow rides like powder, a dusting is still corduroy
   const groomPow = clamp01((w.newSnow - 0.3) / 0.7) * 0.6;
 

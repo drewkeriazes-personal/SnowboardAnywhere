@@ -26,6 +26,8 @@ export interface SurfaceInfo {
   moguls: number;
   /** FEAT-159: 0..1 brush the board is riding through (willow, juniper, sagebrush, oak, small conifers above the snow) */
   shrub: number;
+  /** FEAT-333: 0..1 how worn the snow is by a tree line (packed, tracked); absent = 0 */
+  worn?: number;
 }
 
 export type Discipline = 'board' | 'ski';

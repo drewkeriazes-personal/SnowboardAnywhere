@@ -54,25 +54,27 @@ function groundAt(g: StandGrid, x: number, y: number): number {
  * The generated stems of a cell at `density` (0..1 of the stand's full density), as pack tree records
  * (x, y, z, height, crown, species id). The crown is 0 (the species' own) unless the pack has `crownWidths`
  * (FEAT-298), when it is the radius to draw: the species' times the cell's width factor times the stem's own draw.
+ * FEAT-333: a stem whose spot `clears` (a worn tree line runs there) is left out.
  */
-export function generateStems(g: StandGrid, density: number, widths: CrownWidthsMeta | null = null): Float32Array {
+export function generateStems(g: StandGrid, density: number, widths: CrownWidthsMeta | null = null, clears: ((x: number, y: number) => boolean) | null = null): Float32Array {
   const n = g.size, res = g.res, top = g.minY + n * res, px = g.px;
   if (density <= 0) return new Float32Array(0);
-  let count = 0;
+  // the cells that keep a stem, and where it stands
+  const keep: number[] = [], at: number[] = [];
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
-    const p = px[o];
-    if (p === 0) continue;
-    const cx = g.minX + ((i % n) + 0.5) * res, cy = top - (Math.floor(i / n) + 0.5) * res;
-    if (hash01(cx, cy, S_KEEP) < (p / 255) * density) count++;
-  }
-  const out = new Float32Array(count * 6);
-  let k = 0;
-  for (let i = 0, o = 0; i < n * n && k < count; i++, o += 4) {
     const p = px[o];
     if (p === 0) continue;
     const cx = g.minX + ((i % n) + 0.5) * res, cy = top - (Math.floor(i / n) + 0.5) * res;
     if (hash01(cx, cy, S_KEEP) >= (p / 255) * density) continue;
     const x = cx + (hash01(cx, cy, S_JX) - 0.5) * res * JITTER, y = cy + (hash01(cx, cy, S_JY) - 0.5) * res * JITTER;
+    if (clears && clears(x, y)) continue;
+    keep.push(i); at.push(x, y);
+  }
+  const count = keep.length;
+  const out = new Float32Array(count * 6);
+  for (let k = 0; k < count; k++) {
+    const i = keep[k], o = i * 4, x = at[k * 2], y = at[k * 2 + 1];
+    const cx = g.minX + ((i % n) + 0.5) * res, cy = top - (Math.floor(i / n) + 0.5) * res;
     const z = groundAt(g, x, y);
     const b = k * 6;
     out[b] = x; out[b + 1] = y; out[b + 2] = Number.isNaN(z) ? g.zBase : z;
@@ -81,7 +83,6 @@ export function generateStems(g: StandGrid, density: number, widths: CrownWidths
     // FEAT-298: the cell's width factor (lower half B) times the stem's own draw, as the radius to draw
     const wb = widths ? px[(n * n + i) * 4 + 2] : 0;
     out[b + 4] = widths && s < SPECIES_COUNT ? SPECIES[s].radius * h * (wb ? wb / WIDTH_STEP : 1) * widthDraw(widths, s, x, y) : 0;
-    k++;
   }
   return out;
 }

@@ -4,6 +4,7 @@ import { CoverSet } from './CoverSet';
 import { CanopyGrid } from './CanopyGrid';
 import type { Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
+import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
 
 /** chunks at this resolution or finer carry the mogul bumps in their geometry */
 export const MOGUL_MAX_RES = 2;
@@ -42,6 +43,9 @@ export class Pack {
   mogulScale = 1;
   mogulCreep = 0;
   features: Features = { lifts: [], runs: [], buildings: [], roads: [], water: [], peaks: [], labels: [] };
+  /** FEAT-333 / FEAT-303: the worn tree lines beside the black and glade runs and the glade trim, from the runs
+   *  (pack/treeLines.ts); null without them (`?notreelines`) */
+  treeLines: TreeLines | null = null;
 
   private constructor(baseUrl: string, meta: PackMeta) {
     this.baseUrl = baseUrl;
@@ -62,7 +66,8 @@ export class Pack {
   /** FEAT-330: canopy score 0..1 at pack (x, y); 0 without a grid, outside it, or before it loads */
   canopyAt(x: number, y: number): number { return this.canopy ? this.canopy.sample(x, y) : 0; }
 
-  static async load(baseUrl: string): Promise<Pack> {
+  /** `treeLines` false: no FEAT-333 tree lines or FEAT-303 trim (`?notreelines`) */
+  static async load(baseUrl: string, opts: { treeLines?: boolean } = {}): Promise<Pack> {
     const resp = await fetch(`${baseUrl}/meta.json`);
     if (!resp.ok) throw new Error(`Pack not found at ${baseUrl}/ (HTTP ${resp.status}). Run the Vite dev server (cd game && npm run dev) and open http://localhost:5173/?pack=<slug>; the pack folder must exist at packs/<slug>/ next to game/.`);
     const meta = (await resp.json()) as PackMeta;
@@ -72,6 +77,7 @@ export class Pack {
     } catch (e) {
       console.warn('no features.json', e);
     }
+    if (opts.treeLines !== false) await pack.setTreeLines(true);
     return pack;
   }
 
@@ -145,10 +151,60 @@ export class Pack {
   private readonly mogTmp = [0, 0, 0, 0];
   private readonly fallTmp = [1, 0];
 
-  /** FEAT-059: mogul amplitude (m) at a point from the pack's moguls set; 0 without the set or its tile. */
+  /**
+   * FEAT-059: mogul amplitude (m) at a point from the pack's moguls set; 0 without the set or its tile. FEAT-333: a
+   * worn tree line is a mogul line too, as strong as it is worn (LINE_MOGUL at full), wherever the set is weaker.
+   */
   mogulAmp(x: number, y: number, raw = false): number {
-    if (!this.moguls || (!raw && this.mogulScale <= 0)) return 0;
-    return this.moguls.sampleBilinear(x, y, this.mogTmp)[0] * (raw ? 1 : this.mogulScale);
+    if (!raw && this.mogulScale <= 0) return 0;
+    let a = this.moguls ? this.moguls.sampleBilinear(x, y, this.mogTmp)[0] : 0;
+    if (this.treeLines) { const w = this.treeLines.wornAt(x, y); if (w * LINE_MOGUL > a) a = w * LINE_MOGUL; }
+    return a * (raw ? 1 : this.mogulScale);
+  }
+
+  /** the shader and bump geometry carry moguls: the pack has a moguls set, or tree lines (FEAT-333) */
+  get hasMoguls(): boolean { return !!this.moguls || !!this.treeLines; }
+
+  /** FEAT-333: 0..1 how worn the snow is by a tree line here (0 off them, and under no forest) */
+  wornAt(x: number, y: number): number { return this.treeLines ? this.treeLines.wornAt(x, y) : 0; }
+
+  /**
+   * FEAT-333: build the tree lines from the runs (on), or drop them. The
+   * lines bend round the pack's detected trunks, so this fetches the tree cells they cross first (the same files the
+   * trees stream later, so the browser has them); the generated stems just leave the corridors.
+   */
+  async setTreeLines(on: boolean): Promise<void> {
+    if (!on) { this.treeLines = null; return; }
+    const t0 = performance.now();
+    const tl = new TreeLines(this.features.runs);
+    const inst = this.meta.instances;
+    let left = 0, trunkCount = 0;
+    if (inst) {
+      const listed = new Set(inst.treeCells ?? []), want = new Set<string>();
+      for (const b of tl.planBoxes()) {
+        for (let cy = Math.floor((b[1] - inst.minY) / inst.cellSize); cy <= Math.floor((b[3] - inst.minY) / inst.cellSize); cy++) {
+          for (let cx = Math.floor((b[0] - inst.minX) / inst.cellSize); cx <= Math.floor((b[2] - inst.minX) / inst.cellSize); cx++) {
+            const k = `${cx}_${cy}`;
+            if (listed.has(k)) want.add(k);
+          }
+        }
+      }
+      const trunks = new TrunkIndex();
+      await Promise.all([...want].map(async (k) => {
+        try {
+          const r = await fetch(`${this.baseUrl}/trees/${k}.bin`);
+          if (r.ok) trunks.add(new Float32Array(await r.arrayBuffer()), 6);
+        } catch { /* a cell that will not load: its trunks stay where the lines plan them */ }
+      }));
+      trunkCount = trunks.count;
+      left = tl.avoid(trunks);
+    }
+    tl.finish();
+    const mask = this.mask, tmp = [0, 0, 0, 0];
+    // the lines are only under the forest: the mask's canopy (zeros until its tile loads; the terrain rebuilds then)
+    tl.setCanopy(mask ? (x, y) => mask.sampleBilinear(x, y, tmp)[3] : null);
+    this.treeLines = tl;
+    console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km, bent round ${trunkCount} trunks (${left} steps broken at a trunk), ${(performance.now() - t0).toFixed(0)} ms`);
   }
 
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and
