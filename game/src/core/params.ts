@@ -50,6 +50,8 @@ export interface Params {
   nomoguls: boolean;
   /** FEAT-333 / FEAT-303: no worn tree lines and no glade trim (before / after looks) */
   notreelines: boolean;
+  /** FEAT-334: `treelines=runs` plans the tree lines from the runs even when the pack has baked ones (before / after) */
+  treelinesFromRuns: boolean;
   /** FEAT-303: the glade trees keep their low branches (the tree lines stay) */
   notrim: boolean;
   /** FEAT-337: the generated stems scatter evenly instead of in clumps (before / after looks) */
@@ -109,6 +111,7 @@ export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOS
     nocsm: p.has('nocsm'),
     nomoguls: p.has('nomoguls'),
     notreelines: p.has('notreelines'),
+    treelinesFromRuns: p.get('treelines') === 'runs',
     notrim: p.has('notrim'),
     evenstems: p.has('evenstems'),
     snowdepth: num('snowdepth'),

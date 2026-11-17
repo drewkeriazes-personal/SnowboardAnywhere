@@ -10,7 +10,9 @@
 //   - a full line is dug about a metre into the snow like a bobsled run, with a berm on its rim; no trunk in its walls
 //   - the snow on a line is tracked (chop) and shallower than the powder either side; a storm softens it
 //   - the build takes under 1.5 s of CPU
-// node tools/treelinecheck.mjs [pack]        (exit code 1 if a check fails; packs from SHOT_PACKS or the repo's packs/)
+// FEAT-334: a pack with baked lines (treeLines.json, MapPacker pipeline/tree_lines.py) is checked on those, as the game loads
+// them; --runs checks the plan from the runs instead.
+// node tools/treelinecheck.mjs [pack] [--runs]        (exit code 1 if a check fails; packs from SHOT_PACKS or the repo's packs/)
 import { build } from 'esbuild';
 import path from 'node:path';
 import { GAME, PACKS } from './paths.mjs';
@@ -40,18 +42,23 @@ const meta = JSON.parse(fs.readFileSync(path.join(packDir, 'meta.json'), 'utf8')
 const treeFiles = fs.existsSync(path.join(packDir, 'trees')) ? fs.readdirSync(path.join(packDir, 'trees')).filter((n) => n.endsWith('.bin')) : [];
 const readTrees = (n) => { const b = fs.readFileSync(path.join(packDir, 'trees', n)); return new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)); };
 const cells = treeFiles.map(readTrees);
+const bakedFile = !process.argv.includes('--runs') && meta.treeLines ? path.join(packDir, meta.treeLines.file) : null;
+const baked = bakedFile && fs.existsSync(bakedFile) ? JSON.parse(fs.readFileSync(bakedFile, 'utf8')) : null;
 
 function make() {
   const t0 = performance.now();
-  const tl = new TreeLines(features.runs);
-  const trunks = new TrunkIndex();
-  for (const c of cells) trunks.add(c, 6);
-  const broken = tl.avoid(trunks);
+  const tl = new TreeLines(features.runs, baked);
+  let broken = 0;
+  if (!baked) {
+    const trunks = new TrunkIndex();
+    for (const c of cells) trunks.add(c, 6);
+    broken = tl.avoid(trunks);
+  }
   tl.finish();
   return { tl, broken, ms: performance.now() - t0 };
 }
 const a = make(), b = make(), tl = a.tl;
-console.log(`${slug}: ${(tl.length / 1000).toFixed(0)} km of tree lines, ${tl.count} segments, ${a.broken} steps broken at a trunk, ${a.ms.toFixed(0)} ms`);
+console.log(`${slug}: ${(tl.length / 1000).toFixed(0)} km of tree lines ${baked ? `baked in the pack (${baked.lines.length} lines)` : `from the runs, ${a.broken} steps broken at a trunk`}, ${tl.count} segments, ${a.ms.toFixed(0)} ms`);
 check('the same lines every time', a.tl.seg.length === b.tl.seg.length && a.tl.seg.every((v, i) => v === b.tl.seg[i]), `${b.tl.count} segments on the second build`);
 check('the build is quick', a.ms < 1500, `${a.ms.toFixed(0)} ms for the lines and ${cells.reduce((s, c) => s + c.length / 6, 0)} trunks`);
 
