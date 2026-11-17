@@ -30,6 +30,11 @@ const LINE_DIFF = new Set(['advanced', 'expert', 'freeride', 'extreme']);
 /** m along the run between seeds: an advanced run, and the tree runs (gladed, expert, freeride, extreme), which get more
  *  lines (3 or 4 deep ones across the trees beside Steep and Deep) */
 const SEED_STEP = 45, SEED_STEP_TREES = 28;
+/**
+ * The entrances at the top of a tree run: ENTRY_LINES lines starting ENTRY_S0 + ENTRY_DS x i m down it, ENTRY_OFF to 2 m
+ * more off its centreline (its edge), which peel off toward ENTRY_OUT + ENTRY_OUT_RANGE u m out, alternating sides
+ */
+const ENTRY_LINES = 3, ENTRY_S0 = 4, ENTRY_DS = 10, ENTRY_OFF = 5, ENTRY_OUT = 14, ENTRY_OUT_RANGE = 28;
 /** the tree runs: their lines fork more (braids) */
 const TREE_RUN = new Set(['expert', 'freeride', 'extreme']);
 /** a seed's offset from the run's centreline, m: OFF_MIN + (OFF_MAX - OFF_MIN) u^2 (most near the edge) */
@@ -39,9 +44,20 @@ const LEN_MIN = 120, LEN_RANGE = 260;
 /** walk step, m */
 const STEP = 3;
 /** the meander: the heading swings up to MEANDER rad off the run's direction, over about MEANDER_L m */
-const MEANDER = 0.55, MEANDER_L = 22;
+const MEANDER = 0.5, MEANDER_L = 35;
+/**
+ * Fan out, funnel in (research doc, Drew 2026-11-17): on the steep part riders spread across the trees; where the run
+ * flattens out (a runout, like Steep and Deep into Lower Pete's Bowl) nobody wants to bog down and the lines collapse
+ * toward the run's edge into one trench. A line's offset scales by FUNNEL_MIN at a pitch of FLAT_TAN and less, fully
+ * itself from STEEP_TAN, the pitch read from the run's own point heights over PITCH_SPAN m.
+ */
+const FUNNEL_MIN = 0.3, FLAT_TAN = 0.2, STEEP_TAN = 0.36, PITCH_SPAN = 60;
+/** a line's width wanders along it by +-WIDTH_VAR over about WIDTH_L m (the research doc's 30 % over 25 m) */
+const WIDTH_VAR = 0.3, WIDTH_L = 25;
+/** an entrance line ignores the forest gate for its first ENTRY_OPEN m, so its trench starts at the cat track */
+const ENTRY_OPEN = 70;
 /** pull back toward the line's own offset, rad per m of drift (and the most it turns by) */
-const PULL = 0.05, PULL_MAX = 0.6;
+const PULL = 0.05, PULL_MAX = 0.6, PULL_IN = 0.3;
 /** never closer to the run's centreline than this, m */
 const KEEP_OUT = 9;
 /**
@@ -56,7 +72,7 @@ const FORK_WEAVE = 0.25, FORK_STR = 0.6, FORK_FADE = 8;
 /** lines fade in over the first FADE_IN m and out over the last FADE_OUT m */
 const FADE_IN = 12, FADE_OUT = 45;
 /** corridor half-width at full strength and at the faintest, m */
-const HW_NEAR = 2.1, HW_FAR = 1.0;
+const HW_NEAR = 1.7, HW_FAR = 0.9;
 /** the corridor's soft edge past its half-width, m */
 const EDGE = 0.9;
 /** a generated stem planned in a trench moves out to this far past its rim, m, plus a seeded 0 to STEM_JITTER m (`placeStem`) */
@@ -111,14 +127,27 @@ function segD2(px: number, py: number, ax: number, ay: number, bx: number, by: n
 }
 
 /** a run's centreline, downhill first to last, with its cumulative length */
-interface Line { x: Float64Array; y: Float64Array; s: Float64Array; len: number }
+interface Line { x: Float64Array; y: Float64Array; z: Float64Array; s: Float64Array; len: number }
 function runLine(r: RunFeature): Line | null {
   let p = r.points;
   if (p.length < 2) return null;
   if (p[0][2] < p[p.length - 1][2]) p = p.slice().reverse();
-  const n = p.length, x = new Float64Array(n), y = new Float64Array(n), s = new Float64Array(n);
-  for (let i = 0; i < n; i++) { x[i] = p[i][0]; y[i] = p[i][1]; if (i) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]); }
-  return s[n - 1] > 20 ? { x, y, s, len: s[n - 1] } : null;
+  const n = p.length, x = new Float64Array(n), y = new Float64Array(n), z = new Float64Array(n), s = new Float64Array(n);
+  for (let i = 0; i < n; i++) { x[i] = p[i][0]; y[i] = p[i][1]; z[i] = p[i][2]; if (i) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]); }
+  return s[n - 1] > 20 ? { x, y, z, s, len: s[n - 1] } : null;
+}
+
+/** the run's pitch (rise over run, downhill positive) round arc length s, over PITCH_SPAN m of its points */
+function pitchAt(l: Line, s: number): number {
+  const zAt = (q: number): number => {
+    q = Math.max(0, Math.min(l.len, q));
+    let i = 0;
+    while (i + 2 < l.s.length && l.s[i + 1] < q) i++;
+    const sl = l.s[i + 1] - l.s[i] || 1, t = Math.min(1, Math.max(0, (q - l.s[i]) / sl));
+    return l.z[i] + (l.z[i + 1] - l.z[i]) * t;
+  };
+  const a = Math.max(0, s - PITCH_SPAN / 2), b = Math.min(l.len, s + PITCH_SPAN / 2);
+  return b - a > 1 ? (zAt(a) - zAt(b)) / (b - a) : 0;
 }
 
 /** where a point sits against a run line: its arc length along it, the signed offset (+ left of downhill) and the unit tangent */
@@ -171,8 +200,10 @@ export type CanopyAt = (x: number, y: number) => number;
 /** one planned line: its points every STEP m, its strength at each (fades included) and its half-width */
 interface Plan {
   x: number[]; y: number[]; str: number[]; hw: number;
-  /** per point: the half-width, narrowed where the line squeezes past a trunk (set by `avoid`) */
-  w?: Float64Array;
+  /** per point: the half-width (wandering along the line, narrowed by `avoid` where it squeezes past a trunk) */
+  w: number[];
+  /** per point: 1 where the forest gate does not apply (an entrance line's first ENTRY_OPEN m) */
+  open: number[];
 }
 
 /** detected trunks (the pack's own trees), for the lines to bend round: x, y pairs in a 4 m grid */
@@ -209,6 +240,8 @@ const RAMP_STEPS = 3;
 export class TreeLines {
   /** the corridors' segments, LINE_SEG floats each (empty until `finish`) */
   seg = new Float32Array(0);
+  /** per segment: 1 where the forest gate does not apply (an entrance line leaving the cat track) */
+  open = new Uint8Array(0);
   count = 0;
   /** total length of the lines, m (for the log and the checks) */
   length = 0;
@@ -240,6 +273,15 @@ export class TreeLines {
         // left of downhill is (-ty, tx)
         const sx = pt[0] - pt[3] * off * side, sy = pt[1] + pt[2] * off * side;
         this.walk(l, ri, k, sx, sy, side * off, str, LEN_MIN + LEN_RANGE * h01(ri, k, 3), 0);
+      }
+      // the entrances: beside a tree run, lines that start at its top, right at its edge where it leaves the cat track or
+      // the run above, and peel off into the trees (each fades in from the surface, so the rider drops in naturally)
+      if (trees) for (let e = 0; e < ENTRY_LINES; e++) {
+        const k = 1000 + e, side = (e + (h01(ri, k, 1) < 0.5 ? 0 : 1)) % 2 ? 1 : -1;
+        along(l, ENTRY_S0 + ENTRY_DS * e, pt);
+        const off0 = ENTRY_OFF + 2 * h01(ri, k, 2), target = ENTRY_OUT + ENTRY_OUT_RANGE * h01(ri, k, 12);
+        const sx = pt[0] - pt[3] * off0 * side, sy = pt[1] + pt[2] * off0 * side;
+        this.walk(l, ri, k, sx, sy, side * target, 1, LEN_MIN + LEN_RANGE * h01(ri, k, 3), 0, ENTRY_OPEN);
       }
     });
     // the runs for the trim (all of them: a strip between any two runs is ridden)
@@ -289,14 +331,13 @@ export class TreeLines {
         const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), dx = p.x[b] - p.x[a], dy = p.y[b] - p.y[a], l = Math.hypot(dx, dy) || 1;
         nx[i] = -dy / l; ny[i] = dx / l;
       }
-      const R = p.hw + TRUNK_CLEAR;
       const need = new Float64Array(n), add = new Float64Array(n);
       for (let pass = 0; pass < 10; pass++) {
         need.fill(0);
         let any = false;
         for (let i = 0; i < n; i++) {
           if (p.str[i] < 0.15) continue; // a faint end: the woods close in anyway
-          const px = p.x[i] + nx[i] * off[i], py = p.y[i] + ny[i] * off[i];
+          const px = p.x[i] + nx[i] * off[i], py = p.y[i] + ny[i] * off[i], R = p.w[i] + TRUNK_CLEAR;
           let lo = 0, hi = 0; // the moves the trunks on each side ask for (lo toward -normal, hi toward +normal)
           trunks.near(px, py, R + STEP, (tx, ty) => {
             const lat = (tx - px) * nx[i] + (ty - py) * ny[i];
@@ -323,14 +364,14 @@ export class TreeLines {
       }
       for (let i = 0; i < n; i++) { p.x[i] += nx[i] * off[i]; p.y[i] += ny[i] * off[i]; }
       // squeeze past what is still too close: the segment narrows so the trunk keeps TRUNK_CLEAR out of it
-      const w = p.w = new Float64Array(n).fill(p.hw);
+      const w = p.w;
       // (the faint ends too: they are dug a little)
       const broke: number[] = [];
       for (let i = 0; i + 1 < n; i++) {
         if (p.str[i] <= 0.02) continue;
         const ax = p.x[i], ay = p.y[i], bx = p.x[i + 1], by = p.y[i + 1];
         // round the segment's middle, as far as its own half length (a bend can stretch a step well past STEP)
-        const mx = (ax + bx) / 2, my = (ay + by) / 2, half = Math.hypot(bx - ax, by - ay) / 2;
+        const mx = (ax + bx) / 2, my = (ay + by) / 2, half = Math.hypot(bx - ax, by - ay) / 2, R = w[i] + TRUNK_CLEAR;
         trunks.near(mx, my, R + half, (tx, ty) => {
           const d = Math.sqrt(segD2(tx, ty, ax, ay, bx, by));
           if (d < R) w[i] = Math.min(w[i], Math.max(SQUEEZE_HW, d - TRUNK_CLEAR));
@@ -353,12 +394,13 @@ export class TreeLines {
 
   /** makes the planned lines count: their segments and the grid the queries use */
   finish(): void {
-    const out: number[] = [];
+    const out: number[] = [], open: number[] = [];
     for (const p of this.plans) {
-      for (let i = 0; i + 1 < p.x.length; i++) if (p.str[i] > 0.02) out.push(p.x[i], p.y[i], p.x[i + 1], p.y[i + 1], p.w ? p.w[i] : p.hw, p.str[i]);
+      for (let i = 0; i + 1 < p.x.length; i++) if (p.str[i] > 0.02) { out.push(p.x[i], p.y[i], p.x[i + 1], p.y[i + 1], p.w[i], p.str[i]); open.push(p.open[i]); }
     }
     this.plans = [];
     this.seg = new Float32Array(out);
+    this.open = Uint8Array.from(open);
     this.count = out.length / LINE_SEG;
     let len = 0;
     for (let i = 0; i < this.count; i++) {
@@ -374,9 +416,9 @@ export class TreeLines {
   setCanopy(c: CanopyAt | null): void { this.canopy = c; }
 
   /** plans one line from (x, y): `latT` is the offset (signed, m) it keeps near, `depth` 1 for a fork's branch */
-  private walk(l: Line, ri: number, k: number, x: number, y: number, latT: number, str: number, len: number, depth: number): void {
+  private walk(l: Line, ri: number, k: number, x: number, y: number, latT: number, str: number, len: number, depth: number, openM = 0): void {
     const salt = ri * 7919 + k * 31 + depth * 7;
-    const plan: Plan = { x: [], y: [], str: [], hw: HW_FAR + (HW_NEAR - HW_FAR) * str * (0.7 + 0.3 * h01(ri, k, 4 + depth)) };
+    const plan: Plan = { x: [], y: [], str: [], hw: HW_FAR + (HW_NEAR - HW_FAR) * str * (0.7 + 0.3 * h01(ri, k, 4 + depth)), w: [], open: [] };
     this.plans.push(plan);
     // a branch keeps near its parent's offset plus a swing: half a sine (out and back: a split) or a whole one (across the
     // parent's line and back: two runs intertwining), so both ends meet the parent
@@ -389,36 +431,45 @@ export class TreeLines {
       if (p.s >= l.len - 2) break; // past the run's foot
       if (depth) latT = base + swing * Math.sin(Math.PI * waves * t / len);
       const sideSign = p.lat >= 0 ? 1 : -1;
-      const want = Math.abs(latT) < KEEP_OUT ? sideSign * KEEP_OUT : latT;
-      const pull = Math.max(-PULL_MAX, Math.min(PULL_MAX, PULL * (want - p.lat)));
+      // fan out on the steep, funnel toward the run's edge where it flattens
+      const funnel = FUNNEL_MIN + (1 - FUNNEL_MIN) * smooth(FLAT_TAN, STEEP_TAN, pitchAt(l, p.s));
+      const lt = latT * funnel;
+      const want = Math.abs(lt) < KEEP_OUT + 3 ? sideSign * (KEEP_OUT + 3) : lt;
+      // inside the keep-out the pull is firm: the run itself stays the run's
+      const pull = Math.max(-PULL_MAX, Math.min(PULL_MAX, (Math.abs(p.lat) < KEEP_OUT ? PULL_IN : PULL) * (want - p.lat)));
       const a = Math.atan2(p.ty, p.tx) + MEANDER * noise1(t / MEANDER_L, salt, 1) + pull;
       const nx = x + Math.cos(a) * STEP, ny = y + Math.sin(a) * STEP;
       plan.x.push(x); plan.y.push(y); plan.str.push(str * smooth(0, fadeIn, t) * (1 - smooth(len - fadeOut, len, t)));
+      plan.w.push(plan.hw * (1 + WIDTH_VAR * noise1(t / WIDTH_L, salt, 2))); plan.open.push(t < openM ? 1 : 0);
       if (!depth && t > 20 && t < len - 60 && h01(salt, Math.round(t), 5) < this.forkP) {
         const lat = p.lat;
         this.walk(l, ri, k * 64 + Math.round(t), nx, ny, lat, str * FORK_STR, Math.min(len - t, FORK_LEN + FORK_LEN_RANGE * h01(salt, Math.round(t), 6)), 1);
       }
       x = nx; y = ny;
     }
-    plan.x.push(x); plan.y.push(y); plan.str.push(0);
+    plan.x.push(x); plan.y.push(y); plan.str.push(0); plan.w.push(plan.hw); plan.open.push(0);
   }
 
-  /** the line's raw weight here, 0..1 (the corridor's profile times its strength), before the canopy gate */
+  /** the line's raw weight here, 0..1 (the corridor's profile times its strength), before the canopy gate; the open
+   *  segments' share (an entrance leaving the cat track) goes to `rawOpen` */
   private rawAt(x: number, y: number): number {
+    this.rawOpen = 0;
     const ids = this.grid.at(x, y);
     if (!ids) return 0;
     const s = this.seg;
     let w = 0;
     for (const i of ids) {
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
-      if (str <= w) continue;
+      if (str <= w && (!this.open[i] || str <= this.rawOpen)) continue;
       const r = hw + EDGE, d2 = segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
       if (d2 >= r * r) continue;
       const v = str * (1 - smooth(hw * 0.5, r, Math.sqrt(d2)));
       if (v > w) w = v;
+      if (this.open[i] && v > this.rawOpen) this.rawOpen = v;
     }
     return w;
   }
+  private rawOpen = 0;
 
   /**
    * The line dug into the snow here, m (negative in the trench, a little positive on its berm), before the canopy gate.
@@ -427,13 +478,13 @@ export class TreeLines {
    * that curve up steeply (about 45 degrees at their steepest on a full-width line) and round over at the rim, and just
    * past the rim the snow the riders pushed aside, a berm BERM_H high and BERM_W wide. A line squeezed narrow past a trunk
    * is shallower, so its walls stay rideable. Where lines meet, the deepest trench wins and a berm never fills another
-   * line's trench.
+   * line's trench. The canopy gate scales the forest's part; an open segment's trench (`open`) counts as it is.
    */
-  private trenchRaw(x: number, y: number): number {
+  private trenchRaw(x: number, y: number, gate: (x: number, y: number) => number): number {
     const ids = this.grid.at(x, y);
     if (!ids) return 0;
     const s = this.seg;
-    let dig = 0, berm = 0;
+    let dig = 0, digOpen = 0, berm = 0, bermOpen = 0;
     for (const i of ids) {
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
       const rim = hw + TRENCH_WALL, r = rim + BERM_W;
@@ -441,18 +492,21 @@ export class TreeLines {
       if (d2 >= r * r) continue;
       const d = Math.sqrt(d2);
       const t = -TRENCH_DEPTH * str * Math.min(1, (hw + 0.2) / 1.2) * (1 - smooth(0.3 * rim, rim, d));
-      if (t < dig) dig = t;
-      const u = (d - rim + 0.3) / (BERM_W + 0.3);
-      if (u > 0 && u < 1) { const b = BERM_H * str * Math.sin(Math.PI * u) ** 2; if (b > berm) berm = b; }
+      const u = (d - rim + 0.3) / (BERM_W + 0.3), b = u > 0 && u < 1 ? BERM_H * str * Math.sin(Math.PI * u) ** 2 : 0;
+      if (this.open[i]) { if (t < digOpen) digOpen = t; if (b > bermOpen) bermOpen = b; } else { if (t < dig) dig = t; if (b > berm) berm = b; }
     }
-    return dig + berm * Math.max(0, 1 + dig / 0.15);
+    if (dig === 0 && berm === 0 && digOpen === 0 && bermOpen === 0) return 0;
+    const g = dig !== 0 || berm !== 0 ? gate(x, y) : 0;
+    const dd = Math.min(dig * g, digOpen), bb = Math.max(berm * g, bermOpen);
+    return dd + bb * Math.max(0, 1 + dd / 0.15);
   }
 
-  /** FEAT-333: the height the snow is dug down (or banked up) by a tree line here, m, under the forest only */
+  /** FEAT-333: the height the snow is dug down (or banked up) by a tree line here, m, under the forest only (and on an
+   *  entrance's open stretch from the cat track) */
   trenchAt(x: number, y: number): number {
-    const h = this.trenchRaw(x, y);
-    return h !== 0 ? h * this.gate(x, y) : 0;
+    return this.trenchRaw(x, y, this.gateFn);
   }
+  private readonly gateFn = (x: number, y: number): number => this.gate(x, y);
 
   /** the canopy gate: no line where there is no forest round it */
   private gate(x: number, y: number): number {
@@ -462,7 +516,7 @@ export class TreeLines {
   /** 0..1 how worn the snow is here by a tree line (0 off them and outside the forest) */
   wornAt(x: number, y: number): number {
     const w = this.rawAt(x, y);
-    return w > 0 ? w * this.gate(x, y) : 0;
+    return w > 0 ? Math.max(w * this.gate(x, y), this.rawOpen) : 0;
   }
 
   /**

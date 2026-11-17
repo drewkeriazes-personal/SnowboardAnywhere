@@ -1,7 +1,7 @@
 // Worn tree lines (FEAT-333) and glade trim (FEAT-303): builds the tree lines of a real pack (Vail by default) from its
 // runs and its detected trees, the way the game does at load (pack/treeLines.ts, no browser), and checks:
 //   - the same runs and trees give the same lines every time
-//   - Steep and Deep (trees14, 1827, -3506): 3 or 4 bobsled runs (dug over 0.5 m) within 60 m of the run, the spot itself off them
+//   - Steep and Deep: at least 2 lines dropping in from the cat track at its top; (trees14, 1827, -3506) 3 or 4 bobsled runs (dug over 0.5 m) within 60 m of the run, the spot itself off them
 //     (snowcheck's deep-powder spot)
 //   - no detected trunk inside a corridor anywhere in the pack (the lines bend round them or squeeze past)
 //   - the generated stems leave the trenches for their banks: a full-density stand round the busiest lines grows no stem
@@ -68,6 +68,16 @@ if (slug === 'vail') {
   counts.sort((a, b) => a - b);
   const med = counts[counts.length >> 1];
   check('Steep and Deep has 3 or 4 bobsled runs beside it', med >= 3 && med <= 4, `median ${med} deep runs crossed within 60 m of the run (transects ${counts.join(' ')})`);
+  // the entrances: lines leaving the cat track at the run's top (1611, -3997), down it toward (1635, -3922)
+  const T0 = [1611, -3997], T1 = [1635, -3922], tl0 = Math.hypot(T1[0] - T0[0], T1[1] - T0[1]);
+  const ux = (T1[0] - T0[0]) / tl0, uy = (T1[1] - T0[1]) / tl0;
+  let entries = 0;
+  for (const along of [20, 28, 36]) {
+    let n = 0, was = false;
+    for (let a = -30; a <= 30; a += 0.25) { const on = tl.trenchAt(T0[0] + ux * along - uy * a, T0[1] + uy * along + ux * a) < -0.3; if (on && !was) n++; was = on; }
+    entries = Math.max(entries, n);
+  }
+  check('lines drop in from the cat track at the top of Steep and Deep', entries >= 2, `${entries} dug lines crossed 20 to 36 m below the top`);
   check('the trees14 powder spot is off the lines', tl.wornAt(P[0], P[1]) === 0, `worn ${tl.wornAt(P[0], P[1]).toFixed(2)}`);
   check('the Steep and Deep trees are trimmed', tl.trimAt(P[0], P[1]) > 0.9, `trim ${tl.trimAt(P[0], P[1]).toFixed(2)}`);
   check('the trees14 snow lies as it fell (no trench)', tl.trenchAt(P[0], P[1]) === 0, `${tl.trenchAt(P[0], P[1]).toFixed(2)} m`);
