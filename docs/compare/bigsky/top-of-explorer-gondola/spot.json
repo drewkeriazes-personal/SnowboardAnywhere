@@ -1,0 +1,41 @@
+{
+  "name": "Top of Explorer Gondola (the Big Sky sign)",
+  "latlon": [
+    45.27760277777778,
+    -111.43202222222223
+  ],
+  "game": {
+    "x": -1685,
+    "y": -670
+  },
+  "views": [
+    {
+      "id": "photo-west",
+      "heading": 293.0,
+      "pitch": 0.0,
+      "fov": 56.9,
+      "x": -1652.3,
+      "y": -796.0,
+      "h": 293.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-1652.3&y=-796.0&h=293.3&pitch=0.0&fov=56.9&cam=eye&spot=top-of-explorer-gondola/photo-west",
+      "photo": "PXL_20260210_175630516.jpg",
+      "photo_capture": "2026:02:10 10:56:30",
+      "declination": 11.0
+    },
+    {
+      "id": "photo-lone-peak",
+      "heading": 175.0,
+      "pitch": 0.0,
+      "fov": 56.9,
+      "x": -1685.1,
+      "y": -669.9,
+      "h": 262.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-1685.1&y=-669.9&h=262.3&pitch=0.0&fov=56.9&cam=eye&spot=top-of-explorer-gondola/photo-lone-peak",
+      "photo": "PXL_20260210_203907458.MP.jpg",
+      "photo_capture": "2026:02:10 13:39:07",
+      "declination": 11.0,
+      "heading_offset": 87.0
+    }
+  ],
+  "streetview_capture": "Photos Drew, Feb 2026"
+}

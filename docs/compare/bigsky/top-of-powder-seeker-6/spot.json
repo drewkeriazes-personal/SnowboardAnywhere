@@ -32,7 +32,18 @@
       "y": -390.7,
       "h": 191.9,
       "game": "http://localhost:5173/?pack=bigsky&x=-2584.6&y=-390.7&h=191.9&pitch=-4.0&fov=75.0&cam=eye&spot=top-of-powder-seeker-6/across"
+    },
+    {
+      "id": "sv-northwest",
+      "heading": 308.5,
+      "pitch": 1.5,
+      "fov": 90.0,
+      "streetview": "https://www.google.com/maps/@45.2825315,-111.4404004,3a,90y,308.49h,91.46t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC0uablhQE!2e10",
+      "x": -2339.3,
+      "y": -118.8,
+      "h": 308.8,
+      "game": "http://localhost:5173/?pack=bigsky&x=-2339.3&y=-118.8&h=308.8&pitch=1.5&fov=90.0&cam=eye&spot=top-of-powder-seeker-6/sv-northwest"
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Apr 2018, contributor Big Sky Resort (MT-360), 370 m north east of the lift top"
 }

@@ -32,7 +32,19 @@
       "y": 112.1,
       "h": 252.4,
       "game": "http://localhost:5173/?pack=bigsky&x=-1974.6&y=112.1&h=252.4&pitch=-4.0&fov=75.0&cam=eye&spot=top-of-headwaters-2/across"
+    },
+    {
+      "id": "sv-moonlight",
+      "heading": 322.3,
+      "pitch": -11.5,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2673053,-111.2703563,3a,75y,322.33h,78.47t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC69oqMuQE!2e10",
+      "x": -1975.0,
+      "y": 112.0,
+      "h": 322.5,
+      "game": "http://localhost:5173/?pack=bigsky&x=-1975.0&y=112.0&h=322.5&pitch=-11.5&fov=75.0&cam=eye&spot=top-of-headwaters-2/sv-moonlight",
+      "position_override": true
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Dec 2012, contributor Andy Abramson; the panorama is pinned 13 km east (Moonlight Basin), placed at the spot with --at"
 }

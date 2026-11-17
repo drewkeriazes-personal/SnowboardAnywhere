@@ -32,7 +32,20 @@
       "y": -1436.6,
       "h": 273.5,
       "game": "http://localhost:5173/?pack=bigsky&x=-3408.5&y=-1436.6&h=273.5&pitch=-4.0&fov=75.0&cam=eye&spot=top-of-dakota-3/across"
+    },
+    {
+      "id": "photo-trees",
+      "heading": 161.0,
+      "pitch": 0.0,
+      "fov": 71.5,
+      "x": -3138.4,
+      "y": -1851.6,
+      "h": 161.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-3138.4&y=-1851.6&h=161.3&pitch=0.0&fov=71.5&cam=eye&spot=top-of-dakota-3/photo-trees",
+      "photo": "PXL_20260213_193115378.MP.jpg",
+      "photo_capture": "2026:02:13 12:31:15",
+      "declination": 11.0
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Photo Drew, Feb 2026, 500 m from the lift top in the trees"
 }

@@ -32,7 +32,42 @@
       "y": -74.1,
       "h": 340.1,
       "game": "http://localhost:5173/?pack=bigsky&x=703.2&y=-74.1&h=340.1&pitch=0.0&fov=75.0&cam=eye&spot=base-of-swift-current-6/across"
+    },
+    {
+      "id": "sv-south",
+      "heading": 176.2,
+      "pitch": 6.5,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2834447,-111.4015052,3a,75y,176.15h,96.45t/data=!3m7!1e1!3m5!1s1AXkOzsfBTdBwwcxWZ7qlQ!2e0",
+      "x": 711.7,
+      "y": -33.3,
+      "h": 176.4,
+      "game": "http://localhost:5173/?pack=bigsky&x=711.7&y=-33.3&h=176.4&pitch=6.5&fov=75.0&cam=eye&spot=base-of-swift-current-6/sv-south"
+    },
+    {
+      "id": "sv-west",
+      "heading": 284.8,
+      "pitch": 9.3,
+      "fov": 75.0,
+      "streetview": "https://www.google.com/maps/@45.2834447,-111.4015052,3a,75y,284.8h,99.34t/data=!3m7!1e1!3m5!1s1AXkOzsfBTdBwwcxWZ7qlQ!2e0",
+      "x": 711.7,
+      "y": -33.3,
+      "h": 285.1,
+      "game": "http://localhost:5173/?pack=bigsky&x=711.7&y=-33.3&h=285.1&pitch=9.3&fov=75.0&cam=eye&spot=base-of-swift-current-6/sv-west"
+    },
+    {
+      "id": "photo-east",
+      "heading": 97.0,
+      "pitch": 0.0,
+      "fov": 71.5,
+      "x": -246.1,
+      "y": 89.1,
+      "h": 97.3,
+      "game": "http://localhost:5173/?pack=bigsky&x=-246.1&y=89.1&h=97.3&pitch=0.0&fov=71.5&cam=eye&spot=base-of-swift-current-6/photo-east",
+      "photo": "PXL_20260212_180856228.MP.jpg",
+      "photo_capture": "2026:02:12 11:08:56",
+      "declination": 11.0
     }
   ],
-  "streetview_capture": "TODO: month year, contributor (shown at the bottom of the Street View)"
+  "streetview_capture": "Street View Apr 2011, Google; photo Drew, Feb 2026"
 }
