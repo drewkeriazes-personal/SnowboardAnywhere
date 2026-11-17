@@ -3,6 +3,7 @@ import { type Pack, MOGUL_MAX_RES, MOGUL_SHADE_MAX_RES } from '../pack/Pack';
 import { exposure, finestChunkRes, gridOrigin } from './exposure';
 import { treelineOf } from '../pack/treeline';
 import { MOGUL_FALL_D, WORN_K } from './Moguls';
+import { TRENCH_DEPTH } from '../pack/treeLines';
 import { createTerrainMaterial, COVER_SLOTS, EMPTY_RECT } from './TerrainMaterial';
 import { vegetationFarRadius, vegetationStemReach, vegetationClumpBand, vegetationTreeEnd } from '../world/Vegetation';
 import { CLUMP_RHO } from '../world/trees/clumps';
@@ -477,8 +478,10 @@ export class Terrain implements Ground {
         rock = ex.rock;
         col[v * 3] = rock; col[v * 3 + 1] = ex.scree; col[v * 3 + 2] = groom * (1 - rock);
         const mog = shadeMoguls ? pack.mogulAmp(x, y, true) * (1 - rock) : 0;
-        // FEAT-333: y's fraction carries how worn a tree line is here (0..WORN_K), for its ski tracks; the whole part stays the path
-        mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath + (wornOn ? WORN_K * pack.wornAt(x, y) * (1 - rock) : 0);
+        // FEAT-333: y's fraction carries how deep in a tree line's trench this is (0 at the rim .. WORN_K on its floor), for the
+        // shader's wall shade and ski tracks; the whole part stays the path
+        const dug = wornOn ? Math.min(1, Math.max(0, -pack.trenchAt(x, y) / TRENCH_DEPTH)) : 0;
+        mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath + WORN_K * dug * (1 - rock);
         // moguls take the same wide fall line as Pack.bumpAt (BUG-064), so the shaded field matches the
         // bumps in the geometry and the physics
         let mgx = 0, mgy = 0;

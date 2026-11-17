@@ -91,7 +91,7 @@ const smooth = (a: number, b: number, x: number): number => { const t = clamp01(
  * there into `out` (when it returns more than 0). The crown is the generator's profile from its base
  * (the species' crownBase) to the top.
  */
-export function crownOverlap(sp: number, tx: number, ty: number, tz: number, h: number, cr: number, x: number, y: number, z: number, out: CrownHit): number {
+export function crownOverlap(sp: number, tx: number, ty: number, tz: number, h: number, cr: number, x: number, y: number, z: number, out: CrownHit, reach: ((y: number) => number) | null = null): number {
   if (!HOLDS[sp] || h <= 0) return 0;
   const d = Math.hypot(x - tx, y - ty);
   if (d >= cr + HALF_W) return 0;
@@ -100,7 +100,7 @@ export function crownOverlap(sp: number, tx: number, ty: number, tz: number, h: 
   for (const b of BODY) {
     const t = ((z + b - tz) / h - base) / (1 - base);
     if (t < 0 || t > 1) continue;
-    const r = cr * crownProfile(s.form, t), o = clamp01((r + HALF_W - d) / CONTACT_DEEP);
+    const r = cr * crownProfile(s.form, t) * (reach ? reach(z + b - tz) : 1), o = r > 0 ? clamp01((r + HALF_W - d) / CONTACT_DEEP) : 0;
     if (o > best) { best = o; out.at = z + b; out.r = r; }
   }
   return best;

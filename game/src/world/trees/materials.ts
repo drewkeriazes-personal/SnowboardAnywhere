@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_BODY, TREE_FADE_FRAG_ALPHA } from '../TreeFade';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
+import { TRIM, TRIM_GLSL } from './trim';
 
 /**
  * FEAT-156: the tree kit's materials. Each LOD draws only inside its distance band (measured from the
@@ -54,15 +55,6 @@ const THIN_GLSL = /* glsl */ `
   }
 `;
 
-/**
- * FEAT-303: the trim is full up to TRIM_H0 m above the tree's base and gone by TRIM_H1 (the snowpack and a rider's
- * height; on a small tree 0.45 and 0.65 of its height); a fully trimmed limb reaches TRIM_PULL less far out, and its
- * needles drop under the noise level TRIM_THIN (most of them)
- */
-const TRIM_H0 = '2.8', TRIM_H1 = '4.2', TRIM_PULL = '0.85', TRIM_THIN = '0.75';
-/** FEAT-303: over the trim line the boughs reach up to TRIM_BUSH further out, over a band TRIM_BUSH_H m tall (full in its lower part) */
-const TRIM_BUSH = '0.3', TRIM_BUSH_H = '4.0';
-
 /** (fade-in start, fade-in end, fade-out start, fade-out end), metres from the camera */
 export type Band = { value: THREE.Vector4 };
 export const newBand = (): Band => ({ value: new THREE.Vector4(-2, -1, 1e8, 1e8 + 1) });
@@ -72,10 +64,10 @@ const LOD_VERT = /* glsl */ `
   // FEAT-298 (generate.ts Builder.core): natural crown radius / height, core radius and the lean per unit height (crown-radius frame)
   attribute vec4 kCore;
   #ifndef SHRUB
-    // FEAT-303: per instance, how far the tree's lower branches are trimmed (0..1; Vegetation from pack/treeLines.ts)
-    attribute float aTrim;
+    // FEAT-303: per instance (t, bare, hs): how far the tree's lower branches are trimmed, bare below the line, the line's height scale (trim.ts)
+    attribute vec3 aTrim;
   #endif
-  varying float vLodVis; varying float vLodIn; varying float vTrimLow;
+  varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
   // 0..1 visibility at this distance; isIn is 1 on the fade-in edge, 0 on the fade-out edge
   float lodVis(vec3 o, out float isIn) {
     float d = distance(o, uLodCam);
@@ -84,16 +76,17 @@ const LOD_VERT = /* glsl */ `
     isIn = d < 0.5 * (uLodBand.y + uLodBand.z) ? 1.0 : 0.0;
     return isIn > 0.5 ? vin : vout;
   }
+  ${TRIM_GLSL}
 `;
 const LOD_FRAG_HEAD = /* glsl */ `
-  varying float vLodVis; varying float vLodIn; varying float vTrimLow;
+  varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
 `;
 /**
- * FEAT-303: a trimmed tree's low needles are thinner: the fragment drops a noisy share of them (about half at full
- * trim), so the limbs that are left read as sparse. Needs the snow varyings (vSnowRel) and treeSnowNoise.
+ * FEAT-303: a trimmed tree's low needles are thinner: the fragment drops a noisy share of them (most at full trim,
+ * all of them on a bare tree), so the limbs that are left read as sparse. Needs the snow varyings (vSnowRel) and treeSnowNoise.
  */
 const TRIM_FRAG = /* glsl */ `
-  if (vTrimLow > 0.01 && treeSnowNoise(vSnowRel * 2.3 + 11.0) < ${TRIM_THIN} * vTrimLow) discard;
+  if (vTrimLow > 0.01 && treeSnowNoise(vSnowRel * 2.3 + 11.0) < mix(${TRIM.THIN.toFixed(2)}, 1.3, vTrimBare) * vTrimLow) discard;
 `;
 /** the same 8x8 Bayer matrix as TreeFade, for the far shader (which has no see-through fade) */
 const BAYER = /* glsl */ `
@@ -129,22 +122,21 @@ const KIT_BEGIN = /* glsl */ `
       }
     }
   #endif
-  vTrimLow = 0.0;
+  vTrimLow = 0.0; vTrimBare = 0.0;
   #ifndef SHRUB
-    // FEAT-303: a glade tree's lower branches are worn back by the riders: from the base to about head height over the
-    // snow (less on a small tree) they reach TRIM_PULL less far out from the trunk at full trim, and thin (TRIM_FRAG)
-    if (aTrim * uTrimK > 0.0) {
+    // FEAT-303: a glade tree's lower branches are worn back by the riders (trim.ts, the same profile as the puffs): below
+    // the tree's own trim line they reach TRIM.PULL less far out at full trim and thin (TRIM_FRAG), all gone on a bare tree;
+    // just over it they grow out fuller
+    if (aTrim.x * uTrimK > 0.0) {
       float kH = length(ktm[1].xyz);
-      float kT = aTrim * uTrimK, kY = position.y * kH, kH1 = min(${TRIM_H1}, 0.65 * kH);
-      float kLow = kT * (1.0 - smoothstep(min(${TRIM_H0}, 0.45 * kH), kH1, kY));
-      // the boughs just over the trim line, with the light the trimmed ones left, grow out fuller (TRIM_BUSH)
-      float kUp = kT * smoothstep(kH1 - 0.6, kH1 + 0.4, kY) * (1.0 - smoothstep(kH1 + ${TRIM_BUSH_H} * 0.4, kH1 + ${TRIM_BUSH_H}, kY));
-      if (kLow > 0.0 || kUp > 0.0) {
+      vTrimBare = aTrim.y;
+      vec2 kLU = trimLowUp(vec3(aTrim.x * uTrimK, aTrim.yz), kH, position.y * kH);
+      if (kLU.x > 0.0 || kLU.y > 0.0) {
         vec2 tAx = position.y * kCore.zw, tD = transformed.xz - tAx;
         float tr = length(tD), ta = max(kCore.y, 0.05);
         if (tr > ta) {
-          transformed.xz = tAx + tD * ((ta + (tr - ta) * (1.0 - ${TRIM_PULL} * kLow) * (1.0 + ${TRIM_BUSH} * kUp)) / tr);
-          vTrimLow = kLow * smoothstep(ta, 2.0 * ta + 0.05, tr); // none on the trunk
+          transformed.xz = tAx + tD * ((ta + (tr - ta) * (1.0 - ${TRIM.PULL.toFixed(2)} * kLU.x) * (1.0 + ${TRIM.BUSH.toFixed(2)} * kLU.y)) / tr);
+          vTrimLow = kLU.x * smoothstep(ta, mix(2.0 * ta + 0.05, 1.3 * ta + 0.02, vTrimBare), tr); // none on the trunk
         }
       }
     }

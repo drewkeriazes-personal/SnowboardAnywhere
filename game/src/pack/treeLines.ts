@@ -27,8 +27,11 @@ import type { RunFeature } from './types';
 
 /** the runs that get tree lines beside them */
 const LINE_DIFF = new Set(['advanced', 'expert', 'freeride', 'extreme']);
-/** m along the run between seeds */
-const SEED_STEP = 45;
+/** m along the run between seeds: an advanced run, and the tree runs (gladed, expert, freeride, extreme), which get more
+ *  lines (3 or 4 deep ones across the trees beside Steep and Deep) */
+const SEED_STEP = 45, SEED_STEP_TREES = 28;
+/** the tree runs: their lines fork more (braids) */
+const TREE_RUN = new Set(['expert', 'freeride', 'extreme']);
 /** a seed's offset from the run's centreline, m: OFF_MIN + (OFF_MAX - OFF_MIN) u^2 (most near the edge) */
 const OFF_MIN = 12, OFF_MAX = 140;
 /** a line's length, m: LEN_MIN + LEN_RANGE u */
@@ -41,12 +44,19 @@ const MEANDER = 0.55, MEANDER_L = 22;
 const PULL = 0.05, PULL_MAX = 0.6;
 /** never closer to the run's centreline than this, m */
 const KEEP_OUT = 9;
-/** chance per step of a fork, and how far a branch swings out from its parent's line (m) */
-const FORK_P = 0.012, FORK_OUT = 6, FORK_OUT_RANGE = 8;
+/**
+ * The braids: chance per 3 m step of a fork (beside an advanced run, beside a tree run: about 0.4 and 1 per 100 m of
+ * descent), how far a branch swings out from its parent's line at its widest (m), its length (m: FORK_LEN + FORK_LEN_RANGE u),
+ * the share that weave across the parent and back (two runs intertwining) rather than split and rejoin, and a branch's
+ * strength against its parent's (shallower and narrower: less traffic). Values from a research pass (2026-11-17): no
+ * measured glade statistics exist; these follow tree-clump sizes, trail braiding and mogul wavelengths (PR #770).
+ */
+const FORK_P = 0.012, FORK_P_TREES = 0.03, FORK_OUT = 4, FORK_OUT_RANGE = 6, FORK_LEN = 25, FORK_LEN_RANGE = 40;
+const FORK_WEAVE = 0.25, FORK_STR = 0.6, FORK_FADE = 8;
 /** lines fade in over the first FADE_IN m and out over the last FADE_OUT m */
 const FADE_IN = 12, FADE_OUT = 45;
 /** corridor half-width at full strength and at the faintest, m */
-const HW_NEAR = 1.5, HW_FAR = 0.75;
+const HW_NEAR = 2.1, HW_FAR = 1.0;
 /** the corridor's soft edge past its half-width, m */
 const EDGE = 0.9;
 /** a generated stem planned in a trench moves out to this far past its rim, m, plus a seeded 0 to STEM_JITTER m (`placeStem`) */
@@ -58,7 +68,9 @@ export const LINE_MOGUL = 0.85;
 /** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
  *  the berm of pushed-aside snow on the rim, m high and wide (`trenchAt`) */
 export const TRENCH_DEPTH = 1.0;
-const TRENCH_WALL = 0.9, BERM_H = 0.15, BERM_W = 1.2;
+/** the canopy cover (the mask's) over which a line fades in: inside the trees, not on the open face beside a forest's edge */
+const CANOPY_LO = 0.3, CANOPY_HI = 0.55;
+const TRENCH_WALL = 1.1, BERM_H = 0.15, BERM_W = 1.2;
 const LINE_SEG = 6; // floats per segment: ax, ay, bx, by, half-width, strength
 const GRID = 16; // m: the segment grid
 /** trim: a glade's level within GLADE_FULL m of its run's centreline, none past GLADE_NONE */
@@ -202,6 +214,8 @@ export class TreeLines {
   length = 0;
   /** the planned lines, until `finish` */
   private plans: Plan[] = [];
+  /** the fork chance per step for the run being planned */
+  private forkP = FORK_P;
   private readonly grid = new SegGrid();
   /** every run's centreline segments, for the trim: ax, ay, bx, by, run index, glade level (GLADE_LEVEL) */
   private readonly runSeg: Float32Array;
@@ -216,7 +230,9 @@ export class TreeLines {
       if (!(r.gladed || (r.difficulty && LINE_DIFF.has(r.difficulty)))) return;
       const l = runLine(r);
       if (!l) return;
-      for (let k = 0, s0 = SEED_STEP * 0.5; s0 < l.len - 30; k++, s0 += SEED_STEP) {
+      const trees = r.gladed || TREE_RUN.has(r.difficulty ?? ''), step = trees ? SEED_STEP_TREES : SEED_STEP;
+      this.forkP = trees ? FORK_P_TREES : FORK_P;
+      for (let k = 0, s0 = step * 0.5; s0 < l.len - 30; k++, s0 += step) {
         const side = h01(ri, k, 1) < 0.5 ? -1 : 1;
         const u = h01(ri, k, 2), off = OFF_MIN + (OFF_MAX - OFF_MIN) * u * u;
         const str = 1 - 0.6 * smooth(40, OFF_MAX, off);
@@ -313,14 +329,16 @@ export class TreeLines {
       for (let i = 0; i + 1 < n; i++) {
         if (p.str[i] <= 0.02) continue;
         const ax = p.x[i], ay = p.y[i], bx = p.x[i + 1], by = p.y[i + 1];
-        trunks.near(ax, ay, R + STEP, (tx, ty) => {
+        // round the segment's middle, as far as its own half length (a bend can stretch a step well past STEP)
+        const mx = (ax + bx) / 2, my = (ay + by) / 2, half = Math.hypot(bx - ax, by - ay) / 2;
+        trunks.near(mx, my, R + half, (tx, ty) => {
           const d = Math.sqrt(segD2(tx, ty, ax, ay, bx, by));
           if (d < R) w[i] = Math.min(w[i], Math.max(SQUEEZE_HW, d - TRUNK_CLEAR));
         });
         // a gap narrower than a squeezed trench, rim to rim: the line breaks there for a step (the rider picks round the trunk)
         const rim = w[i] + TRUNK_CLEAR;
         let blocked = false;
-        trunks.near(ax, ay, rim + STEP, (tx, ty) => { if (segD2(tx, ty, ax, ay, bx, by) < rim * rim) blocked = true; });
+        trunks.near(mx, my, rim + half, (tx, ty) => { if (segD2(tx, ty, ax, ay, bx, by) < rim * rim) blocked = true; });
         if (blocked) { p.str[i] = 0; broke.push(i); left++; }
       }
       // the trench climbs out to the snow's surface over the steps either side of a break, not a wall across it
@@ -360,22 +378,25 @@ export class TreeLines {
     const salt = ri * 7919 + k * 31 + depth * 7;
     const plan: Plan = { x: [], y: [], str: [], hw: HW_FAR + (HW_NEAR - HW_FAR) * str * (0.7 + 0.3 * h01(ri, k, 4 + depth)) };
     this.plans.push(plan);
-    // a branch swings out from its parent's offset for the first half of its length, then comes home to it
-    let back = -1, backLat = 0;
-    if (depth) { back = len * 0.5; backLat = latT; latT += (h01(ri, k, 9) < 0.5 ? -1 : 1) * (FORK_OUT + FORK_OUT_RANGE * h01(ri, k, 10)); }
+    // a branch keeps near its parent's offset plus a swing: half a sine (out and back: a split) or a whole one (across the
+    // parent's line and back: two runs intertwining), so both ends meet the parent
+    const base = latT, swing = depth ? (h01(ri, k, 9) < 0.5 ? -1 : 1) * (FORK_OUT + FORK_OUT_RANGE * h01(ri, k, 10)) : 0;
+    const waves = h01(ri, k, 11) < FORK_WEAVE ? 2 : 1;
+    // a branch meets its parent at both ends, so it only fades over a few metres (a line fades in and out of the woods)
+    const fadeIn = depth ? FORK_FADE : FADE_IN, fadeOut = depth ? FORK_FADE : FADE_OUT;
     for (let t = 0; t < len; t += STEP) {
       const p = project(l, x, y);
       if (p.s >= l.len - 2) break; // past the run's foot
-      if (back > 0 && t > back) latT = backLat;
+      if (depth) latT = base + swing * Math.sin(Math.PI * waves * t / len);
       const sideSign = p.lat >= 0 ? 1 : -1;
       const want = Math.abs(latT) < KEEP_OUT ? sideSign * KEEP_OUT : latT;
       const pull = Math.max(-PULL_MAX, Math.min(PULL_MAX, PULL * (want - p.lat)));
       const a = Math.atan2(p.ty, p.tx) + MEANDER * noise1(t / MEANDER_L, salt, 1) + pull;
       const nx = x + Math.cos(a) * STEP, ny = y + Math.sin(a) * STEP;
-      plan.x.push(x); plan.y.push(y); plan.str.push(str * smooth(0, FADE_IN, t) * (1 - smooth(len - FADE_OUT, len, t)));
-      if (!depth && t > 20 && t < len - 40 && h01(salt, Math.round(t), 5) < FORK_P) {
+      plan.x.push(x); plan.y.push(y); plan.str.push(str * smooth(0, fadeIn, t) * (1 - smooth(len - fadeOut, len, t)));
+      if (!depth && t > 20 && t < len - 60 && h01(salt, Math.round(t), 5) < this.forkP) {
         const lat = p.lat;
-        this.walk(l, ri, k * 64 + Math.round(t), nx, ny, lat, str * 0.8, Math.min(len - t, 50 + 60 * h01(salt, Math.round(t), 6)), 1);
+        this.walk(l, ri, k * 64 + Math.round(t), nx, ny, lat, str * FORK_STR, Math.min(len - t, FORK_LEN + FORK_LEN_RANGE * h01(salt, Math.round(t), 6)), 1);
       }
       x = nx; y = ny;
     }
@@ -435,7 +456,7 @@ export class TreeLines {
 
   /** the canopy gate: no line where there is no forest round it */
   private gate(x: number, y: number): number {
-    return this.canopy ? smooth(0.12, 0.35, this.canopy(x, y)) : 1;
+    return this.canopy ? smooth(CANOPY_LO, CANOPY_HI, this.canopy(x, y)) : 1;
   }
 
   /** 0..1 how worn the snow is here by a tree line (0 off them and outside the forest) */
@@ -448,12 +469,18 @@ export class TreeLines {
    * Where a generated stem planned at (x, y) stands, written into `out`; false when it has nowhere to go. The forest keeps
    * its count (so it looks the same from a distance): a stem whose spot is in a trench, or within STEM_GAP of its rim, moves
    * straight out to just past the rim (STEM_GAP plus a seeded 0 to STEM_JITTER m), so the trees stand right up to the
-   * bank. It is left out only when every way out lands in another line's trench (where lines cross).
+   * bank. It is left out only when both ways out land in another line's trench (where lines cross).
    */
   placeStem(x: number, y: number, out: number[]): boolean {
+    // out to the nearer bank first; where that lands in another line's trench (lines crossing or braided), the other bank
+    return this.pushOut(x, y, out, false) || this.pushOut(x, y, out, true);
+  }
+
+  /** `placeStem`'s moves from (x, y), the first one to the far bank when `flip`; true when it ends clear of every trench */
+  private pushOut(x: number, y: number, out: number[], flip: boolean): boolean {
     out[0] = x; out[1] = y;
     const s = this.seg, jit = STEM_JITTER * h01(Math.round(x * 16), Math.round(y * 16), 77);
-    for (let pass = 0; pass < 3; pass++) {
+    for (let pass = 0; pass < 4; pass++) {
       const px = out[0], py = out[1], ids = this.grid.at(px, py);
       if (!ids) return true;
       let worst = 0, cx = 0, cy = 0, need = 0, seg = -1;
@@ -475,9 +502,10 @@ export class TreeLines {
         const dx = s[seg + 2] - s[seg], dy = s[seg + 3] - s[seg + 1], dl = Math.hypot(dx, dy) || 1, side = jit < STEM_JITTER / 2 ? 1 : -1;
         ux = -dy / dl * side; uy = dx / dl * side;
       }
+      if (flip && pass === 0) { ux = -ux; uy = -uy; }
       out[0] = cx + ux * (need + jit); out[1] = cy + uy * (need + jit);
     }
-    // still in a trench after three moves: crossing lines with no room between
+    // still in a trench after the moves: crossing lines with no room between
     const ids = this.grid.at(out[0], out[1]);
     if (ids) for (const i of ids) {
       const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL;

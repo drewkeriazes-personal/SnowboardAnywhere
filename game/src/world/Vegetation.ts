@@ -8,6 +8,7 @@ import { treelineOf } from '../pack/treeline';
 import { TreeShade } from './TreeShade';
 import { crownOverlap, type CrownHit } from './TreeBrush';
 import { ClumpCanopy } from './trees/clumps';
+import { standGate, treeTrim, trimReach } from './trees/trim';
 import type { Ground } from '../terrain/Terrain';
 
 /**
@@ -195,7 +196,7 @@ interface Cell {
   tint: Float32Array | null;
   /** BUG-081: the impostor thinning draw per tree, 0..1 (trees/materials.ts THIN_GLSL) */
   thin: Float32Array | null;
-  /** FEAT-303: how far each tree's lower branches are trimmed, 0..1 (the near LODs' `aTrim`) */
+  /** FEAT-303: per tree (t, bare, hs), the near LODs' `aTrim` and the puffs' crown (trees/trim.ts) */
   trim: Float32Array | null;
   /** tree indices grouped by sub-tile; tile t holds order[tileStart[t] .. tileStart[t + 1]) */
   order: Uint32Array | null;
@@ -225,7 +226,7 @@ interface NearSet {
   lists: number[][];
   stM: Float32Array;
   stC: Float32Array;
-  /** FEAT-303: the staged instances' trim */
+  /** FEAT-303: the staged instances' trim (3 floats each) */
   stR: Float32Array;
   stT: Int32Array;
   kStart: Int32Array;
@@ -676,7 +677,9 @@ export class Vegetation {
         for (let j = cell.tileStart![t]; j < cell.tileStart![t + 1]; j++) {
           const i = cell.order![j], o = i * 6, r = cr[i] + 0.5;
           if (Math.abs(d[o] - x) > r || Math.abs(d[o + 1] - y) > r) continue;
-          const k = crownOverlap(sp[i], d[o], d[o + 1], d[o + 2], d[o + 3], cr[i], x, y, z, this.contact);
+          // FEAT-303: the crown as the trim leaves it, so a bare trunk sheds no snow from boughs that are not there
+          const tr = cell.trim!, trimR = tr[i * 3] > 0 ? (yy: number) => trimReach(tr[i * 3], tr[i * 3 + 1], tr[i * 3 + 2], d[o + 3], yy, this.trimTmp) : null;
+          const k = crownOverlap(sp[i], d[o], d[o + 1], d[o + 2], d[o + 3], cr[i], x, y, z, this.contact, trimR);
           if (k > best) {
             best = k;
             out.x = d[o]; out.y = d[o + 1]; out.z = d[o + 2]; out.h = d[o + 3]; out.cr = cr[i]; out.species = sp[i];
@@ -723,12 +726,13 @@ export class Vegetation {
     return best < Infinity;
   }
   private readonly contact: CrownHit = { x: 0, y: 0, z: 0, h: 0, cr: 0, species: 0, overlap: 0, at: 0, r: 0 };
+  private readonly trimTmp = [0, 0];
 
   /** per-tree species, variant, crown, yaw and colour, and the sub-tile index for the near gather */
   private prepare(cell: Cell): void {
     const d = cell.data!, n = d.length / 6;
     const inst = this.pack.meta.instances!;
-    const sp = new Uint8Array(n), va = new Uint8Array(n), cr = new Float32Array(n), yaw = new Float32Array(n), tint = new Float32Array(n * 3), thin = new Float32Array(n), trim = new Float32Array(n);
+    const sp = new Uint8Array(n), va = new Uint8Array(n), cr = new Float32Array(n), yaw = new Float32Array(n), tint = new Float32Array(n * 3), thin = new Float32Array(n), trim = new Float32Array(n * 3);
     const tl = this.pack.treeLines;
     const tileOf = new Uint16Array(n), counts = new Uint32Array(TILE_N + 1);
     const ts = inst.cellSize / TILES, minX = inst.minX + cell.cx * inst.cellSize, minY = inst.minY + cell.cy * inst.cellSize;
@@ -743,10 +747,23 @@ export class Vegetation {
       const b = 0.94 + 0.12 * hash01(x, y, 13);
       tint[i * 3] = b * (0.97 + 0.06 * hash01(x, y, 17)); tint[i * 3 + 1] = b; tint[i * 3 + 2] = b * (0.97 + 0.06 * hash01(x, y, 19));
       thin[i] = hash01(x, y, 23);
-      if (tl) trim[i] = tl.trimAt(x, y) * (0.75 + 0.25 * hash01(x, y, 29)); // FEAT-303, a little different tree to tree
       const tx = Math.min(TILES - 1, Math.max(0, Math.floor((x - minX) / ts))), ty = Math.min(TILES - 1, Math.max(0, Math.floor((y - minY) / ts)));
       tileOf[i] = ty * TILES + tx; counts[tileOf[i] + 1]++;
       zMin = Math.min(zMin, d[o + 2]); zMax = Math.max(zMax, d[o + 2] + h);
+    }
+    // FEAT-303: the trim, where the stand is closed (crown cover over 8 m bins, 3 x 3 round each tree) and the glade level asks
+    if (tl && n) {
+      const B = 8, nb = Math.ceil(inst.cellSize / B), area = new Float32Array(nb * nb);
+      const bin = (v: number, m: number): number => Math.max(0, Math.min(nb - 1, Math.floor((v - m) / B)));
+      for (let i = 0; i < n; i++) area[bin(d[i * 6 + 1], minY) * nb + bin(d[i * 6], minX)] += Math.PI * cr[i] * cr[i];
+      for (let i = 0; i < n; i++) {
+        const x = d[i * 6], y = d[i * 6 + 1], level = tl.trimAt(x, y);
+        if (level <= 0) continue;
+        const bx = bin(x, minX), by = bin(y, minY);
+        let a = 0, cells = 0;
+        for (let j = Math.max(0, by - 1); j <= Math.min(nb - 1, by + 1); j++) for (let k = Math.max(0, bx - 1); k <= Math.min(nb - 1, bx + 1); k++) { a += area[j * nb + k]; cells++; }
+        treeTrim(level, standGate(a / (cells * B * B)), x, y, trim, i * 3);
+      }
     }
     for (let t = 0; t < TILE_N; t++) counts[t + 1] += counts[t];
     const order = new Uint32Array(n), fill = counts.slice(0, TILE_N);
@@ -904,7 +921,7 @@ export class Vegetation {
     // stage every gathered instance (matrix and colour) grouped by kit combo
     let total = 0;
     for (let k = 0; k < SPECIES_COUNT * VARIANTS; k++) total += lists[k].length / 3;
-    if (n.stT.length < total) { const cap = Math.ceil(total * 1.5) + 64; n.stM = new Float32Array(cap * 16); n.stC = new Float32Array(cap * 3); n.stR = new Float32Array(cap); n.stT = new Int32Array(cap); }
+    if (n.stT.length < total) { const cap = Math.ceil(total * 1.5) + 64; n.stM = new Float32Array(cap * 16); n.stC = new Float32Array(cap * 3); n.stR = new Float32Array(cap * 3); n.stT = new Int32Array(cap); }
     const m = n.stM, c = n.stC, r = n.stR, st = n.stT;
     let e = 0;
     for (let k = 0; k < SPECIES_COUNT * VARIANTS; k++) {
@@ -919,7 +936,7 @@ export class Vegetation {
         m[b + 8] = sa * s; m[b + 9] = 0; m[b + 10] = ca * s; m[b + 11] = 0;
         m[b + 12] = d[o]; m[b + 13] = d[o + 2] - 0.3; m[b + 14] = -d[o + 1]; m[b + 15] = 1;
         c[e * 3] = cell.tint![i * 3]; c[e * 3 + 1] = cell.tint![i * 3 + 1]; c[e * 3 + 2] = cell.tint![i * 3 + 2];
-        r[e] = cell.trim![i];
+        r[e * 3] = cell.trim![i * 3]; r[e * 3 + 1] = cell.trim![i * 3 + 1]; r[e * 3 + 2] = cell.trim![i * 3 + 2];
         st[e] = list[q + 2];
       }
     }
@@ -949,7 +966,7 @@ export class Vegetation {
         const src = n.lod === 0 ? this.kit.geo.lod0[s][v] : this.kit.geo.lod1[s][v], g = new THREE.BufferGeometry();
         g.index = src.index;
         for (const name of Object.keys(src.attributes)) g.setAttribute(name, src.getAttribute(name));
-        g.setAttribute('aTrim', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1));
+        g.setAttribute('aTrim', new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3));
         g.boundingBox = src.boundingBox; g.boundingSphere = src.boundingSphere; g.userData = src.userData;
         mesh = new THREE.InstancedMesh(g, n.lod === 0 ? this.kit.mat.lod0 : this.kit.mat.lod1, cap);
         mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
@@ -974,7 +991,7 @@ export class Vegetation {
           if (!packed[tt] || cast[tt] !== pass) continue;
           for (let w = 0, a = e * 16, b = q * 16; w < 16; w++) m[b + w] = sm[a + w];
           c[q * 3] = sc[e * 3]; c[q * 3 + 1] = sc[e * 3 + 1]; c[q * 3 + 2] = sc[e * 3 + 2];
-          r[q] = sr[e];
+          r[q * 3] = sr[e * 3]; r[q * 3 + 1] = sr[e * 3 + 1]; r[q * 3 + 2] = sr[e * 3 + 2];
           q++;
         }
         if (pass === 1) nc = q;
@@ -986,7 +1003,7 @@ export class Vegetation {
       if (q) {
         mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.addUpdateRange(0, q * 16); mesh.instanceMatrix.needsUpdate = true;
         mesh.instanceColor!.clearUpdateRanges(); mesh.instanceColor!.addUpdateRange(0, q * 3); mesh.instanceColor!.needsUpdate = true;
-        trimAttr.clearUpdateRanges(); trimAttr.addUpdateRange(0, q); trimAttr.needsUpdate = true;
+        trimAttr.clearUpdateRanges(); trimAttr.addUpdateRange(0, q * 3); trimAttr.needsUpdate = true;
       }
       drawn += q;
     }

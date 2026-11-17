@@ -341,7 +341,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         vec3 gMogN;
         float gMogT;
         float gMogK; // 0..1 mask of the field's strength for the colouring and the lighting tweaks
-        float gWorn; // FEAT-333: 0..1 how worn a tree line is here (the mogul attribute's y fraction)
+        float gWorn; // FEAT-333: 0..1 how deep in a tree line's trench (0 rim .. 1 floor; the mogul attribute's y fraction)
         ${DEFORM_GLSL}
         ${NOISE_GLSL}
         ${ROCK_GLSL}
@@ -419,12 +419,16 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         vec3 groomed = uGroomed * (0.975 + 0.025 * passTone) * (0.97 + 0.03 * cd.x * cordK) * (1.0 - 0.05 * seam * cordK);
         // tracked-out snow is a touch greyer in the grooves; spring snow is wet: warmer and a little darker
         float trackFade = 1.0 - smoothstep(25.0, 70.0, dist);
-        // FEAT-333: a worn tree line is skied snow whatever the day, packed a touch grey, its tracks along the line
-        gWorn = clamp(fract(vMogul.y) / ${WORN_K.toFixed(2)}, 0.0, 1.0);
-        float skiedK = max(uSkied, gWorn);
+        // FEAT-333: a tree line's trench. Its floor is skied snow whatever the day, with tracks along it; its walls are in their
+        // own shade, drawn as a cool darker tone (darkest mid-wall, a little on the floor below the banks) instead of shadowed
+        // (against the whole part rounded with some slack: an interpolated 2.0 can read 1.99999, whose fract is not 0)
+        gWorn = clamp((vMogul.y - floor(vMogul.y + 0.02)) / ${WORN_K.toFixed(2)}, 0.0, 1.0);
+        float skiedK = max(uSkied, smoothstep(0.5, 0.9, gWorn));
         float th = skiedK > 0.01 ? trackH(wp.xz, fallDown(vFall)) * trackFade : 0.0;
         groomed *= 1.0 + 0.035 * th * uSkied;
-        snow *= (1.0 + 0.03 * th * skiedK) * (1.0 - 0.035 * gWorn);
+        snow *= 1.0 + 0.03 * th * skiedK;
+        float wallK = smoothstep(0.04, 0.4, gWorn) * (1.0 - 0.6 * smoothstep(0.8, 1.0, gWorn));
+        snow *= mix(vec3(1.0), vec3(0.8, 0.85, 0.94), 0.6 * wallK);
         vec3 springTint = vec3(0.975, 0.955, 0.925);
         groomed = mix(groomed, groomed * springTint, uSpring);
         snow = mix(snow, snow * springTint, uSpring);
@@ -618,7 +622,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           nn = normalize(nn - acrossW * cdn.y * 0.15 * gW * (1.0 - 0.85 * uSkied) * (1.0 - 0.5 * uSpring));
           // FEAT-077: ski tracks dent every skied surface; chop (lumpy, cut-up powder) roughens the
           // ungroomed snow, less in spring when it has melted smooth
-          float skiedN = max(uSkied, gWorn); // FEAT-333: a tree line is skied too
+          float skiedN = max(uSkied, smoothstep(0.5, 0.9, gWorn)); // FEAT-333: a tree line's floor is skied too
           if (skiedN > 0.01) {
             float tf = 1.0 - smoothstep(25.0, 70.0, length(cameraPosition - wpn));
             vec2 dn = fallDown(vFall);

@@ -1,7 +1,7 @@
 // Worn tree lines (FEAT-333) and glade trim (FEAT-303): builds the tree lines of a real pack (Vail by default) from its
 // runs and its detected trees, the way the game does at load (pack/treeLines.ts, no browser), and checks:
 //   - the same runs and trees give the same lines every time
-//   - Steep and Deep (trees14, 1827, -3506): at least 2 corridors within 60 m of the run, the spot itself off them
+//   - Steep and Deep (trees14, 1827, -3506): 3 or 4 bobsled runs (dug over 0.5 m) within 60 m of the run, the spot itself off them
 //     (snowcheck's deep-powder spot)
 //   - no detected trunk inside a corridor anywhere in the pack (the lines bend round them or squeeze past)
 //   - the generated stems leave the trenches for their banks: a full-density stand round the busiest lines grows no stem
@@ -26,10 +26,11 @@ const entry = path.join(dir, 'entry.ts');
 const rel = (p) => path.relative(dir, path.join(GAME, 'src', p)).replace(/\\/g, '/');
 fs.writeFileSync(entry, `export { TreeLines, TrunkIndex } from '${rel('pack/treeLines')}';
 export { generateStems } from '${rel('world/trees/stands')}';
-export { snowAt, newSnowState, DEFAULT_SNOW_WORLD } from '${rel('sim/SnowConditions')}';\n`);
+export { snowAt, newSnowState, DEFAULT_SNOW_WORLD } from '${rel('sim/SnowConditions')}';
+export { trimReach, standGate } from '${rel('world/trees/trim')}';\n`);
 const out = path.join(dir, 'entry.mjs');
 await build({ entryPoints: [entry], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
-const { TreeLines, TrunkIndex, generateStems, snowAt, newSnowState, DEFAULT_SNOW_WORLD } = await import(pathToFileURL(out).href);
+const { TreeLines, TrunkIndex, generateStems, snowAt, newSnowState, DEFAULT_SNOW_WORLD, trimReach, standGate } = await import(pathToFileURL(out).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
@@ -57,13 +58,16 @@ check('the build is quick', a.ms < 1500, `${a.ms.toFixed(0)} ms for the lines an
 // Steep and Deep: crossings of corridors along transects across the run, within 60 m of it
 if (slug === 'vail') {
   const P = [1827, -3506];
-  let best = 0;
-  for (let dy = -40; dy <= 40; dy += 10) {
+  // deep runs (dug over half a metre) crossed on transects across the run every 10 m along it, 60 m either side
+  const counts = [];
+  for (let dy = -120; dy <= 120; dy += 10) {
     let n = 0, was = false;
-    for (let dx = -60; dx <= 60; dx += 0.25) { const on = tl.inCorridor(P[0] + dx, P[1] + dy); if (on && !was) n++; was = on; }
-    best = Math.max(best, n);
+    for (let dx = -60; dx <= 60; dx += 0.25) { const on = tl.trenchAt(P[0] + dx, P[1] + dy) < -0.5; if (on && !was) n++; was = on; }
+    counts.push(n);
   }
-  check('Steep and Deep has tree lines beside the run', best >= 2, `${best} corridors crossed on the best transect within 60 m of trees14`);
+  counts.sort((a, b) => a - b);
+  const med = counts[counts.length >> 1];
+  check('Steep and Deep has 3 or 4 bobsled runs beside it', med >= 3 && med <= 4, `median ${med} deep runs crossed within 60 m of the run (transects ${counts.join(' ')})`);
   check('the trees14 powder spot is off the lines', tl.wornAt(P[0], P[1]) === 0, `worn ${tl.wornAt(P[0], P[1]).toFixed(2)}`);
   check('the Steep and Deep trees are trimmed', tl.trimAt(P[0], P[1]) > 0.9, `trim ${tl.trimAt(P[0], P[1]).toFixed(2)}`);
   check('the trees14 snow lies as it fell (no trench)', tl.trenchAt(P[0], P[1]) === 0, `${tl.trenchAt(P[0], P[1]).toFixed(2)} m`);
@@ -135,6 +139,15 @@ check('the line is tracked, beside it is powder', on.kind === 'chop' && off.kind
 check('the line is shallower than the powder', on.depth < off.depth * 0.6, `${(on.depth * 100).toFixed(0)} cm vs ${(off.depth * 100).toFixed(0)} cm`);
 const storm = snowAt(surf(1), n, 3200, { ...w, storm: 1, newSnow: 0.6 }, newSnowState());
 check('a storm softens the line', storm.chop < on.chop, `chop ${storm.chop.toFixed(2)} in a storm vs ${on.chop.toFixed(2)}`);
+
+// FEAT-303: the puffs see the crown the shader draws: a bare trunk sheds nothing at body height, an untrimmed tree all of it
+const tt = [0, 0];
+const bareBody = Math.max(...[0.3, 0.9, 1.6, 2.4].map((yy) => trimReach(1, 1, 1, 18, yy, tt)));
+const fullBody = Math.min(...[0.3, 0.9, 1.6].map((yy) => trimReach(0, 0, 1, 18, yy, tt)));
+const bush = trimReach(1, 0, 1, 18, 4.8, tt);
+check('a bare-trimmed trunk has no needled crown at body height (no puffs from boughs that are not drawn)', bareBody === 0, `reach ${bareBody.toFixed(2)} of the crown from 0.3 to 2.4 m`);
+check('an untrimmed tree keeps its whole crown, a trimmed one grows out over its trim line', fullBody === 1 && bush > 1.2, `untrimmed ${fullBody.toFixed(2)}, 0.6 m over the line ${bush.toFixed(2)}`);
+check('only closed stands are trimmed', standGate(0.05) === 0 && standGate(0.5) === 1, `gate ${standGate(0.05)} at 5 % crown cover, ${standGate(0.5)} at 50 %`);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(fails ? `\n${fails} check(s) failed` : '\nall tree line checks passed');
