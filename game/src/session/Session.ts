@@ -498,7 +498,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         : null,
       ready: () => {
         status.textContent = '';
-        installSimDebug({ events, ghosts, menu, shot, rider, riderView, controls, padFx, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
+        installSimDebug({ env, events, ghosts, menu, shot, rider, riderView, controls, padFx, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
           setWeather: (w: string | null) => { weatherOverride = parseWeather(w) ?? initialWeather; applySettings(settings, 'weather'); },
           /** shoot.mjs (FEAT-087): stream the scene round the camera until nothing is loading or building, without stepping the sim */

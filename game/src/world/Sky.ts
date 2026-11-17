@@ -15,6 +15,18 @@ const SHADOW_AHEAD_TAU = 0.8;
 /** FEAT-304: a jump of the rider or camera further than this in a frame (m) places the box at once (a teleport, a new spot) */
 const SHADOW_JUMP = 150;
 
+/** FEAT-330: under a full canopy (score 1) the sun keeps 1 - this of its light (35%) */
+export const CANOPY_SUN = 0.65;
+/** FEAT-330: and the sky fill 1 - this, shifted cooler by CANOPY_COOL (r, g lowered; blue kept) */
+export const CANOPY_HEMI = 0.3;
+const CANOPY_COOL: [number, number] = [0.16, 0.07];
+/** FEAT-330: fog density at full canopy (1/m, from 15 m out): about 43% of the scene left at 120 m, 9% at 300 m */
+export const CANOPY_FOG = 0.008;
+/** FEAT-330: the canopy fog's colour at full canopy, as a share of the open air's in-scatter colour */
+const CANOPY_FOG_LIGHT = 0.45;
+/** FEAT-330: how fast the light follows the canopy under the rider (1/s): about 2 s to settle */
+const CANOPY_RATE = 1.5;
+
 /** FEAT-092: the most the sun's colour may depart from neutral: (max - min) / max of the RGB */
 const SUN_TINT_MAX = 0.32;
 /** Lift a colour's weaker channels toward its brightest until its saturation is at most `max` (the brightness, its max, is kept). */
@@ -189,6 +201,51 @@ export class Environment {
     const shadow = this.overcast && !this.storm ? 0 : 1;
     this.sun.shadow.intensity = shadow;
     if (this.csm) for (const l of this.csm.lights) l.shadow.intensity = shadow;
+    // FEAT-330: the above is the light in the open; the canopy dims it from there
+    this.baseSun = this.sun.intensity;
+    this.baseHemi = this.hemi.intensity;
+    this.baseHemiColor.copy(this.hemi.color);
+    this.applyCanopy();
+  }
+
+  /** FEAT-330: the sun's and the sky fill's intensity in the open, before the canopy (setSun's time of day and weather) */
+  baseSun = 0;
+  baseHemi = 0;
+  readonly baseHemiColor = new THREE.Color();
+  /** FEAT-330: the canopy score the light is at now (smoothed), 0 in the open */
+  canopy = 0;
+  private readonly canopyFrom = new THREE.Vector2(NaN, NaN);
+
+  /**
+   * FEAT-330: per frame, the canopy score under the viewer (`target`, 0..1, Pack.canopyAt at pack x, y). The light
+   * eases toward it over about 2 s, so riding into a glade fades instead of popping; a jump further than SHADOW_JUMP
+   * (a teleport, a new spot) or dt <= 0 sets it at once.
+   */
+  updateCanopy(target: number, dt: number, x: number, y: number): void {
+    const f = this.canopyFrom;
+    const jump = !(Math.hypot(x - f.x, y - f.y) < SHADOW_JUMP);
+    f.set(x, y);
+    const c = jump || dt <= 0 ? target : this.canopy + (target - this.canopy) * Math.min(1, dt * CANOPY_RATE);
+    this.setCanopy(c);
+  }
+
+  /** FEAT-330: put the light at canopy score c (0..1) at once */
+  setCanopy(c: number): void {
+    c = Math.min(1, Math.max(0, c));
+    if (c === this.canopy) return;
+    this.canopy = c;
+    this.applyCanopy();
+  }
+
+  /** FEAT-330: the open-air light from setSun times the canopy; writes from the base, so nothing accumulates */
+  private applyCanopy(): void {
+    const c = this.canopy;
+    this.sun.intensity = this.baseSun * (1 - CANOPY_SUN * c);
+    if (this.csm) for (const l of this.csm.lights) l.intensity = this.sun.intensity;
+    this.hemi.intensity = this.baseHemi * (1 - CANOPY_HEMI * c);
+    const b = this.baseHemiColor;
+    this.hemi.color.setRGB(b.r * (1 - CANOPY_COOL[0] * c), b.g * (1 - CANOPY_COOL[1] * c), b.b);
+    this.atmo.setCanopyFog(CANOPY_FOG * c, 1 - (1 - CANOPY_FOG_LIGHT) * c);
   }
 
   /** Per frame: keep the sky box and storm dome around the camera. */

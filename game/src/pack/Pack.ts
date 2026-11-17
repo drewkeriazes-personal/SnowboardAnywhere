@@ -1,6 +1,7 @@
 import { HeightSet } from './HeightSet';
 import { MaskSet } from './MaskSet';
 import { CoverSet } from './CoverSet';
+import { CanopyGrid } from './CanopyGrid';
 import type { Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
 
@@ -35,6 +36,8 @@ export class Pack {
   readonly moguls: MaskSet | null;
   /** FEAT-153: forest cover levels for the terrain at a distance; null in older packs */
   readonly cover: CoverSet | null;
+  /** FEAT-330: canopy score 0..1 overhead (the darkening in dense glades); null when the pack has none */
+  readonly canopy: CanopyGrid | null;
   /** amplitude multiplier (new snow softens the bumps) and uphill creep in metres (season date) */
   mogulScale = 1;
   mogulCreep = 0;
@@ -53,7 +56,11 @@ export class Pack {
     this.dir = meta.dir ? new MaskSet(`${baseUrl}/dir`, meta.dir, { opaque: true }) : null;
     this.moguls = meta.moguls ? new MaskSet(`${baseUrl}/moguls`, meta.moguls, { opaque: true }) : null;
     this.cover = meta.cover && meta.cover.levels.length ? new CoverSet(baseUrl, meta.cover) : null;
+    this.canopy = meta.canopy ? new CanopyGrid(baseUrl, meta.canopy) : null;
   }
+
+  /** FEAT-330: canopy score 0..1 at pack (x, y); 0 without a grid, outside it, or before it loads */
+  canopyAt(x: number, y: number): number { return this.canopy ? this.canopy.sample(x, y) : 0; }
 
   static async load(baseUrl: string): Promise<Pack> {
     const resp = await fetch(`${baseUrl}/meta.json`);
