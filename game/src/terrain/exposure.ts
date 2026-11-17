@@ -2,7 +2,7 @@
  * Exposure (FEAT-020): rock and talus where snow cannot stay, unioned with the imagery mask. The terrain
  * chunks write these weights to their vertices and the shader thresholds them against noise (rockCover.ts),
  * so 0.5 is where patches start. BUG-035: the rider's grip, the surface sounds and the snow track read the
- * same weights through `exposureAt`, so rock drawn on a steep face or a scoured ridge rides as rock.
+ * same weights through `ExposureSampler`, so rock drawn on a steep face or a scoured ridge rides as rock.
  */
 import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES } from '../pack/Pack';
@@ -49,17 +49,69 @@ export function finestChunkRes(pack: Pack, x: number, y: number): number {
   return (pack.far?.meta.res ?? 128) / 2;
 }
 
+/** Corner of the chunk quadtree's root (pack metres): every chunk's vertices sit at it plus whole multiples of its spacing. */
+export function gridOrigin(pack: Pack): [number, number] {
+  const t = pack.meta.terrain, far = t.far ?? t.mid ?? t.fine!;
+  return [far.minX, far.minY];
+}
+
 /**
- * The weights the terrain shows at a point near the rider, from base heights at the finest chunk's spacing
- * (as Terrain.build samples them) and the mask's rock, scree and forest.
+ * The rock and scree weights the terrain shows at a point near the rider (BUG-035), as the GPU gets them: the chunk
+ * build's weights at the corner vertices of the finest chunk's grid cell round the point (base heights, central
+ * differences one spacing apart, the mask at the vertex), interpolated over the same triangle (each cell splits
+ * along its (i, j) to (i + 1, j + 1) diagonal). Evaluating at the point itself instead disagrees where the slope
+ * changes inside a cell: on an 8 m grid the foot of a face rode as rock where it is drawn as snow. Caches one cell.
  */
-export function exposureAt(pack: Pack, x: number, y: number, rock: number, scree: number, fo: number, out: Exposure): Exposure {
-  // test stub packs may lack height: fall back to the mask weights alone
-  if (typeof pack.height !== 'function') { out.rock = rock; out.scree = scree * (1 - rock); return out; }
-  const res = finestChunkRes(pack, x, y);
-  const h = pack.height(x, y, res, false);
-  const nxp = -(pack.height(x + res, y, res, false) - pack.height(x - res, y, res, false)) / (2 * res);
-  const nyp = -(pack.height(x, y + res, res, false) - pack.height(x, y - res, res, false)) / (2 * res);
-  if (Number.isNaN(h + nxp + nyp)) { out.rock = rock; out.scree = scree * (1 - rock); return out; }
-  return exposure(pack, x, y, h, nxp, nyp, res, fo, rock, scree, out);
+export class ExposureSampler {
+  private key = '';
+  private readonly vr = [0, 0, 0, 0];
+  private readonly vs = [0, 0, 0, 0];
+  private readonly m = [0, 0, 0, 0];
+  private readonly ex: Exposure = { rock: 0, scree: 0 };
+  constructor(private readonly pack: Pack) {}
+
+  at(x: number, y: number, out: Exposure): Exposure {
+    // test stub packs (presscheck, mogulcheck) have no heights, no terrain sets and a mask with `sample` only:
+    // fall back to the mask weights alone
+    if (typeof this.pack.height !== 'function' || !this.pack.meta?.terrain) {
+      const m = this.pack.mask ? this.pack.mask.sample(x, y, this.m) : [0, 0, 0, 0];
+      out.rock = m[0]; out.scree = m[1] * (1 - m[0]);
+      return out;
+    }
+    const pack = this.pack, res = finestChunkRes(pack, x, y), [ox, oy] = gridOrigin(pack);
+    const fi = (x - ox) / res, fj = (y - oy) / res, i0 = Math.floor(fi), j0 = Math.floor(fj), tx = fi - i0, ty = fj - j0;
+    const key = `${res}/${i0}/${j0}`;
+    if (key !== this.key) {
+      let whole = true;
+      for (let k = 0; k < 4; k++) {
+        const vx = ox + (i0 + (k & 1)) * res, vy = oy + (j0 + (k >> 1)) * res;
+        if (!this.vertex(vx, vy, res, k)) whole = false;
+      }
+      this.key = whole ? key : ''; // a vertex still waiting for its tiles: recompute next time
+    }
+    // corners 0 (i, j), 1 (i + 1, j), 2 (i, j + 1), 3 (i + 1, j + 1)
+    const { vr, vs } = this;
+    if (tx >= ty) {
+      out.rock = vr[0] * (1 - tx) + vr[1] * (tx - ty) + vr[3] * ty;
+      out.scree = vs[0] * (1 - tx) + vs[1] * (tx - ty) + vs[3] * ty;
+    } else {
+      out.rock = vr[0] * (1 - ty) + vr[2] * (ty - tx) + vr[3] * tx;
+      out.scree = vs[0] * (1 - ty) + vs[2] * (ty - tx) + vs[3] * tx;
+    }
+    return out;
+  }
+
+  /** one vertex's weights into slot k, as Terrain.build makes them; false if its heights or mask are not in yet */
+  private vertex(x: number, y: number, res: number, k: number): boolean {
+    const pack = this.pack, mask = pack.mask, m = this.m;
+    let ok = true;
+    if (mask && res <= 8) { mask.sampleBilinear(x, y, m); ok = mask.has(x, y); } else m[0] = m[1] = m[2] = m[3] = 0;
+    const h = pack.height(x, y, res, false);
+    const nxp = -(pack.height(x + res, y, res, false) - pack.height(x - res, y, res, false)) / (2 * res);
+    const nyp = -(pack.height(x, y + res, res, false) - pack.height(x, y - res, res, false)) / (2 * res);
+    if (Number.isNaN(h + nxp + nyp)) { this.vr[k] = m[0]; this.vs[k] = m[1] * (1 - m[0]); return false; }
+    const ex = exposure(pack, x, y, h, nxp, nyp, res, m[3], m[0], m[1], this.ex);
+    this.vr[k] = ex.rock; this.vs[k] = ex.scree;
+    return ok;
+  }
 }

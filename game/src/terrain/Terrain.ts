@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES, MOGUL_SHADE_MAX_RES } from '../pack/Pack';
-import { exposure, finestChunkRes } from './exposure';
+import { exposure, finestChunkRes, gridOrigin } from './exposure';
 import { treelineOf } from '../pack/treeline';
 import { MOGUL_FALL_D } from './Moguls';
 import { createTerrainMaterial, COVER_SLOTS, EMPTY_RECT } from './TerrainMaterial';
@@ -120,8 +120,7 @@ export class Terrain implements Ground {
     this.material = createTerrainMaterial();
     this.blankTreeMap = (this.material.userData.uniforms as { uTreeMap: { value: THREE.Texture } }).uTreeMap.value;
     const far = pack.meta.terrain.far ?? pack.meta.terrain.mid ?? pack.meta.terrain.fine!;
-    this.rootMinX = far.minX;
-    this.rootMinY = far.minY;
+    [this.rootMinX, this.rootMinY] = gridOrigin(pack); // exposure.ts finds the vertices from it too (BUG-035)
     this.rootSize = Math.max(far.maxX - far.minX, far.maxY - far.minY);
     for (const s of pack.sets) {
       s.onTileLoaded = (tx, ty) => this.onTileLoaded(s.meta.minX + tx * s.size, s.meta.minY + ty * s.size, s.size, s.meta.res);
