@@ -288,7 +288,10 @@ export class RideFrame {
   private skyAndEffects(dt: number): void {
     const { env, clouds, renderer, cam, snow, particleLight, pack, rider, riderView, puffs, veg, treeFade, settings, eat, terrain, deform } = this.p;
     env.updateCSM();
-    clouds.render(renderer, cam.camera, dt, env.sunDir, env.sun.color, env.sun.intensity, env.hemi.color, env.hemi.intensity, env.atmo.hazeLinear);
+    // FEAT-330: the light under the canopy where the viewer is (the rider, or the camera when detached), before anything reads it
+    { const cp = cam.camera.position, x = this.detached ? cp.x : rider.x, y = this.detached ? -cp.z : rider.y; env.updateCanopy(pack.canopyAt(x, y), dt, x, y); }
+    // the clouds are lit by the open sky, not the light under the trees
+    clouds.render(renderer, cam.camera, dt, env.sunDir, env.sun.color, env.baseSun, env.baseHemiColor, env.baseHemi, env.atmo.hazeLinear);
     env.followCamera(cam.camera.position);
     snow.update(dt, cam.camera, renderer.domElement.height, 0.45 + 0.6 * env.hemi.intensity / 1.4);
     // BUG-046: spray and puffs are unlit points; give them the light flat snow gets at the rider (dark at dusk, darker in a ridge's shade)
