@@ -387,7 +387,9 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     const onClick = () => { if (!states.is('paused') && (cam.mode === 'free' || cam.firstPerson || cam.mode === 'eye')) canvas.requestPointerLock(); };
     const onMove = (e: MouseEvent) => { if (document.pointerLockElement === canvas || (controls.looking && !states.is('paused'))) { look.dx += e.movementX; look.dy += e.movementY; } };
     const onResize = () => { renderer.setSize(window.innerWidth, window.innerHeight); cam.camera.aspect = window.innerWidth / window.innerHeight; cam.camera.updateProjectionMatrix(); env.onCameraChanged(); };
+    const onContextRestored = () => terrain.dropAll(); // BUG-090: the chunks' CPU arrays are gone after upload
     canvas.addEventListener('click', onClick);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('resize', onResize);
 
@@ -420,6 +422,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       alive = false;
       loop.stop();
       canvas.removeEventListener('click', onClick);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('resize', onResize);
       controls.dispose();

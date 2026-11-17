@@ -23,7 +23,7 @@ Chrome throttles requestAnimationFrame to 1 fps when another window covers it, w
 - Draw calls: under 1,500. Terrain chunks are one call each (300 to 900); trees are 3 species x 2 LODs per loaded cell; lifts and rocks are instanced.
 - Triangles: under 2M on screen.
 - Tree instances in memory: under 1.5M; visible near-geometry instances under 150k.
-- JS heap: under 600 MB; fine height tiles are 1 MB each as Float32, evicted beyond 3 km.
+- JS heap: under 600 MB, read after a forced garbage collection (`playperf.mjs` prints both; BUG-090); fine height tiles are 1 MB each as Float32, evicted beyond 3 km.
 - Shadow map: 4096 x 4096 once; keep `castShadow` only on near chunks and near trees.
 - GPU memory: terrain chunk geometry about 60 KB each; expect under 300 MB total.
 

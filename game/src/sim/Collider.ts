@@ -3,6 +3,8 @@
  * Cells are 8 m; lookups check the 3x3 neighbourhood.
  */
 const CELL = 8;
+/** BUG-090: floats per cylinder entry ([x, y, radius, zBase, zTop, kind, ground]) */
+export const CYLINDER = 7;
 /** BUG-045: a rider this close above a wall's or building's top is standing on it, not in it (m) */
 const ON_TOP = 0.05;
 
@@ -60,12 +62,15 @@ export class Collider {
   }
 
   /** Add a cylinder; returns its entry, which the caller may change in place (zBase [3], zTop [4]) or `remove`.
-   *  `ground`: BUG-141, a rideable rock's snow height at its centre, for its dome (rockBump); NaN for none. */
-  add(x: number, y: number, radius: number, zBase: number, zTop: number, kind = 0, ground = NaN): Float32Array {
+   *  `ground`: BUG-141, a rideable rock's snow height at its centre, for its dome (rockBump); NaN for none.
+   *  `into`: BUG-090, a CYLINDER-float view the entry is written to and kept as, so an owner of many (a tree
+   *  cell's trunks) holds them in one buffer: a lone small Float32Array costs about 245 bytes of heap, a view 110. */
+  add(x: number, y: number, radius: number, zBase: number, zTop: number, kind = 0, ground = NaN, into?: Float32Array): Float32Array {
     const k = this.key(Math.floor(x / CELL), Math.floor(y / CELL));
     let arr = this.cells.get(k);
     if (!arr) { arr = []; this.cells.set(k, arr); }
-    const e = new Float32Array([x, y, radius, zBase, zTop, kind, ground]);
+    const e = into ?? new Float32Array(CYLINDER);
+    e[0] = x; e[1] = y; e[2] = radius; e[3] = zBase; e[4] = zTop; e[5] = kind; e[6] = ground;
     arr.push(e);
     return e;
   }
