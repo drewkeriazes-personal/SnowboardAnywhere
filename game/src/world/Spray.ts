@@ -173,6 +173,9 @@ export class Spray {
     this.prevGround = r.onGround;
     if (!emitting) { this.acc = 0; return; }
     const sn = r.snow;
+    // FEAT-328: no snow comes off bare rock (scree keeps a little, from the snow between the stones)
+    const snowLeft = 1 - clamp01(r.surface.rock + 0.6 * r.surface.scree);
+    if (snowLeft <= 0) { this.acc = 0; this.flush(); return; }
     const soft = clamp01(sn.powder + 0.7 * sn.slush + 0.4 * sn.chop);
     const hard = clamp01(sn.ice);
     const depthK = Math.min(1, 0.3 + sn.depth / 0.3); // 0.38 on a groomer .. 1 in deep powder
@@ -181,7 +184,7 @@ export class Spray {
     let budget = PER_FRAME_CAP;
     // a landing throws a burst of snow out from under the board, a cloud of it in powder
     if (landed && r.landingShock > 0) {
-      const n = Math.min(budget, Math.round(r.landingShock * 100 * (0.4 + 1.2 * soft) * (1 - 0.6 * hard)));
+      const n = Math.min(budget, Math.round(r.landingShock * 100 * (0.4 + 1.2 * soft) * (1 - 0.6 * hard) * snowLeft));
       for (let i = 0; i < n; i++) {
         const along = (Math.random() - 0.5) * 1.6, side = (Math.random() - 0.5) * 0.5;
         const ang = Math.random() * Math.PI * 2, out = 1 + Math.random() * 3;
@@ -196,9 +199,9 @@ export class Spray {
     // the edge: snow leaves the engaged edge on the outside of the turn
     const edgeS = Math.sin(Math.min(1.2, Math.abs(r.edge)));
     // FEAT-148: a hard carve's deep edge throws a heavier plume off the tail
-    const rate = 30 * sp * (0.15 + edgeS) * depthK * (1 + 2 * Math.min(1, r.skid)) * (1 + 1.5 * r.hardCarve) * (1 - 0.7 * hard);
+    const rate = 30 * sp * (0.15 + edgeS) * depthK * (1 + 2 * Math.min(1, r.skid)) * (1 + 1.5 * r.hardCarve) * (1 - 0.7 * hard) * snowLeft;
     // a hockey stop scrapes a sheet off the whole edge, thrown on ahead of the board
-    const sheetRate = r.scrape * 350 * (0.5 + soft) * Math.min(1, sp / 4) * (1 - 0.5 * hard);
+    const sheetRate = r.scrape * 350 * (0.5 + soft) * Math.min(1, sp / 4) * (1 - 0.5 * hard) * snowLeft;
     this.acc += (rate + sheetRate) * dt;
     let n = Math.min(budget, Math.floor(this.acc));
     this.acc -= n; budget -= n;
@@ -237,7 +240,7 @@ export class Spray {
    */
   private deepPowder(r: Rider, dt: number, g: THREE.Vector3, right: THREE.Vector3, sp: number, dirX: number, dirZ: number, budget: number): void {
     // powder only (not slush or chop), and smaller in shallow powder than in deep
-    const deep = buryGate(r.snow.depth) * clamp01((r.snow.powder - 0.3) / 0.4) * Math.min(1, r.snow.depth / 0.25);
+    const deep = buryGate(r.snow.depth) * clamp01((r.snow.powder - 0.3) / 0.4) * Math.min(1, r.snow.depth / 0.25) * (1 - clamp01(r.surface.rock + 0.6 * r.surface.scree)); // FEAT-328
     if (deep <= 0 || budget <= 0) { this.deepAcc = 0; return; }
     // a press follows the end that is down: + lean the nose (the travel end), - the tail
     const lean = r.lean ?? 0, fwd = Math.max(0, lean), back = Math.max(0, -lean);

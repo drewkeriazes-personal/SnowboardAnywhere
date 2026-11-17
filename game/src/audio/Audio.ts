@@ -35,6 +35,8 @@ type QueueItem = { list: string } & ({ track: TrackInfo } | { style: JukeStyle; 
  * scrape), breathing that gets heavier with a sprint or a climb, binding ratchet clicks on and off.
  */
 interface Layer { gain: GainNode; filter: BiquadFilterNode }
+/** FEAT-328: a scrape layer: a looped click train whose playback rate sets how many hits a second */
+interface Scrape { gain: GainNode; src: AudioBufferSourceNode }
 
 /** FEAT-103: reference rider weight (kg, about 180 lb) for the rock scrape level; a rider-weight setting can scale it later */
 const RIDER_KG = 82;
@@ -56,9 +58,11 @@ export class GameAudio {
   private crackleT = 0;
   /** FEAT-103 rock: edge grind (gritty band through a waveshaper), base drag (low, rough), and the
    *  sample-and-hold skip that makes the grind stutter, plus the tick timer */
-  private rockGrind!: Layer; private rockDrag!: Layer;
+  private rockGrind!: Scrape; private rockDrag!: Scrape;
   /** FEAT-328: the board scraping sideways over rock (a brake, a skid), gritty and harsh */
-  private rockSkid!: Layer;
+  private rockSkid!: Scrape;
+  /** FEAT-328: the low body under it, the board's weight grinding over stone */
+  private rockBody!: Layer;
   private skipT = 0; private skipV = 1; private tickT = 0;
   private music: HTMLAudioElement | null = null;
   /** file tracks per playlist name, from playlist.json */
@@ -125,31 +129,46 @@ export class GameAudio {
     this.flowPow = layer('lowpass', 400, 0.5);
     this.flowHard = layer('highpass', 3500, 0.7);
     this.flowCrust = layer('bandpass', 1200, 2.5);
-    // FEAT-328: rock layers rasp instead of hiss. Noise through a band, a clipping waveshaper for grit, then an
-    // amplitude grain at audio rate (noise low-passed to `amHz`, added to a 0.5 base gain) so the level crackles
-    // irregularly the way a board base chattering over stone does; the snow layers are smooth noise, so this is
-    // what makes rock read as rock.
-    const grit = (type: BiquadFilterType, freq: number, q: number, drive: number, amHz: number, amDepth: number): Layer => {
-      const src = ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = true;
-      const filter = ctx.createBiquadFilter(); filter.type = type; filter.frequency.value = freq; filter.Q.value = q;
+    // FEAT-328: rock is a stream of small hits, not a hiss (continuous noise, however rough, reads as static). A 2 s
+    // buffer of sparse clicks with heavy-tailed sizes (many small, a few big) loops; its playback rate sets the hits
+    // a second, and resonant bands fixed in pitch ring each hit like the board and the stone do, so the scrape
+    // keeps its pitch as it speeds up.
+    const nc = ctx.sampleRate * 2;
+    /** clicks with heavy-tailed sizes, `perSec` of them, each `maxLen` samples or shorter */
+    const clickTrain = (perSec: number, maxLen: number): AudioBuffer => {
+      const buf = ctx.createBuffer(1, nc, ctx.sampleRate), c = buf.getChannelData(0);
+      for (let t = 0; t < nc;) {
+        t += Math.max(1, Math.round(-Math.log(1 - Math.random()) * ctx.sampleRate / perSec));
+        if (t >= nc) break;
+        const a = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? -1 : 1), len = 1 + Math.floor(Math.random() * maxLen);
+        for (let k = 0; k < len && t + k < nc; k++) c[t + k] += a * (1 - k / len);
+      }
+      return buf;
+    };
+    // a steel edge on stone is a fine grit (a shovel on concrete): many small hits; the coarse train is the base knocking
+    const fine = clickTrain(450, 4), coarse = clickTrain(260, 6); // finer than about 500 a second blurs into hiss
+    const scrape = (clicks: AudioBuffer, modes: [number, number, number][], drive: number): Scrape => {
+      const src = ctx.createBufferSource(); src.buffer = clicks; src.loop = true;
       const shaper = ctx.createWaveShaper();
       const curve = new Float32Array(1024);
       for (let i = 0; i < curve.length; i++) { const x = (i / (curve.length - 1)) * 2 - 1; curve[i] = Math.tanh(drive * x) / Math.tanh(drive); }
       shaper.curve = curve;
-      const am = ctx.createGain(); am.gain.value = 1 - amDepth;
-      const mod = ctx.createBufferSource(); mod.buffer = this.noiseBuf; mod.loop = true;
-      const modF = ctx.createBiquadFilter(); modF.type = 'lowpass'; modF.frequency.value = amHz; modF.Q.value = 0.7;
-      // white noise (RMS 0.58) low-passed to amHz keeps sqrt(amHz / Nyquist) of it; scale it back so the grain swings
-      // the level by about +-amDepth (RMS 0.6 amDepth)
-      const modG = ctx.createGain(); modG.gain.value = (0.6 * amDepth) / (0.58 * Math.sqrt(amHz / (ctx.sampleRate / 2)));
-      mod.connect(modF).connect(modG).connect(am.gain);
       const gain = ctx.createGain(); gain.gain.value = 0;
-      src.connect(filter).connect(shaper).connect(am).connect(gain).connect(this.sfx); src.start(); mod.start(0, Math.random() * 1.5);
-      return { gain, filter };
+      shaper.connect(gain).connect(this.sfx);
+      for (const [f, q, g] of modes) {
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+        const mg = ctx.createGain(); mg.gain.value = g;
+        src.connect(bp).connect(mg).connect(shaper);
+      }
+      src.start(0, Math.random() * 1.9);
+      return { gain, src };
     };
-    this.rockGrind = grit('bandpass', 3000, 2.2, 5, 90, 0.6); // edge on stone: metallic, narrow, louder on edge
-    this.rockDrag = grit('bandpass', 1100, 0.9, 3.5, 45, 0.7); // base drag: broad and rough, mid band (the powder hush sits below 750 Hz)
-    this.rockSkid = grit('bandpass', 2200, 1.4, 7, 140, 0.75); // a sideways scrape: harsh and clipped
+    // [Hz, Q, level]. Shovel on concrete: brittle hits ringing low-mid for the base, the edge's steel at narrower
+    // inharmonic modes, little above 3 kHz (that is where it turns to hiss)
+    this.rockDrag = scrape(coarse, [[300, 5, 2.2], [700, 5, 2.0], [1400, 5, 1.3], [2600, 4, 0.5]], 1.6);
+    this.rockGrind = scrape(fine, [[1180, 12, 2.6], [2270, 14, 2.0], [3300, 12, 1.0]], 1.8);
+    this.rockSkid = scrape(fine, [[600, 4, 1.8], [1300, 5, 1.6], [2400, 5, 1.0]], 2.2);
+    this.rockBody = layer('lowpass', 160, 0.7); // the weight on it: a smooth low rumble under the hits
     this.carveToe = layer('bandpass', 3000, 1.6);
     this.carveHeel = layer('bandpass', 1900, 1.6);
     this.skidL = layer('bandpass', 5200, 1.2);
@@ -442,13 +461,16 @@ export class GameAudio {
     if (this.skipT <= 0) { this.skipT = 1 / (8 + 22 * v) * (0.6 + 0.8 * Math.random()); this.skipV = 0.45 + 0.55 * Math.random(); }
     const ease = (g: GainNode, target: number) => { const k = Math.min(1, dt / (target > g.gain.value ? 0.03 : 0.12)); g.gain.value += (target - g.gain.value) * k; };
     const metal = rock + 0.25 * scree; // scree rings far less
-    ease(this.rockGrind.gain, Math.min(0.5, metal * v * (0.45 + 0.55 * edge) * load * 0.55 * this.skipV));
-    this.rockGrind.filter.frequency.value = 2200 + 2800 * v * (0.7 + 0.3 * edge);
-    ease(this.rockDrag.gain, Math.min(0.55, (rock + 0.7 * scree) * v * (1 - 0.5 * edge) * load * 0.6 * (0.6 + 0.4 * this.skipV)));
-    this.rockDrag.filter.frequency.value = 800 + 900 * v;
+    // the hits come faster with speed (each click train's rate is its hits a second at playback rate 1)
+    ease(this.rockGrind.gain, Math.min(0.7, metal * v * (0.55 + 0.45 * edge) * load * 0.7)); // the steel edge scrapes even riding flat
+    this.rockGrind.src.playbackRate.value = 0.6 + 0.8 * v;
+    ease(this.rockDrag.gain, Math.min(0.6, (rock + 0.7 * scree) * v * (1 - 0.3 * edge) * load * 0.6 * (0.75 + 0.25 * this.skipV)));
+    this.rockDrag.src.playbackRate.value = 0.35 + 1.1 * v;
+    ease(this.rockBody.gain, Math.min(0.16, (rock + 0.5 * scree) * v * load * 0.16 * (0.7 + 0.3 * this.skipV)));
+    this.rockBody.filter.frequency.value = 110 + 110 * v;
     // a brake or skid on rock: the edge scraped sideways across stone, louder with the skid and the load
-    ease(this.rockSkid.gain, Math.min(0.6, (rock + 0.5 * scree) * scrub * (0.5 + 0.5 * v) * load * 0.8));
-    this.rockSkid.filter.frequency.value = 1600 + 1600 * scrub + 800 * v;
+    ease(this.rockSkid.gain, Math.min(0.45, (rock + 0.5 * scree) * scrub * (0.5 + 0.5 * v) * load * 0.55));
+    this.rockSkid.src.playbackRate.value = 0.7 + 0.6 * scrub + 0.5 * v; // a sideways scrape is dense
     // ticks and pebbles, more of them in a skid
     const hit = rock + 1.6 * scree;
     if (hit > 0.15 && spd > 0.3) {
@@ -456,9 +478,8 @@ export class GameAudio {
       if (this.tickT <= 0) {
         this.tickT = (1 / (8 + 40 * v + 30 * scrub)) * (0.4 + 1.2 * Math.random()) / Math.min(1.5, hit);
         const looseness = scree / Math.max(1e-3, rock + scree);
-        this.burst('highpass', 2500 + 3500 * Math.random() * (1 - 0.4 * looseness), 0.01 + 0.025 * Math.random(), 0.2 * Math.min(1, hit) * (0.5 + 0.5 * v));
-        if (Math.random() < 0.45 * (1 - looseness)) this.tone(2200 + 2400 * Math.random(), 0.014, 0.05 * v, 'square'); // a steel click
-        if (Math.random() < 0.12 * (1 - 0.5 * looseness)) this.burst('bandpass', 500 + 400 * Math.random(), 0.04, 0.18 * Math.min(1, hit) * v, 1.5); // the base knocking a stone
+        this.burst('bandpass', 1200 + 2300 * Math.random() * (1 - 0.4 * looseness), 0.012 + 0.025 * Math.random(), 0.2 * Math.min(1, hit) * (0.5 + 0.5 * v), 0.9);
+        if (Math.random() < 0.2 * (1 - 0.5 * looseness)) this.burst('lowpass', 250 + 300 * Math.random(), 0.05 + 0.04 * Math.random(), 0.22 * Math.min(1, hit) * v, 0.8); // the base knocking a stone
       }
     } else this.tickT = 0;
   }
@@ -499,17 +520,17 @@ export class GameAudio {
     this.flowPow.filter.frequency.value = 250 + 20 * spd + 350 * sn.slush;
     lerp(this.rumble.gain, onSnow ? 0.08 * v * powder * snowLeft : 0);
     this.rumble.osc.frequency.value = 38 + spd * 0.6;
-    lerp(this.flowHard.gain, onSnow ? (0.04 + 0.3 * v * hard) * (0.4 + 0.6 * snowLeft) : 0);
+    lerp(this.flowHard.gain, onSnow ? (0.04 + 0.3 * v * hard) * snowLeft : 0); // FEAT-328: the hardpack hiss is snow too; the scrape replaces it on rock
     this.flowHard.filter.frequency.value = 3000 + 120 * spd;
     // crust: crackle by gating the layer with random pops
     this.crackleT -= dt;
-    if (onSnow && crust > 0.1 && this.crackleT <= 0) { this.crackleT = 0.03 + Math.random() * 0.12 / Math.max(0.2, crust * v); this.flowCrust.gain.gain.value = 0.12 * crust * v; }
+    if (onSnow && crust > 0.1 && this.crackleT <= 0) { this.crackleT = 0.03 + Math.random() * 0.12 / Math.max(0.2, crust * v); this.flowCrust.gain.gain.value = 0.12 * crust * v * snowLeft; }
     else lerp(this.flowCrust.gain, 0);
     // carve: toe vs heel by edge sign; skid chatter
     const edge = Math.abs(r.edgeAngle);
     // FEAT-148: a hard carve's edge hisses louder and higher with the g it pulls (2.5 g full)
     const hiss = onSnow ? r.hardCarve * Math.min(1, Math.abs(r.lateralG) / 2.5) : 0;
-    const carveG = onSnow ? Math.min(0.5 + 0.2 * hiss, (0.03 + 0.5 * edge * v) * (0.5 + 0.5 * groomed + 0.6 * hard) * (1 + 0.6 * hiss)) : 0;
+    const carveG = onSnow ? Math.min(0.5 + 0.2 * hiss, (0.03 + 0.5 * edge * v) * (0.5 + 0.5 * groomed + 0.6 * hard) * (1 + 0.6 * hiss)) * snowLeft : 0; // FEAT-328: on bare rock the rock grind is the edge's only sound
     const toe = r.edgeAngle * r.toeSign; // FEAT-139: the toe edge is the heading's left riding switch or goofy
     lerp(this.carveToe.gain, toe > 0 ? carveG : 0);
     lerp(this.carveHeel.gain, toe < 0 ? carveG : 0);
@@ -517,14 +538,14 @@ export class GameAudio {
     this.carveHeel.filter.frequency.value = 1700 + 900 * edge + 30 * spd + 1200 * hiss;
     // skid chatter, and the edge scraping through a brake (louder and higher on hard snow)
     const scrub = Math.max(r.skid, r.scrape);
-    lerp(this.skidL.gain, onSnow ? Math.min(0.5, scrub * 0.5 * (0.6 + 0.4 * v) * (1 + hard)) * (0.25 + 0.75 * snowLeft) : 0); // FEAT-328: rockSkid takes over on rock
+    lerp(this.skidL.gain, onSnow ? Math.min(0.5, scrub * 0.5 * (0.6 + 0.4 * v) * (1 + hard)) * snowLeft : 0); // FEAT-328: rockSkid takes over on rock
     this.skidL.filter.frequency.value = 4500 + 2000 * scrub;
     this.rockScrape(r, onSnow, dt);
     // wind
     const windV = (riding ? 0.25 : 1) * (onSnow ? 1 - 0.45 * Math.min(1, s.rock + 0.5 * s.scree) : 1); // FEAT-328: the scrape carries over the wind on rock
     lerp(this.windLo.gain, Math.min(0.5, Math.max(0, spd - 6) * 0.018 * (tuck ? 1.4 : 1)) * windV);
     this.windLo.filter.frequency.value = 200 + 25 * spd;
-    lerp(this.windHi.gain, Math.min(0.12, Math.max(0, spd - 20) * 0.012) * windV);
+    lerp(this.windHi.gain, Math.min(0.12, Math.max(0, spd - 20) * 0.012) * windV * (onSnow ? snowLeft : 1)); // FEAT-328: its whistle is a hiss over the scrape
     this.windHi.filter.frequency.value = 2000 + 40 * spd;
     lerp(this.liftGain, riding ? 0.08 : 0);
     // breathing on foot: in and out at a rate and strength that rise with the effort
