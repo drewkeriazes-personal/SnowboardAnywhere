@@ -116,7 +116,8 @@ export class Pack {
       const g = h + t;
       return bumps && res <= MOGUL_MAX_RES ? g + this.bumpAt(x, y) : g;
     }
-    this.lastTrench = 0;
+    // the shading still reads the trench here (as it did before the cache), though the returned height leaves it out
+    this.lastTrench = res <= MOGUL_MAX_RES ? this.trenchAt(x, y) : 0;
     // last resort: any set that has data
     for (const s of this.sets) {
       if (!s.contains(x, y)) continue;
