@@ -46,8 +46,8 @@ const SPOTS = {
     { id: 'wild9', name: 'Wildcard (NW) 9 am', x: -2453, y: 661, h: 315, hour: 9, day: 'mid', weather: null },
     { id: 'wild13', name: 'Wildcard (NW) 1 pm', x: -2453, y: 661, h: 315, hour: 13, day: 'mid', weather: null },
     { id: 'trees14', name: 'Steep and Deep trees 2 pm', x: 1827, y: -3506, h: 325, hour: 14, day: 'mid', weather: null },
-    // FEAT-333: on a worn tree line 16 m beside the run (pack/treeLines.ts), heading down it
-    { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1843, y: -3505, h: 355, hour: 14, day: 'mid', weather: null },
+    // FEAT-333: on a worn tree line 13 m beside the run (pack/treeLines.ts), heading down it
+    { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1814.6, y: -3510.7, h: 10, hour: 14, day: 'mid', weather: null },
     { id: 'chicken15', name: 'Chicken Yard (SE, open) 3 pm', x: -698, y: -612, h: 160, hour: 15, day: 'mid', weather: null },
     { id: 'chicken9', name: 'Chicken Yard (SE, open) 9 am', x: -698, y: -612, h: 160, hour: 9, day: 'mid', weather: null },
     { id: 'golden15', name: 'Tea Cup Glades (S, low, open) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },

@@ -6,6 +6,8 @@ import type { Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
 import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
 
+/** FEAT-333: tree cells fetched at once while the tree lines load */
+const TRUNK_FETCHES = 8;
 /** chunks at this resolution or finer carry the mogul bumps in their geometry */
 export const MOGUL_MAX_RES = 2;
 /** coarser chunks up to this resolution shade the same field in the terrain shader (seen from the lift) */
@@ -184,7 +186,10 @@ export class Pack {
     const t0 = performance.now();
     const tl = new TreeLines(this.features.runs);
     const inst = this.meta.instances;
-    let left = 0, trunkCount = 0;
+    let left = 0, trunkCount = 0, failed = 0, cells = 0;
+    // the forest gate's cover levels load alongside the trunks (review on #770: a gate that changes after load moves the
+    // ground under the rider)
+    const coverReady = this.cover ? this.cover.ready : Promise.resolve();
     if (inst) {
       const listed = new Set(inst.treeCells ?? []), want = new Set<string>();
       for (const b of tl.planBoxes()) {
@@ -195,22 +200,41 @@ export class Pack {
           }
         }
       }
-      const trunks = new TrunkIndex();
-      await Promise.all([...want].map(async (k) => {
-        try {
-          const r = await fetch(`${this.baseUrl}/trees/${k}.bin`);
-          if (r.ok) trunks.add(new Float32Array(await r.arrayBuffer()), 6);
-        } catch { /* a cell that will not load: its trunks stay where the lines plan them */ }
-      }));
+      // a bounded pool: TRUNK_FETCHES cells at a time, not every cell the lines cross at once
+      const trunks = new TrunkIndex(), queue = [...want];
+      cells = queue.length;
+      const worker = async (): Promise<void> => {
+        for (let k = queue.shift(); k !== undefined; k = queue.shift()) {
+          try {
+            const r = await fetch(`${this.baseUrl}/trees/${k}.bin`);
+            if (r.ok) trunks.add(new Float32Array(await r.arrayBuffer()), 6); else failed++;
+          } catch { failed++; } // a cell that will not load: its trunks stay where the lines plan them (counted in the log)
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(TRUNK_FETCHES, queue.length) }, worker));
       trunkCount = trunks.count;
       left = tl.avoid(trunks);
     }
     tl.finish();
-    const mask = this.mask, tmp = [0, 0, 0, 0];
-    // the lines are only under the forest: the mask's canopy (zeros until its tile loads; the terrain rebuilds then)
-    tl.setCanopy(mask ? (x, y) => mask.sampleBilinear(x, y, tmp)[3] : null);
+    await coverReady;
+    tl.setCanopy(this.forestGate());
     this.treeLines = tl;
-    console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km, bent round ${trunkCount} trunks (${left} steps broken at a trunk), ${(performance.now() - t0).toFixed(0)} ms`);
+    const fails = failed ? `, ${failed} of ${cells} tree cells failed to load (their trunks were not avoided)` : '';
+    console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km, bent round ${trunkCount} trunks (${left} steps broken at a trunk${fails}), ${(performance.now() - t0).toFixed(0)} ms`);
+    if (failed) console.warn(`tree lines: ${failed} of ${cells} tree cells failed to load`);
+  }
+
+  /**
+   * FEAT-333: the forest the tree lines dig in, 0..1. From the pack's cover levels (forest share), which are loaded before
+   * the lines count and never change, so the trench, its moguls and the physics are the same from the first frame (BUG-158:
+   * the 1 m mask's canopy reads 0 until its tile loads, then the ground dropped a metre under a rider in a line). Packs
+   * without cover levels fall back to the mask's canopy.
+   */
+  private forestGate(): ((x: number, y: number) => number) | null {
+    const cover = this.cover, tmp = [0, 0, 0, 0];
+    if (cover && cover.levels.some((l) => l.loaded)) return (x, y) => (cover.sample(x, y, tmp) > 0 ? tmp[0] : 0);
+    const mask = this.mask;
+    return mask ? (x, y) => mask.sampleBilinear(x, y, tmp)[3] : null;
   }
 
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and

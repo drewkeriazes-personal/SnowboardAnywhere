@@ -14,7 +14,7 @@ import type { RunFeature } from './types';
  * What reads it: the generated stems leave the corridor (trees/stands.ts), the mogul field takes the line's
  * strength as its amplitude (Pack.mogulAmp, so the physics, the bump geometry and the shader agree: on a steep
  * pitch it is a mogul line), the snow on it is tracked (SnowConditions, `worn`), and the terrain draws ski
- * tracks along it (TerrainMaterial). All of that only under the forest (`gate`, the mask's canopy): beside a run
+ * tracks along it (TerrainMaterial). All of that only under the forest (`gate`, Pack.forestGate): beside a run
  * in the open there is no tree line to wear.
  *
  * Trim (FEAT-303): how far a tree's lower branches are worn back (0 untouched .. 1 trimmed), for the tree
@@ -84,7 +84,8 @@ export const LINE_MOGUL = 0.85;
 /** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
  *  the berm of pushed-aside snow on the rim, m high and wide (`trenchAt`) */
 export const TRENCH_DEPTH = 1.0;
-/** the canopy cover (the mask's) over which a line fades in: inside the trees, not on the open face beside a forest's edge */
+/** the forest (cover levels' share, or the mask's canopy) over which a line fades in: inside the trees, not on the open face
+ *  beside a forest's edge */
 const CANOPY_LO = 0.3, CANOPY_HI = 0.55;
 const TRENCH_WALL = 1.1, BERM_H = 0.15, BERM_W = 1.2;
 const LINE_SEG = 6; // floats per segment: ax, ay, bx, by, half-width, strength
@@ -194,7 +195,7 @@ class SegGrid {
   at(x: number, y: number): number[] | undefined { return this.cells.get(Math.floor(y / GRID) * 100003 + Math.floor(x / GRID)); }
 }
 
-/** the canopy cover under a point, 0..1 (the pack's mask), for `gate` */
+/** the forest under a point, 0..1 (the pack's cover levels, or the mask's canopy), for `gate` */
 export type CanopyAt = (x: number, y: number) => number;
 
 /** one planned line: its points every STEP m, its strength at each (fades included) and its half-width */
@@ -412,7 +413,7 @@ export class TreeLines {
     this.trimTiles.clear();
   }
 
-  /** the canopy the lines are gated by (the pack's mask); without one they count everywhere */
+  /** the forest the lines are gated by (`Pack.forestGate`); without one they count everywhere */
   setCanopy(c: CanopyAt | null): void { this.canopy = c; }
 
   /** plans one line from (x, y): `latT` is the offset (signed, m) it keeps near, `depth` 1 for a fork's branch */
@@ -603,7 +604,7 @@ export class TreeLines {
       let d1 = Infinity, r1 = -1, d2 = Infinity, glade = 0;
       for (const q of ids) {
         const o = q * 6, d = Math.sqrt(segD2(x, y, rs[o], rs[o + 1], rs[o + 2], rs[o + 3])), r = rs[o + 4];
-        if (rs[o + 5] > glade) glade = Math.max(glade, rs[o + 5] * (1 - smooth(GLADE_FULL, GLADE_NONE, d)));
+        glade = Math.max(glade, rs[o + 5] * (1 - smooth(GLADE_FULL, GLADE_NONE, d)));
         if (r === r1) { if (d < d1) d1 = d; continue; }
         if (d < d1) { d2 = d1; d1 = d; r1 = r; } else if (d < d2) d2 = d;
       }
