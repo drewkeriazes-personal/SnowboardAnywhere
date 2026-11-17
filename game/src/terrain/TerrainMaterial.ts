@@ -405,7 +405,8 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         // ungroomed snow: large wind-scoured tone, wind ripples (stretched along the prevailing
         // westerly), fine grain
         float wind = fbm2(wp.xz * 0.08 + vec2(wp.y * 0.01, 0.0));
-        float ripple = vnoise(vec3(wp.x * 0.35, 0.0, wp.z * 1.6)) * (1.0 - smoothstep(30.0, 140.0, length(cameraPosition - wp)));
+        float rippleK = 1.0 - smoothstep(30.0, 140.0, dist);
+        float ripple = rippleK > 0.0 ? vnoise(vec3(wp.x * 0.35, 0.0, wp.z * 1.6)) * rippleK : 0.0;
         float grain = vnoise(wp * 2.5);
         // FEAT-092: the wind tone is a near-field detail; past a few hundred metres it averages out to an
         // even tone (real snow is evenly toned at distance, shaded only by the terrain), so no blotches
@@ -435,29 +436,42 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         // rock and talus poke through the snow: the weight is a threshold against multi-scale noise
         // (fine octave fades with distance), with a narrow soft edge that widens far away
         float fineOct = 1.0 - smoothstep(60.0, 300.0, dist);
-        float bn = vnoise(wp * 0.09) * 0.5 + vnoise(wp * 0.31 + 3.1) * 0.3 + mix(0.5, vnoise(wp * 1.1 + 7.7), fineOct) * 0.2;
         float edge = 0.025 + 0.1 * smoothstep(150.0, 3000.0, dist);
-        vec3 rockN; float rockR;
-        vec3 rockAlb = rockSurface(wp, ngW, dist, rockN, rockR);
+        // FEAT-236: the rock and talus surfaces (triplanar photo textures and their noise) are only worked out where
+        // the threshold below can pass: the noise moves the weight by at most +0.3 (rock) and +0.35 (talus), so a
+        // weight further than that under the edge is snow whatever the noise says. Most of the mountain is, and
+        // there the branch skips them. The textures inside it take their gradients from here (uniform flow).
+        vec3 dWpX = dFdx(wp), dWpY = dFdy(wp);
+        vec3 rockN = ngW; float rockR = 0.0;
+        vec3 rockAlb = vec3(0.0);
         // FEAT-105: new snow (uSnowCover 0..1) buries the rock from its edges in: the threshold shifts,
         // so the same noise makes a ragged shrinking edge. Faces steeper than about 55 deg shed it and
         // stay dark; faces looking downwind (uSnowLee) load up more
         float holds = smoothstep(0.5, 0.64, ngW.y);
         float snowShift = uSnowCover * 0.3 * holds * (1.0 + 0.5 * dot(ngW.xz, uSnowLee));
-        float rockCov0 = smoothstep(0.5 - edge, 0.5 + edge, wRockV + (bn - 0.5) * 0.6);
-        float rockCov = smoothstep(0.5 - edge, 0.5 + edge, wRockV + (bn - 0.5) * 0.6 - snowShift);
-        // ledges and benches hold snow: the rock's own detail normal decides, so snow lines its ledges;
-        // with new snow the cracks and benches fill first (a lower threshold)
-        float ledge = smoothstep(mix(0.8, 0.72, uSnowCover), mix(0.93, 0.85, uSnowCover), rockN.y + (vnoise(wp * 0.6) - 0.5) * 0.12);
-        rockCov *= 1.0 - 0.9 * ledge;
+        float rockCov0 = 0.0, rockCov = 0.0;
+        if (wRockV + 0.3 > 0.5 - edge) {
+          float bn = vnoise(wp * 0.09) * 0.5 + vnoise(wp * 0.31 + 3.1) * 0.3 + mix(0.5, vnoise(wp * 1.1 + 7.7), fineOct) * 0.2;
+          rockAlb = rockSurfaceG(wp, ngW, dist, dWpX, dWpY, rockN, rockR);
+          rockCov0 = smoothstep(0.5 - edge, 0.5 + edge, wRockV + (bn - 0.5) * 0.6);
+          rockCov = smoothstep(0.5 - edge, 0.5 + edge, wRockV + (bn - 0.5) * 0.6 - snowShift);
+          // ledges and benches hold snow: the rock's own detail normal decides, so snow lines its ledges;
+          // with new snow the cracks and benches fill first (a lower threshold)
+          float ledge = smoothstep(mix(0.8, 0.72, uSnowCover), mix(0.93, 0.85, uSnowCover), rockN.y + (vnoise(wp * 0.6) - 0.5) * 0.12);
+          rockCov *= 1.0 - 0.9 * ledge;
+        }
         // newly buried rock is fresh snow: brighter, less grain
         float fresh = clamp(rockCov0 - rockCov, 0.0, 1.0);
         snow = mix(snow, vec3(0.97, 0.98, 1.0), 0.7 * fresh);
-        vec3 screeN; float screeR;
-        vec3 screeAlb = screeSurface(wp, ngW, dist, screeN, screeR);
-        float bn2 = vnoise(wp * 0.17 + 11.0) * 0.6 + mix(0.5, vnoise(wp * 0.8 + 5.0), fineOct) * 0.4;
-        // winter buries most talus: only part of a full-weight field shows
-        float screeCov = smoothstep(0.5 - edge, 0.5 + edge, wScreeV * 0.65 + (bn2 - 0.5) * 0.7 - snowShift) * (1.0 - rockCov);
+        vec3 screeN = ngW; float screeR = 0.0;
+        vec3 screeAlb = vec3(0.0);
+        float screeCov = 0.0;
+        if (wScreeV * 0.65 + 0.35 > 0.5 - edge) {
+          screeAlb = screeSurfaceG(wp, ngW, dist, dWpX, dWpY, screeN, screeR);
+          float bn2 = vnoise(wp * 0.17 + 11.0) * 0.6 + mix(0.5, vnoise(wp * 0.8 + 5.0), fineOct) * 0.4;
+          // winter buries most talus: only part of a full-weight field shows
+          screeCov = smoothstep(0.5 - edge, 0.5 + edge, wScreeV * 0.65 + (bn2 - 0.5) * 0.7 - snowShift) * (1.0 - rockCov);
+        }
         rockCov *= 1.0 - uDebugFar.y; screeCov *= 1.0 - uDebugFar.y;
         float wSnow = 1.0 - rockCov - screeCov;
         // BUG-081: far off, ungroomed snow over thin snowpack carries the plants poking through it, in patches
@@ -508,14 +522,19 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         if (uDeformWin.w > 0.0) { dUV = deformUV(wp.xz); dFade = deformFade(dUV); }
         // glints: about one 4 cm cell in twelve holds a crystal facet tilted at random off the surface;
         // RE_Direct_Physical lights it when it faces the half vector. Gone once cells are sub-pixel.
+        // FEAT-236: past a pixel per cell (beyond about 30 m) the weight is 0, so the hashes are skipped there
         vec3 gc = wp * 25.0;
-        vec3 gci = floor(gc);
-        vec3 gr = vec3(hash3(gci + 11.1), hash3(gci + 23.7), hash3(gci + 37.3)) * 2.0 - 1.0;
-        vec3 gn = normalize(normalize(vWorldNormal) + gr * 0.55);
-        gGlintN = normalize((viewMatrix * vec4(gn, 0.0)).xyz);
-        float gdot = 1.0 - smoothstep(0.12, 0.32, length(fract(gc) - 0.5));
         float gpix = length(fwidth(gc));
-        gGlintW = step(0.92, hash3(gci + 5.3)) * gdot * (1.0 - smoothstep(0.35, 1.0, gpix)) * uGlint * (1.0 - uFlat);
+        gGlintN = vec3(0.0, 0.0, 1.0);
+        gGlintW = 0.0;
+        if (gpix < 1.0) {
+          vec3 gci = floor(gc);
+          vec3 gr = vec3(hash3(gci + 11.1), hash3(gci + 23.7), hash3(gci + 37.3)) * 2.0 - 1.0;
+          vec3 gn = normalize(normalize(vWorldNormal) + gr * 0.55);
+          gGlintN = normalize((viewMatrix * vec4(gn, 0.0)).xyz);
+          float gdot = 1.0 - smoothstep(0.12, 0.32, length(fract(gc) - 0.5));
+          gGlintW = step(0.92, hash3(gci + 5.3)) * gdot * (1.0 - smoothstep(0.35, 1.0, gpix)) * uGlint * (1.0 - uFlat);
+        }
         // distant forest: past the instanced trees, forested ground reads as dark conifer green
         // speckled with snow (real distant Colorado slopes are mostly dark timber, not white)
         // FEAT-075: forested ground goes dark from just past the instanced trees' detail (350 m, full by
@@ -602,14 +621,17 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           // it fades with distance; the 7 m and 3 m octaves keep the snow textured out there
           float bigK = 1.0 - 0.75 * smoothstep(150.0, 600.0, length(cameraPosition - wpn));
           #define SNOWH(q) (fbm2((q) * 0.05) * 2.0 * bigK + fbm2((q) * 0.14) * 1.1 + fbm2((q) * 0.35) * 0.5)
-          float h0 = SNOWH(wpn.xz);
-          float hx = SNOWH(wpn.xz + vec2(e, 0.0));
-          float hz = SNOWH(wpn.xz + vec2(0.0, e));
-          vec3 bump = normalize(vec3(-(hx - h0) / e, 1.0, -(hz - h0) / e));
           float snowW = wSnow;
           float gW = vColor.b * snowW;
           // drift relief: strong on ungroomed snow, almost flat on a groomer
           float wS = snowW * (1.0 - 0.85 * vColor.b);
+          vec3 bump = vec3(0.0, 1.0, 0.0);
+          if (wS > 0.0) { // bare rock carries none
+            float h0 = SNOWH(wpn.xz);
+            float hx = SNOWH(wpn.xz + vec2(e, 0.0));
+            float hz = SNOWH(wpn.xz + vec2(0.0, e));
+            bump = normalize(vec3(-(hx - h0) / e, 1.0, -(hz - h0) / e));
+          }
           vec3 wn = normalize(vWorldNormal);
           vec3 t = normalize(cross(wn, vec3(0.0, 0.0, 1.0)));
           vec3 b = cross(wn, t);
