@@ -52,6 +52,8 @@ export interface Params {
   notreelines: boolean;
   /** FEAT-303: the glade trees keep their low branches (the tree lines stay) */
   notrim: boolean;
+  /** FEAT-337: the generated stems scatter evenly instead of in clumps (before / after looks) */
+  evenstems: boolean;
   /** FEAT-159: one snowpack depth everywhere (m) for burying the shrubs, instead of the season's */
   snowdepth: number | null;
   /** FEAT-292 ?noclumps: no clump impostors; the far forest as before them (per-tree impostors to their far edge, the
@@ -108,6 +110,7 @@ export function parseParams(search: string, hosted = !!(import.meta.env.VITE_HOS
     nomoguls: p.has('nomoguls'),
     notreelines: p.has('notreelines'),
     notrim: p.has('notrim'),
+    evenstems: p.has('evenstems'),
     snowdepth: num('snowdepth'),
     noclumps: p.has('noclumps'),
     clumpfar: num('clumpfar'),

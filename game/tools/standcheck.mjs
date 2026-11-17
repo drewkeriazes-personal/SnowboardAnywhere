@@ -3,12 +3,15 @@
 //   - the count matches the stand's chance per 4 m cell (the expected stems, within 3 %)
 //   - the same image gives the same stems every time (seeded by position)
 //   - a lower density keeps a subset of the stems a higher one draws (the Forest setting thins, never moves)
-//   - every stem stays in its 4 m cell, at the stand's height (0.75 to 1 times it) and species
+//   - every stem stays on the grid and off the open strip (FEAT-337: within its 4 m cell, or pulled up to 1.6 m toward
+//     its clump in a closed stand), at the stand's height (0.75 to 1 times it) and species
 //   - the ground height is the stored one, interpolated: on a 30 degree plane within 5 cm
 //   - no stems where the chance is 0, none at density 0
 //   - FEAT-298, a pack with crown widths: each stem's crown is the species radius times the cell's width factor
 //     (lower half B / 100) times its own draw (mean 1, within the jitter); a species that does not widen keeps the
 //     factor without a draw; a cell with no factor byte reads 1; the stems themselves are the same as without widths
+//   - FEAT-337: a closed stand keeps its exact count and clumps by moving its stems; on a glade-density stand the stems clump (variance over mean of counts in 12 m squares), their spacing is in
+//     the gladed 3 to 10 m band, and free paths down the fall line are longer than the even scatter's and than across
 // node tools/standcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -95,6 +98,64 @@ check('a stem widens by its cell factor and its own draw', wN > 0 && Math.abs(wS
   `west draw mean ${(wSum / wN).toFixed(3)}, ${wLo.toFixed(3)} to ${wHi.toFixed(3)} on factor 1.4`);
 check('no factor byte reads 1, a non-widening species takes no draw', eastOff === 0 && noDrawOff === 0, `${eastOff} east stems off factor 1 x draw, ${noDrawOff} undrawn spruce off 1.4`);
 check('without crown widths the crown stays 0', generateStems(gW, 1).every((v, i) => i % 6 !== 4 || v === 0), "the species' own");
+
+// FEAT-337: clumps with gaps down the fall line, on the east half's glade-density stand (chance 0.3, 30 degree plane rising
+// north, so the fall line runs south): clumped (the variance of counts in 12 m squares over their mean, about 1 for an even
+// scatter), nearest-neighbour spacing in the gladed band (3 to 10 m), and longer free paths down the fall line than the
+// even scatter gives, and than across the slope
+const east = (a) => { const o = []; for (let i = 0; i < a.length; i += 6) if (a[i] > minX + 520 && a[i] < minX + size * res - 20 && a[i + 1] > minY + 20 && a[i + 1] < minY + size * res - 20) o.push(a[i], a[i + 1]); return o; };
+const clumped = east(full), even = east(generateStems(g, 1, null, null, false));
+function quadratVMR(pts) {
+  const Q = 12, m = new Map();
+  for (let i = 0; i < pts.length; i += 2) { const k = `${Math.floor(pts[i] / Q)},${Math.floor(pts[i + 1] / Q)}`; m.set(k, (m.get(k) ?? 0) + 1); }
+  const nq = Math.floor(440 / Q) * Math.floor((size * res - 40) / Q), c = [...m.values()];
+  const mean = pts.length / 2 / nq, varr = (c.reduce((t, v) => t + (v - mean) ** 2, 0) + (nq - c.length) * mean * mean) / nq;
+  return varr / mean;
+}
+function grid(pts) { const m = new Map(); for (let i = 0; i < pts.length; i += 2) { const k = `${Math.floor(pts[i] / 4)},${Math.floor(pts[i + 1] / 4)}`; const l = m.get(k); if (l) l.push(i); else m.set(k, [i]); } return m; }
+function nnMean(pts) {
+  const m = grid(pts); let sum = 0, n = 0;
+  for (let i = 0; i < pts.length; i += 2) {
+    let best = Infinity;
+    for (let r = 1; r <= 4 && best === Infinity; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      const l = m.get(`${Math.floor(pts[i] / 4) + dx},${Math.floor(pts[i + 1] / 4) + dy}`);
+      if (l) for (const j of l) if (j !== i) best = Math.min(best, Math.hypot(pts[j] - pts[i], pts[j + 1] - pts[i + 1]));
+    }
+    if (best < Infinity) { sum += best; n++; }
+  }
+  return sum / n;
+}
+function freePath(pts, dx, dy) {
+  const m = grid(pts); let sum = 0, n = 0;
+  for (let k = 0; k < 400; k++) {
+    let x = minX + 560 + ((k * 7919) % 400), y = minY + 120 + ((k * 104729) % 760);
+    let d = 0;
+    for (; d < 60; d += 0.5, x += dx * 0.5, y += dy * 0.5) {
+      const l = m.get(`${Math.floor(x / 4)},${Math.floor(y / 4)}`);
+      let hit = false;
+      for (let gx = -1; gx <= 1 && !hit; gx++) for (let gy = -1; gy <= 1 && !hit; gy++) {
+        const ll = m.get(`${Math.floor(x / 4) + gx},${Math.floor(y / 4) + gy}`);
+        if (ll) for (const j of ll) if (Math.hypot(pts[j] - x, pts[j + 1] - y) < 0.6) { hit = true; break; }
+      }
+      if (hit) break;
+    }
+    sum += d; n++;
+  }
+  return sum / n;
+}
+const vC = quadratVMR(clumped), vE = quadratVMR(even), nnC = nnMean(clumped), fpC = freePath(clumped, 0, -1), fpE = freePath(even, 0, -1), fpX = freePath(clumped, 1, 0);
+check('glade stems clump (FEAT-337)', vC > 1.3 && vC > 2 * vE, `counts in 12 m squares: variance / mean ${vC.toFixed(2)} clumped, ${vE.toFixed(2)} even`);
+check('glade spacing in the gladed band', nnC >= 3 && nnC <= 10, `mean nearest neighbour ${nnC.toFixed(1)} m`);
+check('longer free paths down the fall line than the even scatter, and than across', fpC > fpE * 1.05 && fpC > fpX * 1.05, `down ${fpC.toFixed(1)} m clumped vs ${fpE.toFixed(1)} m even, across ${fpX.toFixed(1)} m`);
+
+// FEAT-337, the closed west half (chance 0.9): no room to add stems to a clump, so they move toward it instead: the same
+// count as the even scatter, but clumped
+const westOf = (a) => { const o = []; for (let i = 0; i < a.length; i += 6) if (a[i] > minX + 20 && a[i] < minX + 440 && a[i + 1] > minY + 20 && a[i + 1] < minY + size * res - 20) o.push(a[i], a[i + 1]); return o; };
+const wC = westOf(full), wE = westOf(generateStems(g, 1, null, null, false));
+const wv = quadratVMR(wC), wvE = quadratVMR(wE);
+const westN = (a) => { let k = 0; for (let i = 0; i < a.length; i += 6) if (a[i] < minX + 460) k++; return k; };
+const wnC = westN(full), wnE = westN(generateStems(g, 1, null, null, false));
+check('a closed stand keeps its count and clumps by moving its stems', wnC === wnE && wv > wvE * 1.5, `${wnC} stems clumped, ${wnE} even; variance / mean ${wv.toFixed(2)} clumped, ${wvE.toFixed(2)} even`);
 
 if (fails) { console.log(`${fails} check(s) failed`); process.exit(1); }
 console.log('all stand checks passed');

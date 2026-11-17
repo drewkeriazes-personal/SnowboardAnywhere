@@ -75,6 +75,9 @@ const STAND_HYST = 250;
 const STAND_COLLIDE = 150;
 /** FEAT-074: draw this share (0..1) of the pack's stand density; the detected crowns always draw */
 export function setStandDensity(k: number): void { STAND_K = Math.max(0, Math.min(1, k)); }
+/** FEAT-337: the generated stems come in clumps (trees/stands.ts); false scatters them evenly (`?evenstems`) */
+let STEM_CLUMPS = true;
+export function setStemClumps(on: boolean): void { STEM_CLUMPS = on; }
 /** FEAT-292: the clump impostors' band, set each update by the Vegetation that draws them (null: none) */
 let CLUMP_BAND: { near: number; fade: number; far: number } | null = null;
 /** FEAT-292: the clumps reach at least this far (m), whatever the trees' own reach (`?clumpfar=`) */
@@ -622,7 +625,7 @@ export class Vegetation {
     const solid = cell.col !== null;
     if (solid) this.setSolid(cell, false);
     const tl = this.pack.treeLines;
-    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null) : null;
+    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null, STEM_CLUMPS) : null;
     if (stems && stems.length) { const d = new Float32Array(base.length + stems.length); d.set(base); d.set(stems, base.length); cell.data = d; }
     else cell.data = base;
     cell.gen = k;
