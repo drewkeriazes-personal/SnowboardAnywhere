@@ -6,13 +6,13 @@ import { exposureAt } from '../terrain/exposure';
 import { DEFAULT_SNOW_WORLD, newSnowState, snowAt, type SnowState, type SnowWorld } from './SnowConditions';
 import type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
 import type { JumpMode } from './rider/tuning';
-import { EDGE_FULL, LEAN_IN, SKATE_CLIP, SKATE_HYST, SKATE_MAX, SKATE_SLOPE, SKATE_STEER, SKATE_UNCLIP, SQUAT_IN, STAMINA, STEP, STOP_GAMMA, STRAP_SPEED, STRAP_TIME, UNSTRAP_SPEED, UNSTRAP_TIME } from './rider/tuning';
+import { EDGE_FULL, LEAN_IN, ROCK_ON, SKATE_CLIP, SKATE_HYST, SKATE_MAX, SKATE_SLOPE, SKATE_STEER, SKATE_UNCLIP, SQUAT_IN, STAMINA, STEP, STOP_GAMMA, STRAP_SPEED, STRAP_TIME, UNSTRAP_SPEED, UNSTRAP_TIME } from './rider/tuning';
 import { rideStep } from './rider/Ride';
 import { edgeIn, inclineIn, leanIn } from './rider/EdgeModel';
 import { pressStep } from './rider/Press';
 import { airStep } from './rider/Jumps';
 import { strapStep, walkStep } from './rider/OnFoot';
-import { groundAt } from './rider/Collision';
+import { groundAt, groundNormalAt, rockBumpAt } from './rider/Collision';
 import { crashStep, startCrash } from './rider/Crash';
 export type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
 export { EDGE_FULL, PLANE_SPEED, PRESS_MIN_REPORT, PRESS_RANGE, SKATE_PUSH, STAMINA, STRAP_TIME, UNSTRAP_TIME } from './rider/tuning';
@@ -189,6 +189,8 @@ export class Rider {
   landingShock = 0;
   /** last collision this step: 'ramp' | 'graze' | 'wall' | '' (for sound and effects; cleared each frame) */
   lastHit = '';
+  /** BUG-141: on a rock's dome last step (Realistic), so stepping onto one is judged once */
+  rockOn = false;
   /** FEAT-217: the speed into the trunk, rock or wall of that collision (m/s; cleared with lastHit) */
   hitSpeed = 0;
   /** Outrun boost (FEAT-101): less drag for a few seconds */
@@ -357,7 +359,7 @@ export class Rider {
   /** End any brake swing: the board lines up with the heading again (internal: the rider modules call it). */
   squareBoard(): void {
     this.boardYaw = this.travelYaw = this.heading;
-    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0;
+    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0; this.rockOn = false;
   }
 
   /**
@@ -482,7 +484,7 @@ export class Rider {
 
   private step(dt: number, input: Input): void {
     const pack = this.pack;
-    const n = pack.groundNormal(this.x, this.y, this.normal, this.z) as [number, number, number];
+    const n = groundNormalAt(this, this.x, this.y, this.z, this.normal) as [number, number, number]; // BUG-141: a rock's dome too
     const ground = groundAt(this, this.x, this.y, this.z);
     this.slopeDeg = Math.acos(Math.min(1, n[2])) * 57.2958;
     if (pack.mask) {
@@ -493,6 +495,9 @@ export class Rider {
       const cov = rockCover(ex.rock, ex.scree, this.x, this.z, -this.y, n[2], this.coverTmp);
       this.surface.rock = cov.rock; this.surface.scree = cov.scree; this.surface.groomed = m[2] * (1 - ex.rock); this.surface.canopy = m[3];
     }
+    // BUG-141: riding over a rock on Realistic the board is on rock: its grip, drag and the FEAT-103 rock scrape
+    const rb = this.onGround ? rockBumpAt(this, this.x, this.y) : null;
+    if (rb && rb.b > ROCK_ON) this.surface.rock = 1;
     this.surface.moguls = pack.mogulAmp?.(this.x, this.y) ?? 0; // FEAT-059 (test planes may lack the method)
     this.surface.shrub = this.collider?.brushAt?.(this.x, this.y, this.z, 0.35) ?? 0; // FEAT-159
     snowAt(this.surface, n, this.z, this.snowWorld, this.snow); // FEAT-053

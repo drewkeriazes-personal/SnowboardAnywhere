@@ -259,7 +259,7 @@ check('off: a flat board traverses on rails as before', off30.toFall > 85 && Mat
   // a trunk 20 m down the fall line (radius 0.3, pushed out to 0.3 + the body's 0.4)
   const TREE_Y = 20;
   const tree = {
-    floorAt: () => -Infinity, brushAt: () => 0,
+    floorAt: () => -Infinity, brushAt: () => 0, rockDome: (x, y, span, out) => { out.h = 0; out.gx = 0; out.gy = 0; return out; }, // BUG-141: no rocks
     resolve: (x, y, z, rad) => {
       const dx = x, dy = y - TREE_Y, d = Math.hypot(dx, dy), R = 0.3 + rad;
       if (d >= R) return null;

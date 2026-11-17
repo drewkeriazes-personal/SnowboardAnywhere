@@ -5,7 +5,7 @@ import { FLIP_DECAY, FLIP_EASE, FLIP_RATE, G, I_OPEN, I_TUCK, TUCK_TIME, HARD_IN
 import { poseBoard } from './Brake';
 import { endPress } from './Press';
 import { land } from './Tricks';
-import { groundAt } from './Collision';
+import { groundAt, groundNormalAt, rockBumpAt } from './Collision';
 
 /** One step in the air: gravity, spin and flip control, then the landing when the ground comes up. */
 export function airStep(r: Rider, dt: number, input: Input): void {
@@ -81,7 +81,7 @@ export function followGround(r: Rider, dt: number, spd: number, n: readonly numb
   const pack = r.pack;
   // follow the ground; detect leaving it (convex rollovers at speed)
   const g2 = groundAt(r, r.x, r.y, r.z);
-  const n2 = pack.groundNormal(r.x, r.y, undefined, r.z) as number[];
+  const n2 = groundNormalAt(r, r.x, r.y, r.z); // BUG-141: a rock's dome too
   // vertical velocity implied by following the surface
   const vzSurf = -(r.vx * n2[0] + r.vy * n2[1]) / Math.max(0.2, n2[2]);
   const ballistic = r.vz - G * dt;
@@ -107,6 +107,13 @@ export function followGround(r: Rider, dt: number, spd: number, n: readonly numb
     const vzFace = -(r.vx * n[0] + r.vy * n[1]) / Math.max(0.2, n[2]) - G * dt;
     const keep = Math.max(vzSurf, Math.min(ballistic, vzFace));
     r.vz = vzSurf + (keep - vzSurf) * (1 - bumps);
+    // BUG-141: off a rock's dome on Realistic you never leave climbing faster than the snow under it, so a rock
+    // ridden fast drops you off its far side and never throws you up (the legs soak up its face)
+    const rb = rockBumpAt(r, r.x, r.y);
+    if (rb && rb.b > 0) {
+      const nt = pack.groundNormal(r.x, r.y, undefined, r.z) as number[];
+      r.vz = Math.min(r.vz, -(r.vx * nt[0] + r.vy * nt[1]) / Math.max(0.2, nt[2]));
+    }
     // leaving a lip climbing with the board pre-loaded (the jump held, or a press) springs you up a little
     // more; not off bumps, which the legs soak up
     if (bumps < 1 && r.vz > spd * LIP_RISE) {
