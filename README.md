@@ -126,7 +126,7 @@ on the main menu, which works through the host too.
 | Shift | squat on the snow (hold while steering: hard carve), grab in the air, sprint on foot |
 | Q / Z | nose / tail press (hold); W / S balance it |
 | X | skate on the flat (hold) |
-| E | ride a lift (within about 28 m of the base, inside the lift line where there is one; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding; strap in or out when stopped away from lifts |
+| E | ride a lift (anywhere inside the gold ring round the base, about 28 m, or in its lift line; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding; strap in or out when stopped away from lifts |
 | B | strap in or out, anywhere (by a lift too: it never boards) |
 | G (hold) | look behind, in every camera |
 | Alt (hold) or right mouse button | look around |

@@ -3,6 +3,7 @@ import type { LiftFeature } from '../pack/types';
 import type { Pack } from '../pack/Pack';
 import type { Ground } from '../terrain/Terrain';
 import { LOAD_OFFSET, rideLength, type LiftKind, type LiftLine, type LiftNetwork, type Vec3 } from '../sim/LiftLine';
+import { BOARD_RANGE } from '../sim/LiftRide';
 import { hash01 } from './slowSignSites';
 import { towerGeometry, towerHeadGeometry, footingGeometry, chairGeometry, gondolaGeometry, surfaceHangerGeometry, terminalGeometry, carpetGeometry } from './LiftModels';
 
@@ -328,10 +329,12 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
   readonly markers = new THREE.Group();
   private markerSprites: { sprite: THREE.Sprite; base: THREE.Vector3; lift: LiftRuntime; ring: THREE.Mesh }[] = [];
   private markersBuilt = false;
+  /** BUG-150: the gold ring's outer radius (m), the boarding zone itself (LiftRide.boardRange, set by the session) */
+  ringRadius = BOARD_RANGE;
   buildMarkers(pack: Pack): void {
     if (this.markersBuilt) return;
     this.markersBuilt = true;
-    const ringGeo = new THREE.RingGeometry(9, 11, 48);
+    const ringGeo = new THREE.RingGeometry(Math.max(0, this.ringRadius - 2), this.ringRadius, 96);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
     for (const l of this.lifts) {

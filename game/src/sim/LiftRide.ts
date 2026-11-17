@@ -11,9 +11,12 @@ import { LOAD_OFFSET, type LiftLine, type LiftNetwork, type Vec3 } from './LiftL
 export const PROMPT_RANGE = 60; // m: show the boarding card
 /**
  * FEAT-323: the boarding zone, metres from a lift's loading point where E boards (14 m before, doubled).
+ * BUG-150: the gold ring on the snow is drawn at this radius, so inside the ring always boards.
  * The tuning knob: `?boardRange=<m>` overrides it for a session (LiftRide.boardRange) to try other sizes.
  */
 export const BOARD_RANGE = 28;
+/** BUG-150: how far past the zone a lift-line maze's corral can reach (the longest maze ends 34 m back) */
+const CORRAL_REACH = 12;
 /** FEAT-323: the gentle coast-down near the loading point stays at the old 14 m zone */
 export const COAST_RANGE = 14;
 export const BOARD_SPEED = 6; // m/s
@@ -50,7 +53,10 @@ export class LiftRide<L extends LiftLine = LiftLine> {
   constructor(private readonly pack: Pack, private readonly lifts: LiftNetwork<L>, private readonly collider: Collider | null = null) {}
 
   get riding(): boolean { return this.lift !== null; }
-  /** FEAT-073: where boarding is allowed near a lift's loading point (null: anywhere in range) */
+  /**
+   * FEAT-073 / BUG-150: a lift-line maze's corral, which also boards where a long maze reaches past the
+   * zone. Anywhere inside the zone (the gold ring) boards regardless; null: no corrals.
+   */
   gate: ((l: L, x: number, y: number) => boolean) | null = null;
 
   /** Call every frame before the physics step. Returns true when the rider is on a lift (physics skipped). */
@@ -59,10 +65,11 @@ export class LiftRide<L extends LiftLine = LiftLine> {
 
   update(rider: Rider, dt: number, boardPressed: boolean, fastHeld = false): boolean {
     if (!this.lift) {
-      // FEAT-323: every lift whose zone the rider is in (FEAT-073: with a lift-line maze built, only inside
-      // its corral or at the loading line), nearest first; else the nearest within the prompt range
-      const gate = this.gate;
-      this.choices = this.lifts.boardableNear(rider.x, rider.y, this.boardRange).filter((l) => !gate || gate(l, rider.x, rider.y));
+      // FEAT-323: every lift whose zone (the gold ring, BUG-150) the rider is in, nearest first, plus any
+      // whose maze corral reaches past the ring and holds the rider (FEAT-073); else the nearest within the prompt range
+      const gate = this.gate, r = this.boardRange;
+      this.choices = this.lifts.boardableNear(rider.x, rider.y, gate ? r + CORRAL_REACH : r)
+        .filter((l) => Math.hypot(l.bottom[0] - rider.x, l.bottom[1] - rider.y) < r || (gate !== null && gate(l, rider.x, rider.y)));
       this.nearby = this.choices[0] ?? this.lifts.nearestBoardable(rider.x, rider.y, PROMPT_RANGE);
       this.nearbyDist = this.nearby ? Math.hypot(this.nearby.bottom[0] - rider.x, this.nearby.bottom[1] - rider.y) : Infinity;
       const inZone = this.choices.length > 0;

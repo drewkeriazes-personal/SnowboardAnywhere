@@ -9,8 +9,8 @@ import { LOAD_OFFSET } from '../sim/LiftLine';
  * the cable: parallel lanes of webbing and rope on short posts (2 to 4 lanes by capacity, 18 to 30 m
  * long) that merge before a "wait here" line, then the blue "load here" line where the chair swings
  * in. From the maze mouth two funnel fences flare back up toward the runs that end at the lift.
- * A lift name board stands at the front. Ropes are colliders (the rider slides along them), and the
- * boarding prompt only appears inside the corral (`inGate`).
+ * A lift name board stands at the front. Ropes are colliders (the rider slides along them). Boarding works
+ * anywhere inside the gold ring and, where the maze reaches past it, inside the corral (`inGate`, BUG-150).
  * Built lazily once the fine terrain under a lift's base has loaded, so posts sit on the snow.
  */
 const LANE_W = 2.2, POST_GAP = 2.5, ROPE_H = 0.95, STOP = 3, MERGE = 4, FUNNEL = 22, FUNNEL_FLARE = 0.5;
@@ -60,14 +60,14 @@ export class LiftLines {
   }
 
   /**
-   * True when (x, y) is inside the corral or at the loading line of lift `l` (where boarding is
-   * allowed). Lifts without a built maze (and every lift with the setting off) allow boarding anywhere
-   * in range, as before.
+   * True when (x, y) is inside the corral or at the loading line of lift `l`. BUG-150: the boarding
+   * zone (the gold ring) boards anywhere already; this only adds the corral where a long maze reaches
+   * past the ring. False without a built maze (or with the setting off).
    */
   inGate(l: LiftRuntime, x: number, y: number): boolean {
-    if (!this.enabled) return true;
+    if (!this.enabled) return false;
     const m = this.mazes.find((q) => q.lift === l);
-    if (!m || !m.built) return true;
+    if (!m || !m.built) return false;
     const dx = x - m.bx, dy = y - m.by;
     const along = dx * m.ux + dy * m.uy, across = Math.abs(dx * m.uy - dy * m.ux);
     return along > -(STOP + m.len + 1) && along < LOAD_OFFSET * 0.5 && across < m.halfW + 1.5;
