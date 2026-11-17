@@ -401,6 +401,9 @@ export class Terrain implements Ground {
     this.visible.push(c);
   }
 
+  private readonly fallSample = [0, 0];
+  private trenchBuf: Float64Array | null = null;
+
   private build(c: Chunk): void {
     const n = N + 1;
     const res = c.res;
@@ -435,6 +438,9 @@ export class Terrain implements Ground {
     const FR = 6;
     const dirSet = pack.dir && res <= 8 ? pack.dir : null;
     const heights = new Float32Array((n + 2) * (n + 2)); // with a 1-sample border for normals
+    // FEAT-339: the 1 and 2 m chunks' heights carry the tree lines' trench; keep it for the trench shading below
+    const trenchIn = wornOn && res <= MOGUL_MAX_RES;
+    const trench = trenchIn ? (this.trenchBuf ??= new Float64Array((n + 2) * (n + 2))) : null;
     // sample base heights (no mogul bumps) including border
     let dataRes = Infinity;
     const waiting0 = pack.waitingSamples;
@@ -443,6 +449,7 @@ export class Terrain implements Ground {
       for (let i = -1; i <= n; i++) {
         const x = c.minX + i * res;
         heights[(j + 1) * (n + 2) + (i + 1)] = pack.height(x, y, res, false);
+        if (trench) trench[(j + 1) * (n + 2) + (i + 1)] = pack.lastTrench;
       }
     }
     // BUG-088: a chunk built while some of its tiles are still loading is not the ground yet: it rebuilds on any tile
@@ -456,11 +463,17 @@ export class Terrain implements Ground {
     const cover = !useMask && pack.cover ? pack.cover : null;
     let v = 0;
     const H = (i: number, j: number) => heights[(j + 1) * (n + 2) + (i + 1)];
+    const fv = this.fallSample;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
         const x = c.minX + i * res, y = c.minY + j * res;
         const h = H(i, j);
-        pos[v * 3] = x; pos[v * 3 + 1] = geoMoguls ? h + pack.bumpAt(x, y) : h; pos[v * 3 + 2] = -y;
+        // FEAT-339: the field's amplitude and fall line once per vertex, for the bumps and the shading both (Pack.bumpWith
+        // gives Pack.bumpAt's very numbers, so the mesh stays on the physics' ground)
+        const amp = shadeMoguls ? pack.mogulAmp(x, y, true) : 0;
+        const hasFall = geoMoguls && amp >= 0.005;
+        if (hasFall) pack.fallAt(x, y, fv);
+        pos[v * 3] = x; pos[v * 3 + 1] = hasFall ? h + pack.bumpWith(x, y, amp, fv) : h; pos[v * 3 + 2] = -y;
         // normal by central differences (pack x east, y north -> three x, -z)
         const nxp = -(H(i + 1, j) - H(i - 1, j)) / (2 * res);
         const nyp = -(H(i, j + 1) - H(i, j - 1)) / (2 * res);
@@ -503,18 +516,21 @@ export class Terrain implements Ground {
         const ex = exposure(pack, x, y, h, nxp, nyp, res, fo, rock, scree, this.exposureTmp);
         rock = ex.rock;
         col[v * 3] = rock; col[v * 3 + 1] = ex.scree; col[v * 3 + 2] = groom * (1 - rock);
-        const mog = shadeMoguls ? pack.mogulAmp(x, y, true) * (1 - rock) : 0;
+        const mog = amp * (1 - rock);
         // FEAT-333: y's fraction carries how deep in a tree line's trench this is (0 at the rim .. WORN_K on its floor), for the
         // shader's wall shade and ski tracks; the whole part stays the path
-        const dug = wornOn ? Math.min(1, Math.max(0, -pack.trenchAt(x, y) / TRENCH_DEPTH)) : 0;
+        const dug = wornOn ? Math.min(1, Math.max(0, -(trench ? trench[(j + 1) * (n + 2) + (i + 1)] : pack.trenchAt(x, y)) / TRENCH_DEPTH)) : 0;
         mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath + WORN_K * dug * (1 - rock);
         // moguls take the same wide fall line as Pack.bumpAt (BUG-064), so the shaded field matches the
-        // bumps in the geometry and the physics
+        // bumps in the geometry and the physics: the very one on the chunks that carry the bumps (FEAT-339), the 30 m
+        // difference of the smoother sets on the coarser ones
         let mgx = 0, mgy = 0;
         if (mog > 0.01) {
-          const d = MOGUL_FALL_D;
-          mgx = (pack.height(x + d, y, resB) - pack.height(x - d, y, resB)) / (2 * d);
-          mgy = (pack.height(x, y + d, resB) - pack.height(x, y - d, resB)) / (2 * d);
+          if (hasFall) { mgx = -fv[0]; mgy = -fv[1]; } else {
+            const d = MOGUL_FALL_D;
+            mgx = (pack.height(x + d, y, resB) - pack.height(x - d, y, resB)) / (2 * d);
+            mgy = (pack.height(x, y + d, resB) - pack.height(x, y - d, resB)) / (2 * d);
+          }
           mogul[v * 4 + 2] = -mgx; mogul[v * 4 + 3] = -mgy;
         }
         if (groom > 0.02 || mog > 0.01) {
