@@ -198,6 +198,17 @@ export const SQUAT_AERO = 0.3;
  *  Lips, rollers and kickers still send you from speed, not this. */
 export const JUMP_POP = { arcade: { base: 2.5, charge: 4.5, squat: 1.15, ollie: 1.3, pitch: 1.2, spin: 3.5, slopeKick: true }, real: { base: 1.3, charge: 1.46, squat: 1.1, ollie: 1.1, pitch: 0.6, spin: 6.5, slopeKick: false } } as const;
 export type JumpMode = keyof typeof JUMP_POP;
+/** BUG-141 riding into a rampable rock, by jump mode. Arcade keeps the old kicker: the upward speed grows with
+ *  your speed (`kick` share of it at the most, plus `base` m/s), so a 1.5 m rock at 30 m/s sent you about 11 m up.
+ *  Real rides up the rock as a short ramp: you leave its top climbing at your speed times the sine of the face
+ *  angle (`face0` grazing to `face1` square, rad), capped so the most you rise above the top is `lift` m
+ *  (`bumpLift` on a rock under `bumpH` m, which just bumps you), whatever your speed. A rock over `buckH` m hit
+ *  more square than `buckHeadOn` faster than `buckSpeed` m/s throws you like a square wall hit. `loss` is the
+ *  share of speed lost hit square (Arcade 0.12, Real 0.25; a bump `bumpLoss`). */
+export const ROCK_RAMP = {
+  arcade: { base: 1.5, kick: 0.5, loss: 0.12 },
+  real: { face0: 20 * D2R, face1: 30 * D2R, lift: 0.3, bumpH: 0.5, bumpLift: 0.1, bumpLoss: 0.08, loss: 0.25, buckH: 1.2, buckHeadOn: 0.7, buckSpeed: 12 },
+} as const;
 export const SQUAT_SPRING_WINDOW = 0.25;
 /** FEAT-110 flips: full-input pitch rate (1.1 rotations a second), how fast it builds and decays (1/s),
  * and the landing windows (rad): within FLIP_CLEAN of upright is clean, up to FLIP_CRASH a wobble, past it a crash */

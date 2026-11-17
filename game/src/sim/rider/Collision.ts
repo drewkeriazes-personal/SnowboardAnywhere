@@ -1,6 +1,6 @@
 /** Ground height and collisions (split from sim/Rider.ts, FEAT-165) */
 import type { Rider } from '../Rider';
-import { BODY_R, STEP_UP } from './tuning';
+import { BODY_R, G, ROCK_RAMP, STEP_UP } from './tuning';
 
 /** BUG-045: terrain or a bridge deck, or the top of a building the rider is standing on */
 export function groundAt(r: Rider, x: number, y: number, z: number): number {
@@ -22,15 +22,30 @@ export function rideCollide(r: Rider): void {
       const spdNow = Math.hypot(r.vx, r.vy) || 1;
       const headOn = -vn / spdNow; // 1 = straight into it, 0 = grazing
       if (vn < 0) {
-        if (hit.kind === 1) {
-          // rampable rock: ride up and over it. Launch angle from how square the hit is.
+        const h = Math.max(0.3, hit.top - r.z);
+        const R = ROCK_RAMP.real;
+        // BUG-141: on Real a tall rock hit square and fast throws you: the square wall hit below (always over 7 m/s)
+        const buck = hit.kind === 1 && r.jumpMode === 'real' && h > R.buckH && headOn > R.buckHeadOn && spdNow > R.buckSpeed;
+        if (hit.kind === 1 && !buck) {
           r.lastHit = 'ramp';
-          const h = Math.max(0.3, hit.top - r.z);
-          const launch = Math.min(0.9, 0.25 + 0.9 * headOn) * Math.min(1, h / 1.5);
-          r.vz = Math.max(r.vz, spdNow * launch * 0.5 + 1.5);
-          r.vx *= 1 - 0.12 * headOn; r.vy *= 1 - 0.12 * headOn;
+          if (r.jumpMode === 'arcade') {
+            // rampable rock as a kicker: launch angle from how square the hit is, upward speed from your speed
+            const A = ROCK_RAMP.arcade;
+            const launch = Math.min(0.9, 0.25 + 0.9 * headOn) * Math.min(1, h / 1.5);
+            r.vz = Math.max(r.vz, spdNow * launch * A.kick + A.base);
+            r.vx *= 1 - A.loss * headOn; r.vy *= 1 - A.loss * headOn;
+            r.z = Math.max(r.z, hit.top - 0.3);
+          } else {
+            // BUG-141 Real: ride up the rock as a short ramp and leave its top, never more than `lift` above it
+            const bump = h < R.bumpH;
+            const face = R.face0 + (R.face1 - R.face0) * headOn;
+            const cap = Math.sqrt(2 * G * (bump ? R.bumpLift : R.lift));
+            r.vz = Math.max(r.vz, Math.min(spdNow * Math.sin(face), cap));
+            const loss = (bump ? R.bumpLoss : R.loss) * headOn;
+            r.vx *= 1 - loss; r.vy *= 1 - loss;
+            r.z = Math.max(r.z, hit.top + 0.01); // on its top, so the next step doesn't hit it again
+          }
           r.onGround = false; r.airTime = 0; r.spin = 0; r.flip = 0; r.flipRate = 0;
-          r.z = Math.max(r.z, hit.top - 0.3);
           r.landingShock = 0.3;
         } else if (headOn < 0.5) {
           // glancing hit on a tree or wall: slide along it, lose a little speed

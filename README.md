@@ -186,7 +186,7 @@ the game draws the settings you pick and never lowers them on its own. The prese
 the menu. Leaving Settings with changes waiting asks Apply or Discard. Everything else, the Frame cap included,
 applies at once. Gameplay has Feel presets (Arcade,
 Realistic) and Jump height: Realistic (the default; a full charge clears about knee height, a tap is a small hop) or
-Arcade (big air, about 2.5 m on a full charge). Kickers, lips and rollers launch you from your speed either way. Accessibility has UI scale and Reduce motion (camera shake, first person shake and speed
+Arcade (big air, about 2.5 m on a full charge). Kickers, lips and rollers launch you from your speed either way. It also sets what a rock does: on Realistic riding into one bumps you or pops you a little over it, and a tall one hit square and fast throws you; on Arcade a rock is a kicker that sends you from your speed. Accessibility has UI scale and Reduce motion (camera shake, first person shake and speed
 lines off together). Camera has See-through trees (on by default): in the third-person cameras, a tree that hides you or
 your line ahead turns see-through (trees off to the side stay solid); a tree you are about to hit stays solid. Opened from the pause menu, changes show at once behind the screen, with the frame rate in the corner.
 
