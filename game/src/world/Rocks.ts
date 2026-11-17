@@ -5,7 +5,25 @@ import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
 
 const RADIUS = 2500;
-const VARIANTS = 4;
+export const VARIANTS = 4;
+/** Per type (0 outcrop, 1 boulder, 2 talus): how far the rock is sunk below the snow and its height scale, both times its size */
+export const SINK = [0.55, 0.35, 0.5], HEIGHT = [1.4, 1.0, 0.6];
+/** BUG-149: a rock showing less than this above the snow (m) is ridden over as snow, no collider */
+export const ROCK_MIN_TOP = 0.15;
+/** the noise seed of rock variant `v` */
+export const rockSeed = (v: number): number => v * 7.31 + 1.7;
+
+/**
+ * BUG-149: the collider for a rock of `size` and `type` whose variant geometry tops out at `geoTop` (unit size):
+ * the top of the rock as drawn above the snow at its centre (m) and its radius (m), or null when it barely
+ * shows. Was always 0.6 times the size, half a metre to over a metre above most drawn rocks, and talus
+ * collided fully buried.
+ */
+export function rockCollider(size: number, type: number, geoTop: number): { top: number; radius: number } | null {
+  const t = type === 0 || type === 1 ? type : 2;
+  const top = size * (geoTop * HEIGHT[t] - SINK[t]);
+  return size > 0.9 && top >= ROCK_MIN_TOP ? { top, radius: size * 0.55 } : null;
+}
 
 /** `col`: the rocks' collider entries, removed when the cell drops (BUG-082); `dropped`: left before its load finished, so the load adds nothing;
  *  `shown`: the cell's meshes are drawn (BUG-088: they wait until the ground under the cell is real) */
@@ -30,6 +48,8 @@ export class Rocks {
   /** BUG-088: the terrain; a loaded cell is drawn once the ground under it has its real heights (null: at once) */
   ground: Ground | null = null;
   private readonly geos: THREE.BufferGeometry[] = [];
+  /** BUG-149: each variant's top (unit size), for the colliders */
+  private readonly geoTops: number[] = [];
   private readonly mat: THREE.MeshStandardMaterial;
   get material(): THREE.MeshStandardMaterial { return this.mat; }
   private readonly m = new THREE.Matrix4();
@@ -54,7 +74,7 @@ export class Rocks {
   constructor(pack: Pack, collider: Collider | null) {
     this.pack = pack;
     this.collider = collider;
-    for (let v = 0; v < VARIANTS; v++) this.geos.push(makeRock(v * 7.31 + 1.7));
+    for (let v = 0; v < VARIANTS; v++) { const g = makeRock(rockSeed(v)); g.computeBoundingBox(); this.geos.push(g); this.geoTops.push(g.boundingBox!.max.y); }
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0.0, flatShading: true });
     const uniforms = rockUniforms();
     this.mat.onBeforeCompile = (shader) => {
@@ -176,11 +196,11 @@ export class Rocks {
           this.q.multiply(this.q2);
           // sink: outcrops and talus sit deep, boulders a bit less; outcrops are taller blocks now
           // that they are only half tilted, so the uphill side is buried and the downhill side stands
-          const sink = type === 1 ? 0.35 : type === 0 ? 0.55 : 0.5;
+          const ti = type === 0 || type === 1 ? type : 2, sink = SINK[ti];
           this.p.set(x, z - size * sink, -y);
-          if (type === 0) this.s.set(size * 2.0, size * 1.4, size * 1.6);
-          else if (type === 1) this.s.set(size * 1.1, size * 1.0, size * 1.0);
-          else this.s.set(size * 1.6, size * 0.6, size * 1.3);
+          if (ti === 0) this.s.set(size * 2.0, size * HEIGHT[0], size * 1.6);
+          else if (ti === 1) this.s.set(size * 1.1, size * HEIGHT[1], size * 1.0);
+          else this.s.set(size * 1.6, size * HEIGHT[2], size * 1.3);
           this.m.compose(this.p, this.q, this.s);
           mesh.setMatrixAt(k, this.m);
           // tint near 1 (the shader supplies the rock tone): a little lighter or darker, warmer or cooler
@@ -190,7 +210,9 @@ export class Rocks {
           this.c.setRGB(tk * (0.98 + 0.05 * u), tk, tk * (1.0 + 0.05 * (1 - u)));
           mesh.setColorAt(k, this.c);
           // tall boulders are walls; slabs, talus and small boulders can be ridden up and launched off
-          if (this.collider && size > 0.9) cell.col.push(this.collider.add(x, y, size * 0.55, z - 1, z + size * 0.6, type === 1 && size > 2.2 ? 0 : 1));
+          // BUG-149: the collider stands as high as the rock is drawn; one that barely shows has none
+          const rc = this.collider ? rockCollider(size, type, this.geoTops[v]) : null;
+          if (rc) cell.col.push(this.collider!.add(x, y, rc.radius, z - 1, z + rc.top, type === 1 && size > 2.2 ? 0 : 1));
         });
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -215,7 +237,7 @@ function hashIndex(x: number, y: number): number { return Math.floor(hash01(x * 
  * little, with per-vertex shade that is darker low down and in crevices (the snow cap is done
  * in the shader). Unit size (about 1 m across).
  */
-function makeRock(seed: number): THREE.BufferGeometry {
+export function makeRock(seed: number): THREE.BufferGeometry {
   const g = new THREE.IcosahedronGeometry(0.5, 2); // already non-indexed (three's polyhedra are), so no toNonIndexed (BUG-128)
   const pos = g.getAttribute('position') as THREE.BufferAttribute;
   const v = new THREE.Vector3();
