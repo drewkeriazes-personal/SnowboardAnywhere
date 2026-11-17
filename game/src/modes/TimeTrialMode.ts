@@ -6,7 +6,7 @@ import { TimeTrial } from '../sim/TimeTrial';
 import { TrialHud } from '../ui/TrialHud';
 import type { RideDeps, ModeFrame, RideMode } from './RideMode';
 
-/** A course as the menus list it, with the best time saved for it. */
+/** A course as the menus list it, with the best time saved for it on the current Jump height (BUG-055). */
 export interface CourseEntry { id: string; name: string; length: number; best: number | null }
 
 /**
@@ -62,6 +62,7 @@ export class TimeTrialMode implements RideMode {
 
   applySettings(s: Settings, what: string): void {
     if (what === 'timeTrials' && !s.timeTrials) this.course = ''; // turning them off ends a course picked in Mode too
+    this.trial.setMode(s.jumpMode === 'arcade' ? 'arcade' : 'real'); // BUG-055: bests are kept per jump mode
     this.world.trialWorld.setEnabled(this.on);
     if (!this.on) this.trial.cancel('Time trials off');
     this.refreshCourseFlags();

@@ -337,7 +337,10 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     };
     if (menu) {
       menu.onChoice = leaveAttract;
-      menu.onSettingsChange = (s, what) => applySettings(s, what);
+      menu.onSettingsChange = (s, what) => {
+        applySettings(s, what);
+        menu.setCourses(modes.trials.list(), s.units === 'metric'); // BUG-055: the bests shown follow the Jump height
+      };
       menu.onSettingsApply = applyGraphics;
       menu.onResetStart = () => {
         resetStart(pack.meta.slug);
