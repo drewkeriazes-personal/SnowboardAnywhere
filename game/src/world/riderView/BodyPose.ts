@@ -1,6 +1,6 @@
 /** The rider's riding pose: the pose blend, the press, the balance arms and the physical layer (split from world/RiderView.ts, FEAT-165) */
 import type { RiderView } from '../RiderView';
-import { EDGE_FULL, type Rider } from '../../sim/Rider';
+import { EDGE_FULL, SKATE_PUSH, type Rider } from '../../sim/Rider';
 import { lerpPose, clonePose, copyPose, type Pose } from '../RiderModel';
 import { carveLean, LEAN_HARD, LEAN_MAX } from '../carveLean';
 import { BAL_ROLL, BODY_RESPONSE, BUMP_ACC, CORR_KICK, CORR_W, CORR_ZETA, DEEP_FROM, FLAIL_BAL, FLAIL_BASE, FLAIL_BUMP, FLAIL_ELBOW, FLAIL_HOLD, FLAIL_RAMP, FLAIL_SPEED, FLAIL_SWING, FLAIL_VMAX, HIP_YAW_SHARE, LEAD_BLEND, POP_LIFT, POP_T, SKI_HIP_TWIST, YAW_LEAD_CAP } from './tuning';
@@ -79,6 +79,27 @@ export function balanceArms(v: RiderView, r: Rider, dt: number, free: boolean): 
 }
 
 /**
+ * BUG-054: a snowboarder skating one-footed. Unclipping and clipping in (r.skateFoot between 0 and 1)
+ * the rider bends down and back toward the back binding; with the boot out on the snow they stand taller
+ * than the riding crouch, chest turned toward the way they are going, bobbing down into each push. The
+ * legs are Limbs.ts skateLegs (the back boot on the snow), the hips over the front foot settleBody's.
+ */
+function skatePose(t: Pose, r: Rider, P: Record<string, Pose>): void {
+  const u = r.skateFoot;
+  if (u <= 0) return;
+  const bend = r.skate === 'unclip' || r.skate === 'clip' ? Math.sin(Math.PI * u) : 0;
+  const s = r.skating && r.skatePhase < SKATE_PUSH ? Math.sin(Math.PI * r.skatePhase / SKATE_PUSH) : 0;
+  const out = smooth(0.5, 1, u);
+  t.hipsY += 0.05 * out - 0.04 * s * s;
+  t.torso = [t.torso[0] + 0.1 * s * s, t.torso[1] + 0.3 * out, t.torso[2]];
+  t.hipsRot = [t.hipsRot[0], t.hipsRot[1] + 0.2 * out, t.hipsRot[2]];
+  if (bend > 0) {
+    lerpPose(t, t, P.crouch, 0.6 * bend);
+    t.torso = [t.torso[0] + 0.45 * bend, t.torso[1] - 0.5 * bend, t.torso[2]]; // down and round to the back binding
+  }
+}
+
+/**
  * The riding pose on the snow for an edge (share of full, the brake side while braking) and a
  * press lean: carve, deep carve, tuck, charge, squat, press, skating, landing and the brake's
  * crouch, blended into `t`. Returns the press's pelvis roll (rad), which the head takes back out.
@@ -111,7 +132,8 @@ function ridingPose(v: RiderView, t: Pose, r: Rider, tuck: boolean, b: number, e
     else t.torso = [t.torso[0] + 0.3 * lean, t.torso[1], t.torso[2]];
     t.hipsY -= 0.06 * Math.abs(lean) * (1 - Math.min(1, Math.max(r.squat, r.jumpCharge)));
   }
-  if (r.skating) { const push = Math.max(0, Math.cos(r.skatePhase * Math.PI * 2)); lerpPose(t, t, P.crouch, 0.35 + 0.25 * push); t.torso = [t.torso[0] + 0.25 * push, t.torso[1], t.torso[2]]; }
+  if (v.discipline === 'board') skatePose(t, r, P);
+  else if (r.skating) { const push = Math.max(0, Math.cos(r.skatePhase * Math.PI * 2)); lerpPose(t, t, P.crouch, 0.35 + 0.25 * push); t.torso = [t.torso[0] + 0.25 * push, t.torso[1], t.torso[2]]; }
   if (r.landingShock > 0) lerpPose(t, t, P.land, Math.min(1, r.landingShock * 1.5));
   // knees bent and hips low in proportion to how hard the edge is biting
   const bite = b * Math.min(1, r.brakeAcc / 8);

@@ -121,6 +121,8 @@ export class RiderView {
   footActive = false;
   gaitLive = false;
   prevStep = [0, 0];
+  /** BUG-054: the skate stroke's phase last frame (-1 not pushing), so each plant leaves one bootprint */
+  skatePh = -1;
   /** 0..1 blend into the all-fours scramble (FEAT-068) */
   crawl = 0;
   /** FEAT-082: board carried on the shoulder (0 at the side .. 1 on the shoulder), eased in while sprinting */

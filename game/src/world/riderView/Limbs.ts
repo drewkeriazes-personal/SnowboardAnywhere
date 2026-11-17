@@ -6,9 +6,10 @@ import { RAGDOLL_RECOVER } from '../Ragdoll';
 import type { Pose } from '../RiderModel';
 import { pinFeet, twoBone, setWorldQuat, hangCarriersFromFeet, restCarriers, deckY, BONES as BONE_LIST } from '../RiderRig';
 import { LEAN_MAX } from '../carveLean';
-import { BAL_SHIFT, BOARD_HALF, BODY_RESPONSE, CLEAR_HAND, CLEAR_HIP, CLEAR_KNEE, DECK_CLEAR, DECK_HALF_L, DECK_HALF_W, DEEP_FROM, HAND_DRAG_FROM, HAND_DRAG_FULL, HAND_DRAG_OUT, HAND_DRAG_Y, HEAD_LEVEL, HIP_CLEAR, HIP_SHIFT, PRESS_FLEX, PRESS_REACH, PRESS_TIP, SHIN_TS, THIGH_TS, TIP_SHIFT } from './tuning';
+import { BAL_SHIFT, BOARD_HALF, BODY_RESPONSE, CLEAR_HAND, CLEAR_HIP, CLEAR_KNEE, DECK_CLEAR, DECK_HALF_L, DECK_HALF_W, DEEP_FROM, HAND_DRAG_FROM, HAND_DRAG_FULL, HAND_DRAG_OUT, HAND_DRAG_Y, HEAD_LEVEL, HIP_CLEAR, HIP_SHIFT, PRESS_FLEX, SKATE_HIP, PRESS_REACH, PRESS_TIP, SHIN_TS, THIGH_TS, TIP_SHIFT } from './tuning';
 import { d2r, smooth, follow } from './math';
 import { balanceArms } from './BodyPose';
+import { skateLegs } from './SkateLegs';
 
 /** FK from the blended pose: pelvis, spine, head and arms. Leg angles only stand when seated. */
 export function applyFK(v: RiderView, p: Pose, xOff: number, zOff = 0): void {
@@ -172,6 +173,7 @@ export function settleBody(v: RiderView, r: Rider, dt: number, tuck: boolean, se
     follow(v.balF, free && r.pressing ? fl * r.pressBalance : 0, BODY_RESPONSE, dt);
     hipZ -= BAL_SHIFT * v.balF.x;
     hipZ -= v.flexDir * TIP_SHIFT * Math.max(0, v.tipF.x) / PRESS_TIP; // FEAT-140: on over the tipped board's loaded end
+    hipZ -= v.fl * SKATE_HIP * smooth(0.5, 1, r.skateFoot); // BUG-054: skating, the weight over the front foot (the leading end, rig -Z drawn the normal way round)
     // FEAT-140: a tipped board's deck rises from the loaded tip toward the hips
     const tipRise = Math.max(0, BOARD_HALF + v.flexDir * hipZ) * Math.sin(Math.max(0, v.tipF.x)); // the hips' distance from the loaded tip
     const floor = deckY(v.rig, hipZ) + 0.022 + HIP_CLEAR + tipRise;
@@ -217,6 +219,7 @@ export function settleBody(v: RiderView, r: Rider, dt: number, tuck: boolean, se
         v.footGap = pinFeet(rig, lp, rp);
       }
     }
+    if (v.discipline === 'board' && free) skateLegs(v, r, lp, rp); // BUG-054: the back boot out on the snow
   }
   p.hipsY = hy; p.torso[0] = tx;
   p.lShoulder[0] = arms[0]; p.lShoulder[2] = arms[1]; p.rShoulder[0] = arms[2]; p.rShoulder[2] = arms[3]; p.lElbow = arms[4]; p.rElbow = arms[5];
