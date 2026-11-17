@@ -52,6 +52,7 @@ export class GameAudio {
   private breath!: Layer;
   private breathT = 0;
   private wasStrap: 'none' | 'off' | 'on' = 'none';
+  private wasSkate: 'none' | 'unclip' | 'on' | 'clip' = 'none';
   private crackleT = 0;
   /** FEAT-103 rock: edge grind (gritty band through a waveshaper), base drag (low, rough), and the
    *  sample-and-hold skip that makes the grind stutter, plus the tick timer */
@@ -447,6 +448,12 @@ export class GameAudio {
     for (const t of clicks) setTimeout(() => { this.burst('highpass', on ? 4200 : 3000, 0.025, 0.25, 1.5); this.tone(2400, 0.02, 0.04, 'square'); }, t * 1000);
   }
 
+  /** BUG-054: the back binding opening to skate (a release click as the hand gets there) or ratcheting shut (clicks as the boot goes in) */
+  private skateClip(on: boolean): void {
+    const clicks = on ? [0.22, 0.27, 0.32, 0.37] : [0.1];
+    for (const t of clicks) setTimeout(() => { this.burst('highpass', on ? 4200 : 3000, 0.025, 0.2, 1.5); this.tone(2400, 0.02, 0.035, 'square'); }, t * 1000);
+  }
+
   /** Per frame. `passedTower` is true on the frame the chair passes a tower. */
   update(r: Rider, tuck: boolean, riding: boolean, dt: number, passedTower = false): void {
     if (!this.ctx) return;
@@ -507,6 +514,8 @@ export class GameAudio {
     this.breath.filter.frequency.value = 650 + 350 * env;
     if (r.strapState !== this.wasStrap && r.strapState !== 'none') this.bindings(r.strapState === 'on');
     this.wasStrap = r.strapState;
+    if (r.discipline === 'board' && r.skate !== this.wasSkate && (r.skate === 'unclip' || r.skate === 'clip')) this.skateClip(r.skate === 'clip');
+    this.wasSkate = r.skate;
     // one-shots
     if (this.wasOnGround && !r.onGround && r.airTime < 0.05 && r.lastHit !== 'ramp') {
       if (r.onFoot) this.burst('lowpass', 600, 0.1, 0.15); else this.jump(Math.min(1, r.vz / 7));

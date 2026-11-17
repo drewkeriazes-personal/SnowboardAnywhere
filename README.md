@@ -125,7 +125,7 @@ on the main menu, which works through the host too.
 | Space (hold, release) | jump (hold W / S while charging for a nollie / ollie); climb on foot |
 | Shift | squat on the snow (hold while steering: hard carve), grab in the air, sprint on foot |
 | Q / Z | nose / tail press (hold); W / S balance it |
-| X | skate on the flat (hold) |
+| X | skate on the flat (hold): the rider unclips the back foot and pushes with it, and clips back in on letting go (or at about 20 km/h, or on a slope over 20 degrees). One-footed the steer is weak and jump, tuck, brake, squat and presses are off |
 | E | ride a lift (within about 28 m of the base, inside the lift line where there is one; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding; strap in or out when stopped away from lifts |
 | B | strap in or out, anywhere (by a lift too: it never boards) |
 | G (hold) | look behind, in every camera |
@@ -202,7 +202,7 @@ shapes on a DualSense or DualShock); press a key and they switch back to the key
 | R2 / L2 (RT / LT) | tuck / brake (analog, past the trigger dead zone) |
 | ✕ (A) hold, release | jump (with the stick up / down: nollie / ollie) |
 | □ (X) | squat (with steer: hard carve), grab in the air, sprint on foot |
-| ○ (B) | skate on the flat |
+| ○ (B) | skate on the flat (hold): unclip the back foot and push, release to clip back in |
 | △ (Y) | interact: ride a lift (with two or more in reach, pick one with the D-pad, then ✕ or △), skip, strap in or out away from lifts |
 | R1 / L1 (RB / LB) | nose / tail press |
 | right stick, R3 | look around, look behind |

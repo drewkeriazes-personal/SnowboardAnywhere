@@ -2,7 +2,7 @@
 import type { Rider } from '../Rider';
 import { newSnowState, type SnowState } from '../SnowConditions';
 import type { Input } from './types';
-import { FAKIE_SPEED, FEEL, type Feel, G, GROOMED_BONUS, HARD_DEEP, HARD_DRAG, PD_NOSE_DRAG, PD_TAIL_EASE, PLANE_SPEED, POWDER_DRAG, PRESS_DRAG, SHRUB_DRAG, SHRUB_DRAG_V, PRESS_GRIP, SINK_DRAG, SINK_NOSE, SINK_NOSE_SPEED, SINK_SPEED, SINK_TAIL, SKATE_ACC, SKATE_MAX, SKATE_PERIOD, SKATE_SLOPE, SQUAT_AERO, SQUAT_GRIP, STAND_EDGE, SWITCH_GRIP } from './tuning';
+import { FAKIE_SPEED, FEEL, type Feel, G, GROOMED_BONUS, HARD_DEEP, HARD_DRAG, PD_NOSE_DRAG, PD_TAIL_EASE, PLANE_SPEED, POWDER_DRAG, PRESS_DRAG, SHRUB_DRAG, SHRUB_DRAG_V, PRESS_GRIP, SINK_DRAG, SINK_NOSE, SINK_NOSE_SPEED, SINK_SPEED, SINK_TAIL, SKATE_ACC, SKATE_MAX, SKATE_PERIOD, SKATE_PUSH, SKATE_YAW, SQUAT_AERO, SQUAT_GRIP, STAND_EDGE, SWITCH_GRIP } from './tuning';
 import { carve, grip } from './EdgeModel';
 import { brake } from './Brake';
 import { jump, followGround } from './Jumps';
@@ -100,24 +100,27 @@ function glide(r: Rider, c: RideStep, dt: number, input: Input): void {
   if (input.tuck && spd < 3 && r.slopeDeg < 8) {
     ax += hx * 2.0; ay += hy * 2.0;
   }
-  // FEAT-085: skate with the back foot out: a push stroke every SKATE_PERIOD s along the board's
-  // heading, strongest from a standstill and gone by SKATE_MAX; works on the flat and slight uphills
-  r.skating = !!input.skate && spd < SKATE_MAX && r.slopeDeg < SKATE_SLOPE && r.crashed <= 0;
-  if (r.skating) {
+  // FEAT-085 / BUG-054: skate with the back foot out (Rider.skateStep unclips it): a stroke every
+  // SKATE_PERIOD s, the board pushed along its heading only while the boot is planted (the first
+  // SKATE_PUSH of the stroke), strongest from a standstill and gone by SKATE_MAX. The steer swings the
+  // heading a little with each push, like steering a skateboard with the kick.
+  if (r.skate === 'on') {
     const before = r.skatePhase;
     r.skatePhase = (r.skatePhase + dt / SKATE_PERIOD) % 1;
-    if (r.skatePhase < before) r.onSkateStroke?.();
-    const stroke = Math.max(0, Math.cos(r.skatePhase * Math.PI * 2)); // the push, then the glide
-    const a = SKATE_ACC * 2.2 * stroke * stroke * (1 - spd / SKATE_MAX);
+    if (r.skatePhase < before) r.onSkateStroke?.(); // the boot plants
+    const s = r.skatePhase < SKATE_PUSH ? Math.sin(Math.PI * r.skatePhase / SKATE_PUSH) : 0;
+    const a = SKATE_ACC * (0.55 / (0.5 * SKATE_PUSH)) * s * s * Math.max(0, 1 - spd / SKATE_MAX); // the same mean push as the old stroke
     ax += hx * a; ay += hy * a;
-  } else r.skatePhase = 0;
+    r.heading += input.steer * SKATE_YAW * s * dt;
+  }
   // standing on the uphill edge: nearly stopped with the board across the fall line (within
   // about 50 degrees of it) the edge holds, so the rider stands still instead of creeping down.
   // Turning the board toward the fall line or tucking lets it run again. With the fall line
   // realistic (FEAT-134) the edge has to be held, by steering into the hill or by the brake; let
   // go and the board starts to slide. The edge needed scales with the setting: Assisted needs half
   // of STAND_EDGE, and Off stands with no input as before.
-  if (spd < 0.3 && !input.tuck && fall > 0.03 && r.slopeDeg < 55) {
+  // BUG-054: not with a foot out to skate: the board is not standing on its uphill edge then
+  if (spd < 0.3 && !input.tuck && fall > 0.03 && r.slopeDeg < 55 && r.skate === 'none') {
     const across = Math.abs(Math.sin(r.boardYaw - Math.atan2(n[0], n[1])));
     const held = r.fallLine <= 0 || -Math.sign(gLat) * r.edge > STAND_EDGE * r.fallLine || r.brakeAmt > 0.5;
     if (across > 0.75 && held) { r.vx = r.vy = 0; ax = ay = 0; }

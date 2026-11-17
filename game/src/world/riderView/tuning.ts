@@ -81,3 +81,5 @@ export const LEAD_BLEND = 0.2, YAW_LEAD_CAP = 0.5, HIP_YAW_SHARE = 0.5;
  *  prediction with this lag, so a new steer moves the body at a human speed, ahead of the board but
  *  never snapping to it (the prediction itself jumps the moment the input changes) */
 export const BODY_RESPONSE = 0.09;
+/** BUG-054: skating one-footed, the hips move this far (m) along the board over the front foot */
+export const SKATE_HIP = 0.1;
