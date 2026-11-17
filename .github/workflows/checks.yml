@@ -23,7 +23,7 @@
 #
 # Check tools that stay local (they need Vail / Breckenridge or a real GPU, or are too slow on software
 # rendering for a runner; run them on Drew's PC and say so in the PR):
-#   need a real pack: lenscheck, outruncheck, oobcheck (runs on synth too; not timed on a runner yet), snowcheck, treefadecheck, shoot_spots, aerial, views, treeperf
+#   need a real pack: lenscheck, outruncheck, oobcheck (runs on synth too; not timed on a runner yet), snowcheck, rockgripcheck, treefadecheck, shoot_spots, aerial, views, treeperf
 #   too slow on SwiftShader (minutes per check): see BROWSER_LOCAL below
 #   no pass / fail exit code (they print numbers or save shots for a person to read): leancheck, rider, shoot,
 #   carveshot, brakeshot
