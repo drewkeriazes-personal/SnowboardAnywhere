@@ -17,6 +17,8 @@ export interface Hit {
   top: number;
   /** BUG-141: a trunk's or rock's radius (m; 0 for a wall or building), for how steep a rock's face is */
   radius: number;
+  /** BUG-141: a rideable rock's snow height at its centre (m; NaN for everything else) */
+  ground: number;
   /** true when the point started inside a building footprint and was pushed out across an edge */
   inside: boolean;
   /** BUG-045: true when the hit is a building footprint's edge, a ledge whose top can be stood on */
@@ -41,8 +43,8 @@ function insidePoly(pts: [number, number][], x: number, y: number): boolean {
 }
 
 export class Collider {
-  private readonly cells = new Map<string, Float32Array[]>(); // packed [x, y, radius, zBase, zTop, kind]
-  private readonly hit: Hit = { x: 0, y: 0, nx: 0, ny: 0, kind: 0, top: 0, radius: 0, inside: false, ledge: false };
+  private readonly cells = new Map<string, Float32Array[]>(); // packed [x, y, radius, zBase, zTop, kind, ground]
+  private readonly hit: Hit = { x: 0, y: 0, nx: 0, ny: 0, kind: 0, top: 0, radius: 0, ground: NaN, inside: false, ledge: false };
   private readonly footprints = new Map<number, Footprint[]>();
 
   private key(cx: number, cy: number): string {
@@ -54,12 +56,13 @@ export class Collider {
     return (cx + 0x8000) * 0x10000 + (cy + 0x8000);
   }
 
-  /** Add a cylinder; returns its entry, which the caller may change in place (zBase [3], zTop [4]) or `remove`. */
-  add(x: number, y: number, radius: number, zBase: number, zTop: number, kind = 0): Float32Array {
+  /** Add a cylinder; returns its entry, which the caller may change in place (zBase [3], zTop [4]) or `remove`.
+   *  `ground`: BUG-141, a rideable rock's snow height at its centre, for its dome (rockBump); NaN for none. */
+  add(x: number, y: number, radius: number, zBase: number, zTop: number, kind = 0, ground = NaN): Float32Array {
     const k = this.key(Math.floor(x / CELL), Math.floor(y / CELL));
     let arr = this.cells.get(k);
     if (!arr) { arr = []; this.cells.set(k, arr); }
-    const e = new Float32Array([x, y, radius, zBase, zTop, kind]);
+    const e = new Float32Array([x, y, radius, zBase, zTop, kind, ground]);
     arr.push(e);
     return e;
   }
@@ -240,7 +243,29 @@ export class Collider {
     return false;
   }
 
-  /** Cylinders (trunks, rocks) within r of (x, y): packed [x, y, radius, zBase, zTop, kind]. r up to CELL. */
+  /**
+   * BUG-141: the rideable rocks (kind 1 with a ground) as ground you ride up and over on Realistic: over each a
+   * dome above the snow, its height H (top less the snow at its centre) times 1 - (d / radius)^2, steepest at the
+   * rim (2 H / radius) and level on top. `out.b` the highest dome here above the snow (m, 0 off every rock) and
+   * `out.gx`, `out.gy` its slope (rise per metre, east and north).
+   */
+  rockBump(x: number, y: number, out: { b: number; gx: number; gy: number }): { b: number; gx: number; gy: number } {
+    out.b = 0; out.gx = 0; out.gy = 0;
+    const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const cyl = this.cells.get(this.key(cx + i, cy + j));
+      if (cyl) for (const c of cyl) {
+        if (c[5] !== 1 || !(c[6] === c[6])) continue;
+        const dx = x - c[0], dy = y - c[1], R = c[2], d2 = dx * dx + dy * dy;
+        if (d2 >= R * R) continue;
+        const H = c[4] - c[6], b = H * (1 - d2 / (R * R));
+        if (b > out.b) { out.b = b; out.gx = -2 * H * dx / (R * R); out.gy = -2 * H * dy / (R * R); }
+      }
+    }
+    return out;
+  }
+
+  /** Cylinders (trunks, rocks) within r of (x, y): packed [x, y, radius, zBase, zTop, kind, ground]. r up to CELL. */
   near(x: number, y: number, r: number, out: Float32Array[] = []): Float32Array[] {
     out.length = 0;
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
@@ -313,7 +338,7 @@ export class Collider {
         if (d < bestD) { const l = Math.sqrt(len2); bestD = d; bx = px; by = py; bnx = ey / l; bny = -ex / l; } // outward for CCW
       }
       x = bx + bnx * (r + 1e-3); y = by + bny * (r + 1e-3);
-      this.hit.x = x; this.hit.y = y; this.hit.nx = bnx; this.hit.ny = bny; this.hit.kind = 0; this.hit.top = fp.zTop; this.hit.radius = 0; this.hit.inside = true; this.hit.ledge = false;
+      this.hit.x = x; this.hit.y = y; this.hit.nx = bnx; this.hit.ny = bny; this.hit.kind = 0; this.hit.top = fp.zTop; this.hit.radius = 0; this.hit.ground = NaN; this.hit.inside = true; this.hit.ledge = false;
       found = this.hit;
     }
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
@@ -329,7 +354,7 @@ export class Collider {
           if (d < min) {
             const nx = d > 1e-4 ? dx / d : 1, ny = d > 1e-4 ? dy / d : 0;
             x = c[0] + nx * min; y = c[1] + ny * min;
-            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = c[5]; this.hit.top = c[4]; this.hit.radius = c[2]; this.hit.ledge = false;
+            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = c[5]; this.hit.top = c[4]; this.hit.radius = c[2]; this.hit.ground = c[6]; this.hit.ledge = false;
             found = this.hit;
           }
         }
@@ -353,7 +378,7 @@ export class Collider {
             if (d > 1e-4) { nx = dx / d; ny = dy / d; }
             else { const l = Math.sqrt(len2); nx = ey / l; ny = -ex / l; }
             x = px + nx * r; y = py + ny * r;
-            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = 0; this.hit.top = w[5]; this.hit.radius = 0; this.hit.ledge = w[6] === 1;
+            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = 0; this.hit.top = w[5]; this.hit.radius = 0; this.hit.ground = NaN; this.hit.ledge = w[6] === 1;
             found = this.hit;
           }
         }

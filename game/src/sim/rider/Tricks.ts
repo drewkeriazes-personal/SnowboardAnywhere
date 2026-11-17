@@ -2,6 +2,7 @@
 import type { Rider } from '../Rider';
 import type { Input } from './types';
 import { FLIP_CLEAN, FLIP_CRASH } from './tuning';
+import { groundNormalAt } from './Collision';
 
 const COUNT = ['', '', 'Double ', 'Triple ', 'Quad '];
 /** "Backflip", "Double front flip", "Rodeo 540" (a backflip with a spin), "Front flip 360" */
@@ -27,7 +28,7 @@ export function switchName(name: string, sw: boolean): string {
 
 /** Touch down from the air: the landing is judged clean, a wobble or a crash (FEAT-110), and a trick reported. */
 export function land(r: Rider, ground: number, input: Input): void {
-  const n = r.pack.groundNormal(r.x, r.y, undefined, r.z) as number[];
+  const n = groundNormalAt(r, r.x, r.y, r.z); // BUG-141: landing on a rock's dome
   r.z = ground;
   r.onGround = true;
   // impact normal to the surface

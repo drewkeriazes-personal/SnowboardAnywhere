@@ -198,18 +198,19 @@ export const SQUAT_AERO = 0.3;
  *  Lips, rollers and kickers still send you from speed, not this. */
 export const JUMP_POP = { arcade: { base: 2.5, charge: 4.5, squat: 1.15, ollie: 1.3, pitch: 1.2, spin: 3.5, slopeKick: true }, real: { base: 1.3, charge: 1.46, squat: 1.1, ollie: 1.1, pitch: 0.6, spin: 6.5, slopeKick: false } } as const;
 export type JumpMode = keyof typeof JUMP_POP;
-/** BUG-141 riding into a rampable rock, by jump mode. Arcade keeps the old kicker: the upward speed grows with
- *  your speed (`kick` share of it at the most, plus `base` m/s), so a 1.5 m rock at 30 m/s sends you about 11 m up;
- *  `loss` the share of speed lost hit square. Realistic never launches you: you ride up and over a rock when its
- *  face rises no more than `steepest` per metre (its height over its radius) and no more than `maxFace` along your
- *  line (that times how square you hit it, so a slanting line is gentler) and your speed squared is at least `margin` times 2 g its height; you
- *  rise to its top and no higher, the climb paid for out of your speed, plus `loss` of it hit square for the
- *  scrape, which sounds for the time over it (`scrapeMin` to `scrapeMax` s). Otherwise the rock is solid, like a
- *  trunk (a glancing hit slides along it, a square one bounces you off, over 7 m/s throws you). */
-export const ROCK_RAMP = {
-  arcade: { base: 1.5, kick: 0.5, loss: 0.12 },
-  real: { steepest: Math.tan(50 * D2R), maxFace: Math.tan(35 * D2R), margin: 1.5, loss: 0.1, scrapeMin: 0.12, scrapeMax: 0.6 },
-} as const;
+/** BUG-141 riding into a rampable rock. Arcade keeps the old kicker: the upward speed grows with your speed (`kick`
+ *  share of it at the most, plus `base` m/s), so a 1.5 m rock at 30 m/s sends you about 11 m up; `loss` the share of
+ *  speed lost hit square. Realistic has no launch: a rock is ground, a dome over it (Collider.rockBump), so you ride
+ *  up and over it under the same physics as the snow (gravity slows you up it, too slow and you stall and slide
+ *  back, fast its top can lift you like a roller); a rock too steep for that (ROCK_STEEPEST) is a wall. */
+export const ROCK_RAMP = { arcade: { base: 1.5, kick: 0.5, loss: 0.12 } } as const;
+/** BUG-141: a rock's dome steeper than this at its rim (rise per metre, 2 H / radius; about 60 deg) is a wall on Realistic */
+export const ROCK_STEEPEST = Math.tan(60 * D2R);
+/** BUG-141: the board is on the rock (its grip and the rock scrape) where the dome stands this far above the snow (m) */
+export const ROCK_ON = 0.05;
+/** BUG-141: met where its dome's face along your line is steeper than this (rise per metre, about 40 deg) a rock is too
+ *  steep to ride up on Realistic and stops you like a trunk (glancing you slide along it, square you bounce or are thrown) */
+export const ROCK_FACE = Math.tan(40 * D2R);
 export const SQUAT_SPRING_WINDOW = 0.25;
 /** FEAT-110 flips: full-input pitch rate (1.1 rotations a second), how fast it builds and decays (1/s),
  * and the landing windows (rad): within FLIP_CLEAN of upright is clean, up to FLIP_CRASH a wobble, past it a crash */

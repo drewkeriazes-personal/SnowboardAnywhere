@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
+import { ROCK_STEEPEST } from '../sim/rider/tuning';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
 
@@ -48,7 +49,7 @@ export function rockPoints(g: THREE.BufferGeometry): Float32Array {
 /** BUG-149: the share of the farthest visible point a collider's radius reaches: a circle round an oblong rock
  *  overhangs its narrow sides, so it stops a little short of the long tips instead */
 const FIT_REACH = 0.9;
-export interface RockFit { x: number; y: number; radius: number; top: number; base: number }
+export interface RockFit { x: number; y: number; radius: number; top: number; base: number; ground: number; wall: boolean }
 /**
  * BUG-149: the collider for a rock placed by `m` (placeRock) on ground at (`gx`, `gy`, `gz`) with normal `nn` (pack
  * space): a vertical cylinder round the part of the rock standing above the snow (the ground taken as the plane
@@ -79,6 +80,11 @@ export function rockCollider(pts: Float32Array, m: THREE.Matrix4, gx: number, gy
   let r = 0;
   for (let i = 0; i < vis.length; i += 2) r = Math.max(r, Math.hypot(vis[i] - cx, vis[i + 1] - cy));
   out.x = cx; out.y = cy; out.radius = Math.max(0.2, r * FIT_REACH); out.top = top; out.base = low - 1;
+  // BUG-141: the snow at the collider's centre, the foot of the dome a Realistic rider rides over; a rock whose
+  // dome would be too steep at its rim, or that stands over ROCK_WALL_TOP, is a wall in either mode
+  out.ground = gz - (nn[0] * (cx - gx) + nn[1] * (cy - gy)) / nz;
+  const H = top - out.ground;
+  out.wall = H > ROCK_WALL_TOP || 2 * H / out.radius > ROCK_STEEPEST;
   return out;
 }
 
@@ -107,7 +113,7 @@ export class Rocks {
   private readonly geos: THREE.BufferGeometry[] = [];
   /** BUG-149: each variant's distinct points, for fitting the colliders */
   private readonly geoPts: Float32Array[] = [];
-  private readonly fit: RockFit = { x: 0, y: 0, radius: 0, top: 0, base: 0 };
+  private readonly fit: RockFit = { x: 0, y: 0, radius: 0, top: 0, base: 0, ground: 0, wall: false };
   private readonly mat: THREE.MeshStandardMaterial;
   get material(): THREE.MeshStandardMaterial { return this.mat; }
   private readonly m = new THREE.Matrix4();
@@ -249,10 +255,10 @@ export class Rocks {
           const tk = 0.85 + 0.3 * t;
           this.c.setRGB(tk * (0.98 + 0.05 * u), tk, tk * (1.0 + 0.05 * (1 - u)));
           mesh.setColorAt(k, this.c);
-          // rocks can be ridden up (and launched off on Arcade); one standing over ROCK_WALL_TOP is a wall
+          // rocks can be ridden over on Realistic and launched off on Arcade; a steep or tall one is a wall
           // BUG-149: the collider fits the part of the rock drawn above the snow; one that barely shows has none
           const rc = this.collider && size > 0.9 ? rockCollider(this.geoPts[v], this.m, x, y, z, nn, this.fit) : null;
-          if (rc) cell.col.push(this.collider!.add(rc.x, rc.y, rc.radius, rc.base, rc.top, rc.top - z > ROCK_WALL_TOP ? 0 : 1));
+          if (rc) cell.col.push(this.collider!.add(rc.x, rc.y, rc.radius, rc.base, rc.top, rc.wall ? 0 : 1, rc.ground));
         });
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

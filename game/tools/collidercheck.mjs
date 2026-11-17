@@ -120,7 +120,7 @@ const rocks = await page.evaluate(([hx, hy]) => {
   const data = [];
   for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) {
     const x = ox + i * 23.3, y = oy + j * 21.7;
-    data.push(x, y, s.pack.terrainHeight(x, y), 1.2 + ((i + j) % 4) * 0.5, i * 0.7, (i + 2 * j) % 3); // x y z size yaw type
+    data.push(x, y, s.pack.terrainHeight(x, y), 3 + ((i + j) % 4), i * 0.7, (i + 2 * j) % 3); // x y z size yaw type; BUG-149: big enough to show, so most get a collider
   }
   if (inst.rockCells) inst.rockCells.push(key); else inst.rockCells = [key];
   return { fake: true, key, data, cell };
@@ -136,13 +136,13 @@ const post = await page.evaluate(([ox, oy]) => {
 }, [rocks.cell.ox, rocks.cell.oy]);
 let treeCell = false;
 
-/** the rocks' points [x, y, radius] the collider should hold once each: the made-up ones, else that cell's entries
- *  (`all`: every loaded rock cell's) */
-const rockPts = (all = false) => page.evaluate(([fake, key, all]) => {
-  if (fake) return fake.map((v, i, a) => (i % 6 === 0 && a[i + 3] > 0.9 ? [v, a[i + 1], a[i + 3] * 0.55] : null)).filter(Boolean);
+/** the rocks' points [x, y, radius] the collider should hold once each: that cell's entries, made-up rocks or the
+ *  pack's (`all`: every loaded rock cell's). BUG-149: a rock's collider is fitted to what shows of it, so it is read
+ *  back from the cell rather than worked out from the rock */
+const rockPts = (all = false) => page.evaluate(([key, all]) => {
   const cells = [...window.__sim.rocks.cells.entries()].filter(([k]) => all || k === key);
   return cells.flatMap(([, c]) => c.col.map((e) => [e[0], e[1], e[2]]));
-}, [rocks.fake ? rocks.data : null, rocks.cell.key, all]);
+}, [rocks.cell.key, all]);
 const fixedKept = () => page.evaluate(() => {
   const now = new Set(window.__cc.all());
   return { fixed: window.__ccFixed.filter((e) => !now.has(e)).length, post: now.has(window.__ccPost), people: window.__ccPeople.filter((e) => !now.has(e)).length };

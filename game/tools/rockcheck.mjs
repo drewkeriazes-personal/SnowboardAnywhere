@@ -2,10 +2,11 @@
 // Colliders: builds each rock variant's geometry and places it with world/Rocks.ts's placeRock on flat snow and on
 // slopes, and checks the collider covers the part drawn above the snow, tops out at its highest point and that a
 // rock that barely shows has none. Before BUG-149 every collider stood 0.6 times the rock's size up round the centre.
-// Riding: rides straight and slanting into one rampable rock on an exact flat plane through the rider's own
-// 60 fps update loop, in each jump mode. Realistic: no rock ever lifts you above its top; with the speed and a
-// gentle enough face on your line you ride up and over it (scraping), paying the climb out of your speed; too slow
-// or too steep it is solid (bounces you off, fast it throws you, glanced you slide along). Arcade keeps the kicker.
+// Riding: rides straight and slanting into one rock on flat snow and down a 30 deg slope through the rider's own
+// 60 fps update loop, in each jump mode. Realistic: a rock is ground, its dome: you ride up and over it, never
+// through it (never below the dome while over it) and never above it (no higher than the rock off the snow), on
+// rock while on it (the scrape); too slow you stall and slide back; square into a face steeper than ROCK_FACE it
+// stops you like a trunk (thrown when fast). Arcade keeps the kicker.
 // node tools/rockcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -35,7 +36,7 @@ const m = (x) => `${x.toFixed(2)} m`;
 // 40 deg slopes, placed by Rocks.ts's own placeRock. Points standing 0.2 m or more above the snow must sit inside the
 // collider (within the rider's body radius of it), its top must be the highest point drawn, and a rock showing less
 // than ROCK_MIN_TOP has none. The old collider was 0.6 x size up round the centre whatever showed.
-const TYPES = ['outcrop', 'boulder', 'talus'], M = new Matrix4(), FIT = { x: 0, y: 0, radius: 0, top: 0, base: 0 };
+const TYPES = ['outcrop', 'boulder', 'talus'], M = new Matrix4(), FIT = { x: 0, y: 0, radius: 0, top: 0, base: 0, ground: 0, wall: false };
 const PTS = Array.from({ length: VARIANTS }, (_, v) => rockPoints(makeRock(rockSeed(v))));
 for (const deg of [0, 15, 30, 40]) {
   const a = deg * Math.PI / 180, nn = [0, Math.sin(a), Math.cos(a)], t = Math.tan(a); // the snow falls toward +y: z = -t * y
@@ -65,72 +66,66 @@ for (const deg of [0, 15, 30, 40]) {
 }
 
 // ---- riding into a rock (BUG-141)
+const FRAME = 1 / 60, G = 9.81;
+const input = () => ({ steer: 0, tuck: true, brake: false, jumpHeld: false, jumpReleased: false, grab: false, squat: false, lean: 0 });
 /** an exact plane falling toward +y at `deg` degrees */
 function plane(deg) {
   const t = Math.tan(deg * Math.PI / 180), k = 1 / Math.hypot(t, 1);
   return { mask: null, coarseFallbacks: 0, groundHeight: (x, y) => -t * y, groundNormal: (x, y, o = [0, 0, 1]) => { o[0] = 0; o[1] = t * k; o[2] = k; return o; } };
 }
-const flat = { mask: null, coarseFallbacks: 0, groundHeight: () => 0, groundNormal: (x, y, o = [0, 0, 1]) => { o[0] = 0; o[1] = 0; o[2] = 1; return o; } };
-const FRAME = 1 / 60;
-const input = () => ({ steer: 0, tuck: false, brake: false, jumpHeld: false, jumpReleased: false, grab: false, squat: false, lean: 0 });
+const pct = (x) => `${(x * 100).toFixed(0)}%`;
 
-/** ride north at `v` m/s into a rock `h` m tall and `rad` m across, its centre `off` m to the side (0 square).
- *  Returns the peak height above the snow (m), the speed kept just after the hit, the hit kind and whether it threw you. */
-function ride(mode, v, h, { off = 0, rad = 1, deg = 0 } = {}) {
-  let scrapeT = 0;
-  const col = new Collider(), at = 6 + rad, t = Math.tan(deg * Math.PI / 180), c = Math.cos(deg * Math.PI / 180);
-  const hitAt = at - rad - 0.4; // the snow where you meet it: `h` is its height above you there
-  col.add(off, at, rad, -t * at - 1, -t * hitAt + h, 1);
+/** ride straight down (+y) at `v` m/s into a rock standing `H` m above the snow at its centre, `R` m round, its
+ *  centre `off` m to the side, on a `deg` slope. On flat snow the speed is held until 1 m short of it, on a slope
+ *  set once at the start. Returns how far the rider ever was below the dome while over it (m), the most it stood
+ *  above the snow (m), whether it crossed the rock, slid back, crashed, rode on rock, the first hit and the speed
+ *  kept just past it. */
+function ride(mode, v, H, R, { off = 0, deg = 0 } = {}) {
+  const t = Math.tan(deg * Math.PI / 180), c = Math.cos(deg * Math.PI / 180), at = 12, g0 = -t * at;
+  const col = new Collider(), rb = { b: 0, gx: 0, gy: 0 };
+  col.add(off, at, R, g0 - 1, g0 + H, 1, mode === 'real' ? g0 : NaN);
   const r = new Rider(deg ? plane(deg) : flat, col);
   r.jumpMode = mode; r.reset(0, 0, 0);
-  for (let i = 0; i < 30; i++) r.update(FRAME, input()); // settle on the snow
-  let peak = 0, hit = '', kept = 0, crashed = false;
-  for (let k = 0; k < 900; k++) {
-    if (!hit) { r.vx = 0; r.vy = v; } // hold the speed to the rock
+  for (let i = 0; i < 20; i++) r.update(FRAME, input());
+  r.vx = 0; r.vy = v * c; r.vz = -v * Math.sin(deg * Math.PI / 180);
+  let under = 0, above = 0, back = false, crashed = false, onRock = false, hit = '', kept = 0, peakAir = 0;
+  for (let k = 0; k < 600; k++) {
+    if (!deg && r.y < at - R - 1) { r.vx = 0; r.vy = v; }
     r.update(FRAME, input());
-    if (!hit && r.lastHit) { hit = r.lastHit; kept = Math.hypot(r.vx, r.vy) / v; }
-    peak = Math.max(peak, (r.z + t * r.y) * c); // off the snow, square to it
-    if (r.rockOver > 0) scrapeT += FRAME;
-    crashed ||= r.crashed > 0;
-    if (hit && r.onGround && k > 120) break;
+    const b = col.rockBump(r.x, r.y, rb).b, snow = -t * r.y;
+    if (b > 0.05) under = Math.max(under, snow + b - r.z);
+    above = Math.max(above, (r.z - snow) * c);
+    if (r.y > at + R) peakAir = Math.max(peakAir, (r.z - snow) * c);
+    back ||= r.vy < -0.2; crashed ||= r.crashed > 0; onRock ||= r.surface.rock > 0.5;
+    if (!hit && r.lastHit) hit = r.lastHit;
+    if (!kept && r.y > at + R + 1) kept = Math.hypot(r.vx, r.vy, r.vz) / v;
   }
-  return { peak, kept, crashed, hit, scrapeT };
+  return { under, above, crossed: r.y > at + R, back, crashed, onRock, hit, kept, peakAir };
 }
-const pct = (x) => `${(x * 100).toFixed(0)}%`;
-const R = ROCK_RAMP.real, G = 9.81, BODY = 0.4;
+const flat = plane(0);
+const say = (a) => `under the rock ${m(a.under)}, top ${m(a.above)} off the snow, ${a.crossed ? 'crossed' : 'did not cross'}${a.back ? ', slid back' : ''}${a.crashed ? ', thrown' : ''}${a.hit ? `, hit ${a.hit}` : ''}${a.kept ? `, kept ${pct(a.kept)}` : ''}`;
 
-// rocks as Rocks.ts draws them: a low hump, a mid one and the biggest on Vail (size about 9 at radius 0.55 x size)
-const ROCKS = [[0.2, 1.4], [0.5, 3.3], [0.9, 5]];
-for (const v of [10, 20, 30]) {
-  for (const [h, rad] of ROCKS) {
-    const a = ride('real', v, h, { rad });
-    const want = Math.sqrt(1 - 2 * G * h / (v * v)) * (1 - R.loss);
-    check(`Real ${v} m/s square into a ${h} m rock: up and over, never above its top`, a.hit === 'rock' && !a.crashed && a.peak <= h + 0.02 && Math.abs(a.kept - want) < 0.03,
-      `${a.hit}, peak ${m(a.peak)}, kept ${pct(a.kept)} (climb and scrape ${pct(want)})`);
-  }
+// the rocks Rocks.ts draws, standing H above the snow at the centre, R round: low humps to Vail's big slabs
+const GENTLE = [[0.2, 1.4], [0.5, 3], [0.9, 4], [2, 6]];
+for (const v of [8, 14, 25]) for (const [H, R] of GENTLE) {
+  const a = ride('real', v, H, R);
+  check(`Real ${v} m/s square into a ${H} m rock (${R} m round): up and over, never through or above it`, a.crossed && !a.crashed && !a.back && a.onRock && a.under < 0.03 && a.above <= H + 0.03, say(a));
 }
-const over = ride('real', 15, 0.5, { rad: 3.3, scrape: true });
-check('Real ridden over a rock: the scrape sounds while over it', over.scrapeT > 0.1 && over.scrapeT <= R.scrapeMax + 0.02, `scrape ${over.scrapeT.toFixed(2)} s`);
-const slow = ride('real', 3, 0.5, { rad: 3.3 });
-check('Real 0.5 m rock square at 3 m/s: too slow to climb, stops you, no crash', slow.hit === 'wall' && !slow.crashed && slow.peak < 0.05, `${slow.hit}, peak ${m(slow.peak)}, crashed ${slow.crashed}`);
-const steep = ride('real', 20, 1, { rad: 0.8 });
-check('Real steep 1 m rock square at 20 m/s: too steep to climb, throws you', steep.hit === 'wall' && steep.crashed && steep.peak < 0.05, `${steep.hit}, crashed ${steep.crashed}`);
-const square = ride('real', 20, 0.8, { rad: 0.8 });
-check('Real 45 deg 0.8 m rock square at 20 m/s: too steep on that line, throws you', square.hit === 'wall' && square.crashed, `${square.hit}, crashed ${square.crashed}`);
-const across = ride('real', 20, 0.8, { rad: 0.8, off: 0.95 * (0.8 + BODY) });
-check('Real 45 deg 0.8 m rock clipped on a slanting line at 20 m/s: up and over its edge', across.hit === 'rock' && !across.crashed && across.peak <= 0.82, `${across.hit}, peak ${m(across.peak)}, kept ${pct(across.kept)}`);
-const graze = ride('real', 20, 1, { rad: 0.8, off: 0.95 * (0.8 + BODY) });
-check('Real steep (51 deg) 1 m rock glanced at 20 m/s: never climbed, slides along it', graze.hit === 'graze' && !graze.crashed && graze.peak < 0.05, `${graze.hit}, kept ${pct(graze.kept)}`);
-
-for (const deg of [15, 30]) for (const v of [12, 25]) {
-  const a = ride('real', v, 0.5, { rad: 3.3, deg });
-  check(`Real ${v} m/s down a ${deg} deg slope into a 0.5 m rock: over it, never more than its height off the slope`, a.hit === 'rock' && !a.crashed && a.peak <= 0.5 + 0.05, `${a.hit}, peak ${m(a.peak)} off the snow`);
+const slow = ride('real', 2, 0.5, 3);
+check('Real 0.5 m rock at 2 m/s: too slow, stalls and slides back, never through it', !slow.crossed && slow.back && !slow.crashed && slow.under < 0.03, say(slow));
+const steep = ride('real', 14, 2, 3.6); // its rim 48 deg
+check('Real steep 2 m rock (48 deg rim) square at 14 m/s: stops you like a trunk, thrown', !steep.crossed && steep.crashed && steep.hit === 'wall' && steep.above < 0.05, say(steep));
+const slant = ride('real', 14, 2, 3.6, { off: 0.9 * (3.6 + 0.4) });
+check('Real steep 2 m rock met on a slanting line at 14 m/s: never through or above it', !slant.crashed && slant.under < 0.03 && slant.above <= 2.03, say(slant));
+for (const v of [8, 14, 25]) for (const [H, R] of [[0.5, 3], [2, 3.6]]) {
+  const a = ride('real', v, H, R, { deg: 30 });
+  check(`Real ${v} m/s down a 30 deg slope into a ${H} m rock (${R} m round): never through or above it`, !a.crashed && a.under < 0.03 && a.above <= H + 0.05 && a.peakAir <= H + 0.05, `${say(a)}, past it ${m(a.peakAir)} off the snow`);
 }
 
 // Arcade: the old kicker, vz = v * min(0.9, 0.25 + 0.9) * 0.5 + 1.5 off a 1.5 m+ rock hit square
 for (const v of [10, 20, 30]) {
-  const a = ride('arcade', v, 1.6), vz = v * 0.9 * ROCK_RAMP.arcade.kick + ROCK_RAMP.arcade.base, want = 1.6 - 0.3 + vz * vz / (2 * 9.81);
-  check(`Arcade ${v} m/s into a 1.6 m rock still launches you`, a.hit === 'ramp' && !a.crashed && Math.abs(a.peak - want) < 0.35, `peak ${m(a.peak)}, expected about ${m(want)}`);
+  const a = ride('arcade', v, 1.6, 1), vz = v * 0.9 * ROCK_RAMP.arcade.kick + ROCK_RAMP.arcade.base, want = 1.6 - 0.3 + vz * vz / (2 * G);
+  check(`Arcade ${v} m/s into a 1.6 m rock still launches you`, a.hit === 'ramp' && !a.crashed && Math.abs(a.above - want) < 0.35, `peak ${m(a.above)}, expected about ${m(want)}`);
 }
 
 console.log(fails ? `${fails} check(s) failed` : 'all checks passed');
