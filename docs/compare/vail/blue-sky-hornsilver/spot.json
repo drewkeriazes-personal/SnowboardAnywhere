@@ -8,6 +8,7 @@
     "x": 2866,
     "y": -2968
   },
+  "weather": "cirrus",
   "views": [
     {
       "id": "east",
@@ -15,7 +16,7 @@
       "pitch": 10.4,
       "fov": 75.0,
       "streetview": "https://www.google.com/maps/@39.5738269,-106.3137139,3a,75y,80.57h,100.4t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC6js3YXQ!2e10!3e11",
-      "game": "http://localhost:5173/?pack=vail&x=2865.9&y=-2967.9&h=81.4&pitch=10.4&fov=75.0&cam=eye&spot=blue-sky-hornsilver/east",
+      "game": "http://localhost:5173/?pack=vail&x=2865.9&y=-2967.9&h=81.4&pitch=10.4&fov=75.0&cam=eye&spot=blue-sky-hornsilver/east&weather=cirrus",
       "x": 2865.9,
       "y": -2967.9,
       "h": 81.4
@@ -26,7 +27,7 @@
       "pitch": 7.2,
       "fov": 90.0,
       "streetview": "https://www.google.com/maps/@39.5738269,-106.3137139,3a,90y,185.62h,97.18t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIC6js3YXQ!2e10!3e11",
-      "game": "http://localhost:5173/?pack=vail&x=2865.9&y=-2967.9&h=186.5&pitch=7.2&fov=90.0&cam=eye&spot=blue-sky-hornsilver/south",
+      "game": "http://localhost:5173/?pack=vail&x=2865.9&y=-2967.9&h=186.5&pitch=7.2&fov=90.0&cam=eye&spot=blue-sky-hornsilver/south&weather=cirrus",
       "x": 2865.9,
       "y": -2967.9,
       "h": 186.5

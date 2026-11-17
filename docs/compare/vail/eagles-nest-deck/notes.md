@@ -2,6 +2,8 @@
 
 Real: Street View, Jan 2016, contributor Justin Donat (links in spot.json; `real-*.png` local only). Sun and broken cloud. Game: `eye-<view>.jpg`, eye camera at (-3317, 1983), 1919x910, 2026-11-06.
 
+**Sky (FEAT-094):** sun through broken cumulus and stratocumulus in the `real-*.png` views; tagged `weather: broken`.
+
 The compass of this photosphere is good: Eagle's Nest is at a grid bearing of 21 degrees in the pack and sits about 2 degrees right of centre in the 23-degree view. No offset needed.
 
 ## What matches

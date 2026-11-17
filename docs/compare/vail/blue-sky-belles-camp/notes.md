@@ -2,6 +2,8 @@
 
 Real: Google Street View trekker, Mar 2012 (calibrated; links in spot.json). The real screenshots were shared in chat and are not saved locally. Sunny. Game: `eye-<view>.jpg`, eye camera at (1586, -4008), 1919x910, 2026-11-06. Ground at 3,490 m.
 
+**Sky (FEAT-094):** tagged `weather: clear` from the "Sunny" note above. Not re-checked: the real screenshots are not saved and the trekker panorama did not reopen from the link in spot.json, so confirm against the photo when it is next opened.
+
 Position and compass check: the lodge sits at about 207 degrees true in the photo; the nearest building in the pack is 75 m away at 212.
 
 ## What matches

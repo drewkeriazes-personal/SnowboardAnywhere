@@ -8,6 +8,7 @@
     "x": 1422,
     "y": 290
   },
+  "weather": "cirrus",
   "views": [
     {
       "id": "southwest",
@@ -18,7 +19,7 @@
       "x": 1421.5,
       "y": 289.6,
       "h": 218.9,
-      "game": "http://localhost:5173/?pack=vail&x=1421.5&y=289.6&h=218.9&pitch=-8.4&fov=63.5&cam=eye&spot=china-bowl-north-rim/southwest"
+      "game": "http://localhost:5173/?pack=vail&x=1421.5&y=289.6&h=218.9&pitch=-8.4&fov=63.5&cam=eye&spot=china-bowl-north-rim/southwest&weather=cirrus"
     }
   ],
   "streetview_capture": "Mar 2018 (contributor not recorded)",

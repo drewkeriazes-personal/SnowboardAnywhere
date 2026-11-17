@@ -8,6 +8,7 @@
     "x": 1041,
     "y": -3367
   },
+  "weather": "cirrus",
   "views": [
     {
       "id": "east",
@@ -18,7 +19,7 @@
       "x": 1040.6,
       "y": -3367.0,
       "h": 84.3,
-      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=84.3&pitch=9.4&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/east",
+      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=84.3&pitch=9.4&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/east&weather=cirrus",
       "heading_offset": -76.0
     },
     {
@@ -30,7 +31,7 @@
       "x": 1040.6,
       "y": -3367.0,
       "h": 171.0,
-      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=171.0&pitch=4.9&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/south",
+      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=171.0&pitch=4.9&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/south&weather=cirrus",
       "heading_offset": -76.0
     },
     {
@@ -42,7 +43,7 @@
       "x": 1040.6,
       "y": -3367.0,
       "h": 270.1,
-      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=270.1&pitch=1.0&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/west",
+      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=270.1&pitch=1.0&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/west&weather=cirrus",
       "heading_offset": -76.0
     },
     {
@@ -54,7 +55,7 @@
       "x": 1040.6,
       "y": -3367.0,
       "h": 347.7,
-      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=347.7&pitch=7.8&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/north",
+      "game": "http://localhost:5173/?pack=vail&x=1040.6&y=-3367.0&h=347.7&pitch=7.8&fov=75.0&cam=eye&spot=blue-sky-in-the-wuides/north&weather=cirrus",
       "heading_offset": -76.0
     }
   ],

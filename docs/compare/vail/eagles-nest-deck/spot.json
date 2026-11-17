@@ -8,6 +8,7 @@
     "x": -3317,
     "y": 1983
   },
+  "weather": "broken",
   "views": [
     {
       "id": "northeast",
@@ -18,7 +19,7 @@
       "x": -3316.6,
       "y": 1982.6,
       "h": 24.1,
-      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=24.1&pitch=13.7&fov=75.0&cam=eye&spot=eagles-nest-deck/northeast"
+      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=24.1&pitch=13.7&fov=75.0&cam=eye&spot=eagles-nest-deck/northeast&weather=broken"
     },
     {
       "id": "southeast",
@@ -29,7 +30,7 @@
       "x": -3316.6,
       "y": 1982.6,
       "h": 127.9,
-      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=127.9&pitch=7.7&fov=75.0&cam=eye&spot=eagles-nest-deck/southeast"
+      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=127.9&pitch=7.7&fov=75.0&cam=eye&spot=eagles-nest-deck/southeast&weather=broken"
     },
     {
       "id": "southwest",
@@ -40,7 +41,7 @@
       "x": -3316.6,
       "y": 1982.6,
       "h": 209.1,
-      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=209.1&pitch=3.0&fov=75.0&cam=eye&spot=eagles-nest-deck/southwest"
+      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=209.1&pitch=3.0&fov=75.0&cam=eye&spot=eagles-nest-deck/southwest&weather=broken"
     },
     {
       "id": "west",
@@ -51,7 +52,7 @@
       "x": -3316.6,
       "y": 1982.6,
       "h": 282.3,
-      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=282.3&pitch=5.6&fov=75.0&cam=eye&spot=eagles-nest-deck/west"
+      "game": "http://localhost:5173/?pack=vail&x=-3316.6&y=1982.6&h=282.3&pitch=5.6&fov=75.0&cam=eye&spot=eagles-nest-deck/west&weather=broken"
     }
   ],
   "streetview_capture": "Jan 2016, contributor Justin Donat (user photosphere; compass checked against Eagle's Nest, within about 2 degrees)",

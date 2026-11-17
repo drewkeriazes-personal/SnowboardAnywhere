@@ -2,6 +2,8 @@
 
 Real: Google Street View trekker, Mar 2012 (Google's own imagery, so position and compass are calibrated; links in spot.json, `real-*.png` local only). Sunny spring snow. Game: `eye-<view>.jpg`, eye camera at (-3256, 2724), 1919x910, 2026-11-06. This is 480 m down the run from the game's start position.
 
+**Sky (FEAT-094):** cloudless blue sky and hard shadows in the `real-*.png` views; tagged `weather: clear`.
+
 ## What matches
 - **Terrain:** the run's fall line north, the valley view opening ahead (north, north-west), and the open slope rising to the ridge in the south-east.
 - **Eagle Bahn gondola:** the line and towers on the ridge top in the south-east view are where the photo has them.

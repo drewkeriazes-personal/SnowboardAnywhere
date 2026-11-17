@@ -8,6 +8,7 @@
     "x": -3256,
     "y": 2723
   },
+  "weather": "clear",
   "views": [
     {
       "id": "north",
@@ -18,7 +19,7 @@
       "x": -3255.7,
       "y": 2723.5,
       "h": 16.7,
-      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=16.7&pitch=-13.9&fov=75.0&cam=eye&spot=born-free/north"
+      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=16.7&pitch=-13.9&fov=75.0&cam=eye&spot=born-free/north&weather=clear"
     },
     {
       "id": "southeast",
@@ -29,7 +30,7 @@
       "x": -3255.7,
       "y": 2723.5,
       "h": 140.2,
-      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=140.2&pitch=-1.4&fov=75.0&cam=eye&spot=born-free/southeast"
+      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=140.2&pitch=-1.4&fov=75.0&cam=eye&spot=born-free/southeast&weather=clear"
     },
     {
       "id": "southwest",
@@ -40,7 +41,7 @@
       "x": -3255.7,
       "y": 2723.5,
       "h": 233.4,
-      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=233.4&pitch=3.2&fov=75.0&cam=eye&spot=born-free/southwest"
+      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=233.4&pitch=3.2&fov=75.0&cam=eye&spot=born-free/southwest&weather=clear"
     },
     {
       "id": "northwest",
@@ -51,7 +52,7 @@
       "x": -3255.7,
       "y": 2723.5,
       "h": 338.9,
-      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=338.9&pitch=-4.6&fov=75.0&cam=eye&spot=born-free/northwest"
+      "game": "http://localhost:5173/?pack=vail&x=-3255.7&y=2723.5&h=338.9&pitch=-4.6&fov=75.0&cam=eye&spot=born-free/northwest&weather=clear"
     }
   ],
   "streetview_capture": "Mar 2012, Google Street View (trekker; Google's own imagery, position and compass calibrated)",

@@ -8,6 +8,7 @@
     "x": -620,
     "y": 94
   },
+  "weather": "clear",
   "views": [
     {
       "id": "east",
@@ -15,7 +16,7 @@
       "pitch": -9.6,
       "fov": 75.0,
       "streetview": "https://www.google.com/maps/@39.6009417,-106.3548263,3a,75y,98.86h,80.36t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDqy5i-gQE!2e10!3e11",
-      "game": "http://localhost:5173/?pack=vail&x=-620.0&y=93.9&h=99.7&pitch=-9.6&fov=75.0&cam=eye&spot=back-bowls-campbells/east",
+      "game": "http://localhost:5173/?pack=vail&x=-620.0&y=93.9&h=99.7&pitch=-9.6&fov=75.0&cam=eye&spot=back-bowls-campbells/east&weather=clear",
       "x": -620.0,
       "y": 93.9,
       "h": 99.7
@@ -26,7 +27,7 @@
       "pitch": 15.3,
       "fov": 75.0,
       "streetview": "https://www.google.com/maps/@39.6009417,-106.3548263,3a,75y,305.05h,105.3t/data=!3m8!1e1!3m6!1sCIHM0ogKEICAgIDqy5i-gQE!2e10!3e11",
-      "game": "http://localhost:5173/?pack=vail&x=-620.0&y=93.9&h=305.9&pitch=15.3&fov=75.0&cam=eye&spot=back-bowls-campbells/northwest",
+      "game": "http://localhost:5173/?pack=vail&x=-620.0&y=93.9&h=305.9&pitch=15.3&fov=75.0&cam=eye&spot=back-bowls-campbells/northwest&weather=clear",
       "x": -620.0,
       "y": 93.9,
       "h": 305.9
