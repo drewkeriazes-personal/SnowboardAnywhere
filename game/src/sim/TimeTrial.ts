@@ -1,5 +1,6 @@
 import type { Rider } from './Rider';
 import { nearestOnCourse, type Course } from './Courses';
+import type { JumpMode } from './rider/tuning';
 
 /**
  * Time-trial state machine and ghost recording.
@@ -7,12 +8,18 @@ import { nearestOnCourse, type Course } from './Courses';
  *   running -> (all checkpoints, reach the finish) finished | (outside the boundary 5 s, R, lift) cancelled
  * Several courses can share a start gate: all of them are candidates while armed and the clock
  * starts on the one whose route the rider actually follows out of the gate.
- * The best run per course is saved to localStorage with its splits and a 10 Hz ghost track.
+ * The best run per course is saved to localStorage with its splits and a 10 Hz ghost track, one per jump mode
+ * (BUG-055): Realistic and Arcade times and ghosts never race each other.
  */
 export interface GhostSample { t: number; x: number; y: number; z: number; h: number; lg: number; e: number; f: number } // f bits: 1 onGround, 2 tuck, 4 crashed, 8 riding switch, 16 goofy (FEAT-139)
 /** FEAT-139: add the stance bits (8 riding switch, 16 goofy) to a sample's flags */
 export function stanceFlags(r: { switch: boolean; goofy: boolean }, f: number): number { return f | (r.switch ? 8 : 0) | (r.goofy ? 16 : 0); }
-export interface Best { time: number; splits: number[]; samples: GhostSample[]; date: string }
+/** `jumpMode` the Jump height it was ridden on (BUG-055; missing on a best saved before, see legacyMode) */
+export interface Best { time: number; splits: number[]; samples: GhostSample[]; date: string; jumpMode?: JumpMode }
+/** BUG-055: FEAT-311 (PR #679) merged then, adding Realistic as the default; every run before it was ridden on the old pop, Arcade's */
+const REAL_SINCE = '2026-11-14T12:48:30Z';
+/** BUG-055: the jump mode of a best saved before bests were kept per mode: Arcade before FEAT-311, else Realistic (the default since) */
+export function legacyMode(b: Best): JumpMode { return b.jumpMode ?? (b.date < REAL_SINCE ? 'arcade' : 'real'); }
 
 const START_R = 14; // m around the start point that arms the gate
 const CHECK_R = 35; // m to count a checkpoint
@@ -49,14 +56,40 @@ export class TimeTrial {
   /** distance along the course of the next checkpoint, or the course length when only the finish is left */
   get nextTarget(): number { const c = this.course; if (!c) return 0; return this.next < c.checkpoints.length ? c.checkpoints[this.next] : c.length; }
 
+  /** BUG-055: the Jump height setting; bests are loaded and saved for it (setMode) */
+  mode: JumpMode = 'real';
+
   constructor(private readonly packSlug: string, private readonly courses: Course[]) {}
 
-  private key(c: Course): string { return `ghost:${this.packSlug}:${c.id}`; }
-  loadBest(c: Course): Best | null {
-    try { return JSON.parse(localStorage.getItem(this.key(c)) ?? 'null'); } catch { return null; }
+  private key(c: Course, m: JumpMode): string { return `ghost:${this.packSlug}:${c.id}:${m}`; }
+  /** the best on course `c` for jump mode `m` (default the current one) */
+  loadBest(c: Course, m: JumpMode = this.mode): Best | null {
+    this.migrate(c);
+    try { return JSON.parse(localStorage.getItem(this.key(c, m)) ?? 'null'); } catch { return null; }
   }
   private saveBest(c: Course, b: Best): void {
-    try { localStorage.setItem(this.key(c), JSON.stringify(b)); } catch { /* storage full or private mode */ }
+    try { localStorage.setItem(this.key(c, b.jumpMode ?? this.mode), JSON.stringify(b)); } catch { /* storage full or private mode */ }
+  }
+  /** BUG-055: move a best saved before bests were per mode (`ghost:<pack>:<course>`) to its mode's key, unless that has one */
+  private migrate(c: Course): void {
+    try {
+      const old = `ghost:${this.packSlug}:${c.id}`, raw = localStorage.getItem(old);
+      if (raw === null) return;
+      const b = JSON.parse(raw) as Best | null;
+      if (b && typeof b.time === 'number') {
+        const m = legacyMode(b), k = this.key(c, m);
+        if (localStorage.getItem(k) === null) localStorage.setItem(k, JSON.stringify({ ...b, jumpMode: m }));
+      }
+      localStorage.removeItem(old);
+    } catch { /* storage blocked: nothing to move */ }
+  }
+
+  /** BUG-055: the Jump height changed: a run in progress is cancelled (it would mix the two), and the best shown is the new mode's */
+  setMode(m: JumpMode): void {
+    if (m === this.mode) return;
+    this.mode = m;
+    if (this.state === 'running') this.cancel('Jump height changed');
+    else if (this.course) this.best = this.loadBest(this.course);
   }
 
   /** All course starts within `maxDist` m. */
@@ -134,7 +167,7 @@ export class TimeTrial {
     }
     if (this.next >= c.checkpoints.length && Math.hypot(c.finish[0] - r.x, c.finish[1] - r.y) < FINISH_R) {
       const isBest = !this.best || this.time < this.best.time;
-      const rec: Best = { time: this.time, splits: this.splits, samples: this.samples, date: new Date().toISOString() };
+      const rec: Best = { time: this.time, splits: this.splits, samples: this.samples, date: new Date().toISOString(), jumpMode: this.mode };
       if (isBest) { this.saveBest(c, rec); }
       const prev = this.best;
       this.state = 'idle'; this.course = null;

@@ -337,7 +337,11 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     };
     if (menu) {
       menu.onChoice = leaveAttract;
-      menu.onSettingsChange = (s, what) => applySettings(s, what);
+      menu.onSettingsChange = (s, what) => {
+        applySettings(s, what);
+        // BUG-055: the bests shown follow the Jump height; the Feel row reports 'pressBalance' but also sets jumpMode
+        if (what === 'jumpMode' || what === 'pressBalance' || what === 'units') menu.setCourses(modes.trials.list(), s.units === 'metric');
+      };
       menu.onSettingsApply = applyGraphics;
       menu.onResetStart = () => {
         resetStart(pack.meta.slug);
