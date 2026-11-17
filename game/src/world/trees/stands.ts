@@ -39,6 +39,7 @@ const S_KEEP = 41, S_JX = 42, S_JY = 43, S_H = 44;
 const JITTER = 0.9;
 /** FEAT-337: the clump field (see the header) */
 const CLUMP_CELL = 20, CLUMP_PARENTS = 1, CLUMP_ALONG = 7, CLUMP_DOWN = 2, CLUMP_SINGLE = 0.2;
+const CLUMP_REACH_E = 9; // (3 sigma)^2, matches the 3 * CLUMP_ALONG margin the cell lists are built from
 const CLUMP_OPEN = 0.3, CLUMP_CLOSED = 0.85;
 /**
  * In a closed stand (no room to add stems to a clump) the stems move instead: each is pulled CLUMP_PULL of the way toward
@@ -94,21 +95,21 @@ class ClumpField {
       const o = id * 4, dx = x - this.c[o], dy = y - this.c[o + 1];
       const u = dx * this.c[o + 2] + dy * this.c[o + 3], v = -dx * this.c[o + 3] + dy * this.c[o + 2];
       const e = (u * u) / (CLUMP_ALONG * CLUMP_ALONG) + (v * v) / (CLUMP_DOWN * CLUMP_DOWN);
-      if (e < 18) d += Math.exp(-0.5 * e);
+      if (e < CLUMP_REACH_E) d += Math.exp(-0.5 * e);
     }
     return CLUMP_SINGLE + (1 - CLUMP_SINGLE) * d * this.norm;
   }
   /** the centre of the clump that reaches (x, y) most, into `out` [x, y]; false when none reaches it */
   nearest(x: number, y: number, out: number[]): boolean {
     const list = this.cells.get(Math.floor(y / CLUMP_CELL) * 100003 + Math.floor(x / CLUMP_CELL));
-    let best = 18;
+    let best = CLUMP_REACH_E;
     if (list) for (const id of list) {
       const o = id * 4, dx = x - this.c[o], dy = y - this.c[o + 1];
       const u = dx * this.c[o + 2] + dy * this.c[o + 3], v = -dx * this.c[o + 3] + dy * this.c[o + 2];
       const e = (u * u) / (CLUMP_ALONG * CLUMP_ALONG) + (v * v) / (CLUMP_DOWN * CLUMP_DOWN);
       if (e < best) { best = e; out[0] = this.c[o]; out[1] = this.c[o + 1]; }
     }
-    return best < 18;
+    return best < CLUMP_REACH_E;
   }
 }
 
