@@ -71,6 +71,13 @@ export class ExposureSampler {
   constructor(private readonly pack: Pack) {}
 
   at(x: number, y: number, out: Exposure): Exposure {
+    // test stub packs (presscheck, mogulcheck) have no heights, no terrain sets and a mask with `sample` only:
+    // fall back to the mask weights alone
+    if (typeof this.pack.height !== 'function' || !this.pack.meta?.terrain) {
+      const m = this.pack.mask ? this.pack.mask.sample(x, y, this.m) : [0, 0, 0, 0];
+      out.rock = m[0]; out.scree = m[1] * (1 - m[0]);
+      return out;
+    }
     const pack = this.pack, res = finestChunkRes(pack, x, y), [ox, oy] = gridOrigin(pack);
     const fi = (x - ox) / res, fj = (y - oy) / res, i0 = Math.floor(fi), j0 = Math.floor(fj), tx = fi - i0, ty = fj - j0;
     const key = `${res}/${i0}/${j0}`;
