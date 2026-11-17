@@ -57,9 +57,11 @@ const THIN_GLSL = /* glsl */ `
 /**
  * FEAT-303: the trim is full up to TRIM_H0 m above the tree's base and gone by TRIM_H1 (the snowpack and a rider's
  * height; on a small tree 0.45 and 0.65 of its height); a fully trimmed limb reaches TRIM_PULL less far out, and its
- * needles drop under the noise level TRIM_THIN
+ * needles drop under the noise level TRIM_THIN (most of them)
  */
-const TRIM_H0 = '2.8', TRIM_H1 = '4.2', TRIM_PULL = '0.6', TRIM_THIN = '0.5';
+const TRIM_H0 = '2.8', TRIM_H1 = '4.2', TRIM_PULL = '0.85', TRIM_THIN = '0.75';
+/** FEAT-303: over the trim line the boughs reach up to TRIM_BUSH further out, over a band TRIM_BUSH_H m tall (full in its lower part) */
+const TRIM_BUSH = '0.3', TRIM_BUSH_H = '4.0';
 
 /** (fade-in start, fade-in end, fade-out start, fade-out end), metres from the camera */
 export type Band = { value: THREE.Vector4 };
@@ -133,12 +135,15 @@ const KIT_BEGIN = /* glsl */ `
     // snow (less on a small tree) they reach TRIM_PULL less far out from the trunk at full trim, and thin (TRIM_FRAG)
     if (aTrim * uTrimK > 0.0) {
       float kH = length(ktm[1].xyz);
-      float kLow = aTrim * uTrimK * (1.0 - smoothstep(min(${TRIM_H0}, 0.45 * kH), min(${TRIM_H1}, 0.65 * kH), position.y * kH));
-      if (kLow > 0.0) {
+      float kT = aTrim * uTrimK, kY = position.y * kH, kH1 = min(${TRIM_H1}, 0.65 * kH);
+      float kLow = kT * (1.0 - smoothstep(min(${TRIM_H0}, 0.45 * kH), kH1, kY));
+      // the boughs just over the trim line, with the light the trimmed ones left, grow out fuller (TRIM_BUSH)
+      float kUp = kT * smoothstep(kH1 - 0.6, kH1 + 0.4, kY) * (1.0 - smoothstep(kH1 + ${TRIM_BUSH_H} * 0.4, kH1 + ${TRIM_BUSH_H}, kY));
+      if (kLow > 0.0 || kUp > 0.0) {
         vec2 tAx = position.y * kCore.zw, tD = transformed.xz - tAx;
         float tr = length(tD), ta = max(kCore.y, 0.05);
         if (tr > ta) {
-          transformed.xz = tAx + tD * ((ta + (tr - ta) * (1.0 - ${TRIM_PULL} * kLow)) / tr);
+          transformed.xz = tAx + tD * ((ta + (tr - ta) * (1.0 - ${TRIM_PULL} * kLow) * (1.0 + ${TRIM_BUSH} * kUp)) / tr);
           vTrimLow = kLow * smoothstep(ta, 2.0 * ta + 0.05, tr); // none on the trunk
         }
       }
