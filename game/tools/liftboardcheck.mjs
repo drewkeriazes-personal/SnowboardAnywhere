@@ -9,7 +9,8 @@
 //   5. BUG-150: with the lift-line maze built and its gate on, anywhere inside the gold ring boards (points
 //      across the ring, beside the station and the maze), the ring is drawn at the zone radius, the corral
 //      boards where it reaches past the ring, and beside the ring does not;
-//   6. ?boardRange=40 widens the zone and the ring; no console errors.
+//   6. ?boardRange=40 widens the zone and the ring;
+//   7. with ?boardRange=8 the back of the corral still boards; no console errors.
 // node tools/liftboardcheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
@@ -192,6 +193,21 @@ z = await zone();
 check('?boardRange=40 boards 35 m out', z.range === 40 && z.canBoard, JSON.stringify(z));
 rg = await ringAt();
 check('?boardRange=40 draws the ring at 40 m', rg.ring === 40, JSON.stringify(rg));
+
+// 7. a small ?boardRange= still lets the whole corral board (the search reaches the maze's back end at any range)
+await load('&boardRange=8');
+await place(0);
+const small = await page.evaluate(() => {
+  const s = window.__sim, l = s.lifts.lifts[0], ll = s.liftLines, r = s.rider, lr = s.liftRide;
+  ll.maintain(l.bottom[0], l.bottom[1]);
+  const m = ll.mazes.find((q) => q.lift === l);
+  lr.gate = (q, x, y) => ll.inGate(q, x, y);
+  const back = 3 + m.len - 1;
+  r.x = l.bottom[0] - m.ux * back; r.y = l.bottom[1] - m.uy * back; r.vx = r.vy = r.vz = 0; r.speed = 0; r.onGround = true;
+  lr.update(r, 1 / 60, false);
+  return { range: lr.boardRange, back, canBoard: lr.canBoard };
+});
+check(`?boardRange=8: the corral's back end (${small.back} m) still boards`, small.range === 8 && small.canBoard, JSON.stringify(small));
 
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();

@@ -17,8 +17,8 @@ export const PROMPT_RANGE = 60; // m: show the boarding card
  * The tuning knob: `?boardRange=<m>` overrides it for a session (LiftRide.boardRange) to try other sizes.
  */
 export const BOARD_RANGE = 28;
-/** BUG-150: how far past the zone a lift-line maze's corral can reach (the longest maze ends 34 m back) */
-const CORRAL_REACH = 12;
+/** BUG-150: how far from the loading point a lift-line maze's corral can reach (the longest maze ends about 34 m back) */
+const MAZE_REACH = 40;
 /** FEAT-323: the gentle coast-down near the loading point stays at the old 14 m zone */
 export const COAST_RANGE = 14;
 export const BOARD_SPEED = 6; // m/s
@@ -95,7 +95,7 @@ export class LiftRide<L extends LiftLine = LiftLine> {
       // FEAT-323: every lift whose zone (the gold ring, BUG-150) the rider is in, nearest first, plus any
       // whose maze corral reaches past the ring and holds the rider (FEAT-073); else the nearest within the prompt range
       const gate = this.gate, r = this.boardRange;
-      this.choices = this.lifts.boardableNear(rider.x, rider.y, gate ? r + CORRAL_REACH : r)
+      this.choices = this.lifts.boardableNear(rider.x, rider.y, gate ? Math.max(r, MAZE_REACH) : r)
         .filter((l) => Math.hypot(l.bottom[0] - rider.x, l.bottom[1] - rider.y) < r || (gate !== null && gate(l, rider.x, rider.y)));
       this.nearby = this.choices[0] ?? this.lifts.nearestBoardable(rider.x, rider.y, PROMPT_RANGE);
       this.nearbyDist = this.nearby ? Math.hypot(this.nearby.bottom[0] - rider.x, this.nearby.bottom[1] - rider.y) : Infinity;
