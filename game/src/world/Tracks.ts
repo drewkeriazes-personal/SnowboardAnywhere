@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { Rider } from '../sim/Rider';
 import { rockCover } from '../terrain/rockCover';
-import { exposureAt } from '../terrain/exposure';
+import { ExposureSampler } from '../terrain/exposure';
 import { DEFORM_GLSL, deformUniforms, laneStampMaterial, markStampDirty } from './Deform';
 import { SNOW_ALBEDO } from './snowLook';
 
@@ -531,17 +531,16 @@ export class Tracks {
     });
   }
 
-  private readonly maskTmp = [0, 0, 0, 0];
   private readonly nTmp = [0, 0, 1];
   private readonly gnTmp = [0, 1, 0];
   private readonly coverTmp = { rock: 0, scree: 0 };
   private readonly exposureTmp = { rock: 0, scree: 0 };
+  private exposureS: ExposureSampler | null = null;
+  private get exposure(): ExposureSampler { return this.exposureS ??= new ExposureSampler(this.pack); }
   /** rock + scree coverage the terrain shader shows at (x, y) */
   private rockAt(x: number, y: number, z: number): number {
-    const mask = this.pack.mask;
-    if (!mask) return 0;
-    const m = mask.sampleBilinear(x, y, this.maskTmp);
-    const ex = exposureAt(this.pack, x, y, m[0], m[1], m[3], this.exposureTmp); // BUG-035: steep, ridge and talus rock too
+    if (!this.pack.mask) return 0;
+    const ex = this.exposure.at(x, y, this.exposureTmp); // BUG-035: steep, ridge and talus rock too, as drawn
     if (ex.rock < 0.15 && ex.scree < 0.05) return 0;
     const n = this.pack.groundNormal(x, y, this.nTmp);
     const c = rockCover(ex.rock, ex.scree, x, z, -y, n[2], this.coverTmp);
