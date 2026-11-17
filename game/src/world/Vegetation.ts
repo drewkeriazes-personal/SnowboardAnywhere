@@ -127,6 +127,8 @@ const TILES = 10;
 /** FEAT-217: the widest crown a rider can brush, plus the body (m): a 40 m spruce's 6.5 m */
 const CROWN_REACH = 8;
 const TILE_N = TILES * TILES;
+/** FEAT-303: the bins (m) the trim reads a tree's stand cover from */
+const TRIM_BIN = 8;
 /** the near sets are rebuilt once the camera has moved this far from where they were gathered (m) */
 const MARGIN0 = 25, MARGIN1 = 60;
 /** krummholz flags stream downwind: the prevailing westerlies blow toward +x (east) */
@@ -196,8 +198,12 @@ interface Cell {
   tint: Float32Array | null;
   /** BUG-081: the impostor thinning draw per tree, 0..1 (trees/materials.ts THIN_GLSL) */
   thin: Float32Array | null;
-  /** FEAT-303: per tree (t, bare, hs), the near LODs' `aTrim` and the puffs' crown (trees/trim.ts) */
+  /** FEAT-303: per tree (t, bare, hs), the near LODs' `aTrim` and the puffs' crown (trees/trim.ts); zero until its sub-tile is
+   *  trimmed (`trimmed`, FEAT-335) */
   trim: Float32Array | null;
+  /** FEAT-335: the crown cover per TRIM_BIN m bin the trim reads, and which sub-tiles have their trim (null: no tree lines) */
+  trimArea: Float32Array | null;
+  trimmed: Uint8Array | null;
   /** tree indices grouped by sub-tile; tile t holds order[tileStart[t] .. tileStart[t + 1]) */
   order: Uint32Array | null;
   tileStart: Uint32Array | null;
@@ -416,7 +422,7 @@ export class Vegetation {
         keep.add(key);
         let cell = this.cells.get(key);
         if (!cell) {
-          cell = { key, cx, cy, data: null, base: null, stand: null, standState: 0, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
+          cell = { key, cx, cy, data: null, base: null, stand: null, standState: 0, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, trimArea: null, trimmed: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
           this.cells.set(key, cell);
         }
         if (!cell.data && !cell.loading && !cell.missing) this.load(cell);
@@ -675,6 +681,7 @@ export class Vegetation {
       const ty0 = Math.max(0, Math.floor((y - reach - minY) / ts)), ty1 = Math.min(TILES - 1, Math.floor((y + reach - minY) / ts));
       for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
         const t = ty * TILES + tx;
+        this.trimTile(cell, t);
         for (let j = cell.tileStart![t]; j < cell.tileStart![t + 1]; j++) {
           const i = cell.order![j], o = i * 6, r = cr[i] + 0.5;
           if (Math.abs(d[o] - x) > r || Math.abs(d[o + 1] - y) > r) continue;
@@ -752,25 +759,41 @@ export class Vegetation {
       tileOf[i] = ty * TILES + tx; counts[tileOf[i] + 1]++;
       zMin = Math.min(zMin, d[o + 2]); zMax = Math.max(zMax, d[o + 2] + h);
     }
-    // FEAT-303: the trim, where the stand is closed (crown cover over 8 m bins, 3 x 3 round each tree) and the glade level asks
+    // FEAT-303: the trim's stand cover (crown cover over TRIM_BIN m bins); the trim itself is worked out per sub-tile when the
+    // near LODs or the puffs first read it (FEAT-335: `trimTile`), not for every tree of the cell as it loads
+    let trimArea: Float32Array | null = null;
     if (tl && n) {
-      const B = 8, nb = Math.ceil(inst.cellSize / B), area = new Float32Array(nb * nb);
-      const bin = (v: number, m: number): number => Math.max(0, Math.min(nb - 1, Math.floor((v - m) / B)));
-      for (let i = 0; i < n; i++) area[bin(d[i * 6 + 1], minY) * nb + bin(d[i * 6], minX)] += Math.PI * cr[i] * cr[i];
-      for (let i = 0; i < n; i++) {
-        const x = d[i * 6], y = d[i * 6 + 1], level = tl.trimAt(x, y);
-        if (level <= 0) continue;
-        const bx = bin(x, minX), by = bin(y, minY);
-        let a = 0, cells = 0;
-        for (let j = Math.max(0, by - 1); j <= Math.min(nb - 1, by + 1); j++) for (let k = Math.max(0, bx - 1); k <= Math.min(nb - 1, bx + 1); k++) { a += area[j * nb + k]; cells++; }
-        treeTrim(level, standGate(a / (cells * B * B)), x, y, trim, i * 3);
-      }
+      const nb = Math.ceil(inst.cellSize / TRIM_BIN);
+      trimArea = new Float32Array(nb * nb);
+      const bin = (v: number, m: number): number => Math.max(0, Math.min(nb - 1, Math.floor((v - m) / TRIM_BIN)));
+      for (let i = 0; i < n; i++) trimArea[bin(d[i * 6 + 1], minY) * nb + bin(d[i * 6], minX)] += Math.PI * cr[i] * cr[i];
     }
     for (let t = 0; t < TILE_N; t++) counts[t + 1] += counts[t];
     const order = new Uint32Array(n), fill = counts.slice(0, TILE_N);
     for (let i = 0; i < n; i++) order[fill[tileOf[i]]++] = i;
-    cell.sp = sp; cell.va = va; cell.cr = cr; cell.yaw = yaw; cell.tint = tint; cell.thin = thin; cell.trim = trim; cell.order = order; cell.tileStart = counts;
+    cell.sp = sp; cell.va = va; cell.cr = cr; cell.yaw = yaw; cell.tint = tint; cell.thin = thin; cell.trim = trim; cell.trimArea = trimArea; cell.trimmed = trimArea ? new Uint8Array(TILE_N) : null; cell.order = order; cell.tileStart = counts;
     cell.zMin = n ? zMin : 0; cell.zMax = n ? zMax : 0;
+  }
+
+  /**
+   * FEAT-303 / FEAT-335: the trim of sub-tile t's trees, where the stand is closed (crown cover over the 3 x 3 TRIM_BIN m bins
+   * round each tree) and the glade level asks; once per sub-tile, the first time the near LODs or the puffs read it.
+   */
+  private trimTile(cell: Cell, t: number): void {
+    const done = cell.trimmed, area = cell.trimArea, tl = this.pack.treeLines;
+    if (!done || done[t] || !area || !tl) return;
+    done[t] = 1;
+    const inst = this.pack.meta.instances!, d = cell.data!, trim = cell.trim!, order = cell.order!, ts = cell.tileStart!;
+    const B = TRIM_BIN, nb = Math.ceil(inst.cellSize / B), minX = inst.minX + cell.cx * inst.cellSize, minY = inst.minY + cell.cy * inst.cellSize;
+    const bin = (v: number, m: number): number => Math.max(0, Math.min(nb - 1, Math.floor((v - m) / B)));
+    for (let j = ts[t]; j < ts[t + 1]; j++) {
+      const i = order[j], x = d[i * 6], y = d[i * 6 + 1], level = tl.trimAt(x, y);
+      if (level <= 0) continue;
+      const bx = bin(x, minX), by = bin(y, minY);
+      let a = 0, cells = 0;
+      for (let q = Math.max(0, by - 1); q <= Math.min(nb - 1, by + 1); q++) for (let k = Math.max(0, bx - 1); k <= Math.min(nb - 1, bx + 1); k++) { a += area[q * nb + k]; cells++; }
+      treeTrim(level, standGate(a / (cells * B * B)), x, y, trim, i * 3);
+    }
   }
 
   /** the far meshes of a cell (built once with buffers for all its trees, then repacked and shown or hidden as the camera moves) */
@@ -892,6 +915,7 @@ export class Vegetation {
       const ty0 = Math.max(0, Math.floor((y - radius - minY) / ts)), ty1 = Math.min(TILES - 1, Math.floor((y + radius - minY) / ts));
       for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
         const t = ty * TILES + tx;
+        this.trimTile(cell, t);
         let lastKey = -1, id = -1;
         for (let j = cell.tileStart![t]; j < cell.tileStart![t + 1]; j++) {
           const i = cell.order![j], o = i * 6, ex = d[o] - x, ey = d[o + 1] - y;

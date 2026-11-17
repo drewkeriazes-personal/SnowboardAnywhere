@@ -101,6 +101,21 @@ for (let i = 0; i < tl.count && segs < 2000; i += 37) {
 check('a full line is dug into the snow', deepN > 100 && deep / deepN < -0.5 && shallow / deepN < 0.1, `mean ${(deep / deepN).toFixed(2)} m at the centre of ${deepN} full-strength segments, ${shallow} shallower than 0.5 m (lines crossing at an angle)`);
 check('the pushed-aside snow banks up on the rim', bermN / deepN > 0.8, `${bermN} of ${deepN} with a berm over 5 cm 2.5 to 5 m out`);
 
+// FEAT-335: the near index (2 m sub-cells of the segment grid) gives the same answers as every segment in the grid cell
+{
+  let seed = 7, diffT = 0, diffW = 0, n = 0;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const t0 = performance.now();
+  for (let k = 0; k < 40000; k++) {
+    const i = Math.floor(rnd() * tl.count), o = i * 6, u = rnd(), s = tl.seg;
+    const x = s[o] + (s[o + 2] - s[o]) * u + (rnd() - 0.5) * 14, y = s[o + 1] + (s[o + 3] - s[o + 1]) * u + (rnd() - 0.5) * 14;
+    diffT = Math.max(diffT, Math.abs(tl.trenchAt(x, y) - tl.withoutIndex(() => tl.trenchAt(x, y))));
+    diffW = Math.max(diffW, Math.abs(tl.wornAt(x, y) - tl.withoutIndex(() => tl.wornAt(x, y))));
+    n++;
+  }
+  check('the near index gives the same answers as the lines themselves', diffT === 0 && diffW === 0, `largest difference over ${n} points within 7 m of a line: trench ${diffT} m, wear ${diffW} (${(performance.now() - t0).toFixed(0)} ms)`);
+}
+
 // no detected trunk inside a corridor
 let inside = 0, inWall = 0, total = 0;
 for (const c of cells) for (let i = 0; i < c.length; i += 6) { total++; if (tl.inCorridor(c[i], c[i + 1])) inside++; if (tl.trenchAt(c[i], c[i + 1]) < -0.1) inWall++; }
@@ -117,6 +132,8 @@ for (let i = 0; i < size * size; i++) { px[i * 4] = 255; px[i * 4 + 1] = 60; px[
 const g = { px, size, res, minX: bx, minY: by, zBase: 0, zScale: 1, hStep: 0.25 };
 const place = (x, y, out) => tl.placeStem(x, y, out);
 const all = generateStems(g, 1), kept = generateStems(g, 1, null, place);
+const keptFull = tl.withoutIndex(() => generateStems(g, 1, null, place));
+check('the stems stand where they did without the near index (FEAT-335)', keptFull.length === kept.length && keptFull.every((v, i) => v === kept[i]), `${keptFull.length / 6} and ${kept.length / 6} stems`);
 let inTrench = 0, nearBank = 0, banked = 0;
 for (let i = 0; i < kept.length; i += 6) {
   const t = tl.trenchAt(kept[i], kept[i + 1]);
