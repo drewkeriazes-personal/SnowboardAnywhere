@@ -93,6 +93,18 @@ const ride = (n, speed, stopAt = -Infinity) => page.evaluate(([n, speed, sp, sto
   const px = sp.tree[0] - r.x, py = sp.tree[1] - r.y;
   return { dist: Math.hypot(px, py), along: px * sp.ux + py * sp.uy, side: px * sp.uy - py * sp.ux, speed: r.speed, crashed: r.crashed, onFoot: r.onFoot };
 }, [n, speed, spot, stopAt]);
+/**
+ * BUG-138: start the see-through lane afresh at the rider, as a ride that got here would have it. A reset only a few
+ * metres from the last test leaves the lane's slow look-ahead point (1.5 s to catch up) on the old line, and the
+ * tree between the two lines faded: the 5 m right case came straight after the 5 m left one, 10 m across, and read
+ * 8 to 20% changed. The lane snaps when the fade is fully off for a frame; the camera snaps behind the rider.
+ */
+const freshLane = () => page.evaluate(() => {
+  const s = window.__sim, u = s.treeFadeUniforms;
+  s.cam.snapTo(s.rider);
+  s.settings.seeThroughTrees = false; u.uFadeK.value = 0; window.__step(1, 1e-6);
+  s.settings.seeThroughTrees = true; u.uFadeK.value = 1;
+});
 const place = (back) => page.evaluate(([back, sp]) => {
   const s = window.__sim, r = s.rider;
   r.reset(sp.tree[0] - sp.ux * back, sp.tree[1] - sp.uy * back, Math.atan2(sp.ux, sp.uy));
@@ -105,9 +117,17 @@ async function onOff(label, tree) {
     const s = window.__sim, u = s.treeFadeUniforms;
     // a frame with a near-zero step: nothing moves between the two, only the fade differs
     const still = () => { window.__step(1, 1e-6); return s.renderer.domElement.toDataURL('image/png'); };
-    // off: the strength at 0 for one frame (the setting stays on, so the lane keeps its eased state)
-    s.settings.seeThroughTrees = true; u.uFadeK.value = 0; const off = still();
-    u.uFadeK.value = 1; const on = still();
+    // BUG-138: the trees sway with the wall clock (the wind reads performance.now), and the readback between the two
+    // frames takes tens of ms, so the tall thin crowns moved by a pixel or two between them and read as faded; hold
+    // the clock for the pair so only the fade differs
+    const now = performance.now, held = now.call(performance);
+    performance.now = () => held;
+    let off, on;
+    try {
+      // off: the strength at 0 for one frame (the setting stays on, so the lane keeps its eased state)
+      s.settings.seeThroughTrees = true; u.uFadeK.value = 0; off = still();
+      u.uFadeK.value = 1; on = still();
+    } finally { performance.now = now; }
     const box = (t) => {
       const cam = s.cam.camera, P = cam.position.constructor;
       const pts = [];
@@ -178,9 +198,10 @@ for (const sideM of [5, -5]) {
     const s = window.__sim, r = s.rider;
     r.reset(sp.tree[0] - sp.ux * 30 + sp.uy * sideM, sp.tree[1] - sp.uy * 30 - sp.ux * sideM, Math.atan2(sp.ux, sp.uy));
   }, [spot, sideM]);
+  await freshLane();
   await settle();
   const b = await ride(600, 8, 8);
-  const beside = await onOff(`beside_${sideM > 0 ? 'right' : 'left'}`, { main: spot.tree, side: null });
+  const beside = await onOff(`beside_${sideM > 0 ? 'left' : 'right'}`, { main: spot.tree, side: null });
   // only a plain chase view counts (a wall beside the offset line can push the camera off to one side)
   const riderX = await page.evaluate(() => { const s = window.__sim, r = s.rider, c = s.cam.camera; return new c.position.constructor(r.x, r.z + 1, -r.y).project(c).x; });
   const plain = Math.abs(riderX) < 0.25;
@@ -192,6 +213,7 @@ for (const sideM of [5, -5]) {
 {
   const sideM = Math.min(2, Math.max(0.6, 0.6 * spot.tree[4]));
   await page.evaluate(([sp, sideM]) => { const r = window.__sim.rider; r.reset(sp.tree[0] - sp.ux * 30 + sp.uy * sideM, sp.tree[1] - sp.uy * 30 - sp.ux * sideM, Math.atan2(sp.ux, sp.uy)); }, [spot, sideM]);
+  await freshLane();
   await settle();
   const b = await ride(600, 8, -2.5);
   const over = await onOff('crown_over_rider', { main: spot.tree, side: null });
