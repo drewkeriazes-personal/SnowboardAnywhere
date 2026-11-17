@@ -40,7 +40,7 @@ try {
     const r = spawnSync('git', ['push', 'origin', `HEAD:${ctx.pr.headRefName}`], { cwd: repo, stdio: 'inherit', env: { ...process.env, [PUSH_GUARD]: '1' } });
     if (r.status !== 0) throw new Stop('git push failed; nothing posted');
   }
-  const url = post({ repo, sha: ctx.SHA, prNumber: ctx.pr.number, prUrl: ctx.pr.url, owner: ctx.owner, desc: res.desc, body: res.body });
+  const url = post({ repo, sha: ctx.SHA, prNumber: ctx.pr.number, prUrl: ctx.pr.url, trusted: ctx.trusted, desc: res.desc, body: res.body });
   console.log(`\nlocal render-budgets passed on ${res.gpu}. Status render-budgets/local on ${ctx.SHA.slice(0, 12)}${ctx.needPush ? ' (pushed)' : ''}; report: ${url}`);
   console.log(`${ctx.L.secs()} s`);
 } catch (e) {
