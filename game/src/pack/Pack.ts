@@ -191,7 +191,11 @@ export class Pack {
     if (baked && this.meta.treeLines) {
       try {
         const r = await fetch(`${this.baseUrl}/${this.meta.treeLines.file}`);
-        if (r.ok) file = (await r.json()) as BakedTreeLines; else console.warn(`tree lines: ${this.meta.treeLines.file} HTTP ${r.status}, planning from the runs`);
+        if (r.ok) {
+          const j = (await r.json()) as BakedTreeLines;
+          if (j.version === 1 && Array.isArray(j.lines)) file = j;
+          else console.warn(`tree lines: ${this.meta.treeLines.file} has an unknown shape or version, planning from the runs`);
+        } else console.warn(`tree lines: ${this.meta.treeLines.file} HTTP ${r.status}, planning from the runs`);
       } catch (e) { console.warn(`tree lines: ${this.meta.treeLines.file} did not load, planning from the runs`, e); }
     }
     const tl = new TreeLines(this.features.runs, file);
