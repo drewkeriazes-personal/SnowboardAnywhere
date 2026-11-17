@@ -100,6 +100,14 @@ const STRIP_FULL = 110, STRIP_NONE = 170, STRIP_K = 0.7;
 /** trim round a tree line: LINE_TRIM within LINE_NEAR m of its centre, none past LINE_FAR */
 const LINE_NEAR = 6, LINE_FAR = 22, LINE_TRIM = 1;
 const TRIM_TILE = 256, TRIM_RES = 8, TRIM_N = TRIM_TILE / TRIM_RES + 1;
+/**
+ * FEAT-335: the near index. Each segment grid cell is split, on first use, into SUB m sub-cells, each listing only the
+ * segments whose trench reach (half-width, wall and berm) comes within SUB_PAD of its centre, so it may touch it: `trenchAt`
+ * and `wornAt` loop over those few (usually 0 to 3, against about 16 in the whole cell) and give the same answers.
+ */
+const SUB = 2, SUBS = GRID / SUB, SUB_PAD = SUB * Math.SQRT1_2;
+/** cells kept in the near index (about 0.9 kB each on Vail, so up to about 14 MB), the oldest dropped first */
+const SUB_CAP = 16384;
 
 /** integer hash to 0..1 */
 function h01(a: number, b: number, c: number): number {
@@ -256,6 +264,10 @@ export class TreeLines {
   private readonly runGrid = new Map<number, number[]>();
   private readonly trimTiles = new Map<number, Float32Array>();
   private canopy: CanopyAt | null = null;
+  /** FEAT-335: the near index per segment grid cell: sub-cell t lists ids[start[t] .. start[t + 1]) */
+  private readonly subs = new Map<number, { start: Uint16Array; ids: Int32Array }>();
+  /** FEAT-335: grid cells indexed so far (the checks) */
+  subsMade = 0;
 
   /** plans the lines from the runs; `finish` (after `avoid`, when the pack has its trees) makes them count */
   constructor(runs: RunFeature[]) {
@@ -410,11 +422,66 @@ export class TreeLines {
       this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + TRENCH_WALL + BERM_W);
     }
     this.length = len;
-    this.trimTiles.clear();
+    this.trimTiles.clear(); this.subs.clear(); this.lastKey = NaN;
   }
 
   /** the forest the lines are gated by (`Pack.forestGate`); without one they count everywhere */
   setCanopy(c: CanopyAt | null): void { this.canopy = c; }
+
+  /** FEAT-335: the segments that may reach (x, y), as `ids[qA .. qB)` in `qIds` (empty when none) */
+  private nearIds(x: number, y: number): void {
+    const gx = Math.floor(x / GRID), gy = Math.floor(y / GRID), key = gy * 100003 + gx;
+    // the terrain walks its vertices along rows, so the last cell is usually the one asked again
+    let e = key === this.lastKey ? this.lastSub : this.subs.get(key);
+    if (e === undefined) {
+      const ids = this.grid.cells.get(key);
+      if (ids) {
+        if (this.subs.size >= SUB_CAP) this.subs.delete(this.subs.keys().next().value!);
+        e = this.indexCell(gx, gy, ids); this.subs.set(key, e);
+      } else e = null;
+    }
+    this.lastKey = key; this.lastSub = e;
+    if (e === null) { this.qA = this.qB = 0; return; }
+    const sx = Math.min(SUBS - 1, Math.floor((x - gx * GRID) / SUB)), sy = Math.min(SUBS - 1, Math.floor((y - gy * GRID) / SUB)), t = sy * SUBS + sx;
+    this.qIds = e.ids; this.qA = e.start[t]; this.qB = e.start[t + 1];
+  }
+  private qIds: Int32Array = new Int32Array(0);
+  private lastKey = NaN;
+  private lastSub: { start: Uint16Array; ids: Int32Array } | null | undefined = undefined;
+  /** the segments near (x, y) into `qIds[qA .. qB)`: the near index, or every one in the grid cell inside `withoutIndex` */
+  private near(x: number, y: number): void {
+    if (!this.full) { this.nearIds(x, y); return; }
+    const ids = this.grid.at(x, y);
+    this.qIds = ids ? Int32Array.from(ids) : new Int32Array(0); this.qA = 0; this.qB = this.qIds.length;
+  }
+  private qA = 0;
+  private qB = 0;
+
+  /** FEAT-335: grid cell (gx, gy)'s near index from its segments (`ids`) */
+  private indexCell(gx: number, gy: number, ids: number[]): { start: Uint16Array; ids: Int32Array } {
+    const s = this.seg, n = SUBS * SUBS, start = new Uint16Array(n + 1);
+    // (sub-cell, segment) pairs into the scratch, counted per sub-cell, then laid out by sub-cell
+    let pairs = this.pairBuf, np = 0;
+    for (const i of ids) {
+      const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL + BERM_W + SUB_PAD;
+      const i0 = Math.max(0, Math.floor((Math.min(s[o], s[o + 2]) - r - gx * GRID) / SUB)), i1 = Math.min(SUBS - 1, Math.floor((Math.max(s[o], s[o + 2]) + r - gx * GRID) / SUB));
+      const j0 = Math.max(0, Math.floor((Math.min(s[o + 1], s[o + 3]) - r - gy * GRID) / SUB)), j1 = Math.min(SUBS - 1, Math.floor((Math.max(s[o + 1], s[o + 3]) + r - gy * GRID) / SUB));
+      for (let j = j0; j <= j1; j++) for (let k = i0; k <= i1; k++) {
+        if (segD2(gx * GRID + (k + 0.5) * SUB, gy * GRID + (j + 0.5) * SUB, s[o], s[o + 1], s[o + 2], s[o + 3]) >= r * r) continue;
+        if (np + 2 > pairs.length) { const g = new Int32Array(pairs.length * 2); g.set(pairs); pairs = this.pairBuf = g; }
+        const t = j * SUBS + k;
+        pairs[np++] = t; pairs[np++] = i; start[t + 1]++;
+      }
+    }
+    for (let t = 0; t < n; t++) start[t + 1] += start[t];
+    const flat = new Int32Array(np >> 1), fill = this.fillBuf;
+    fill.set(start.subarray(0, n));
+    for (let q = 0; q < np; q += 2) flat[fill[pairs[q]]++] = pairs[q + 1];
+    this.subsMade++;
+    return { start, ids: flat };
+  }
+  private pairBuf = new Int32Array(1024);
+  private readonly fillBuf = new Uint16Array(SUBS * SUBS);
 
   /** plans one line from (x, y): `latT` is the offset (signed, m) it keeps near, `depth` 1 for a fork's branch */
   private walk(l: Line, ri: number, k: number, x: number, y: number, latT: number, str: number, len: number, depth: number, openM = 0): void {
@@ -455,11 +522,13 @@ export class TreeLines {
    *  segments' share (an entrance leaving the cat track) goes to `rawOpen` */
   private rawAt(x: number, y: number): number {
     this.rawOpen = 0;
-    const ids = this.grid.at(x, y);
-    if (!ids) return 0;
+    this.near(x, y);
+    const ids = this.qIds, a = this.qA, e = this.qB;
+    if (a === e) return 0;
     const s = this.seg;
     let w = 0;
-    for (const i of ids) {
+    for (let q = a; q < e; q++) {
+      const i = ids[q];
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
       if (str <= w && (!this.open[i] || str <= this.rawOpen)) continue;
       const r = hw + EDGE, d2 = segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
@@ -482,11 +551,13 @@ export class TreeLines {
    * line's trench. The canopy gate scales the forest's part; an open segment's trench (`open`) counts as it is.
    */
   private trenchRaw(x: number, y: number, gate: (x: number, y: number) => number): number {
-    const ids = this.grid.at(x, y);
-    if (!ids) return 0;
+    this.near(x, y);
+    const ids = this.qIds, a = this.qA, e = this.qB;
+    if (a === e) return 0;
     const s = this.seg;
     let dig = 0, digOpen = 0, berm = 0, bermOpen = 0;
-    for (const i of ids) {
+    for (let q = a; q < e; q++) {
+      const i = ids[q];
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
       const rim = hw + TRENCH_WALL, r = rim + BERM_W;
       const d2 = segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
@@ -520,6 +591,11 @@ export class TreeLines {
     return w > 0 ? Math.max(w * this.gate(x, y), this.rawOpen) : 0;
   }
 
+  /** FEAT-335: `f` run with every query looping over all the segments in the grid cell instead of the near index (the
+   *  checks hold the index to the same answers) */
+  withoutIndex<T>(f: () => T): T { this.full = true; try { return f(); } finally { this.full = false; } }
+  private full = false;
+
   /**
    * Where a generated stem planned at (x, y) stands, written into `out`; false when it has nowhere to go. The forest keeps
    * its count (so it looks the same from a distance): a stem whose spot is in a trench, or within STEM_GAP of its rim, moves
@@ -527,6 +603,9 @@ export class TreeLines {
    * bank. It is left out only when both ways out land in another line's trench (where lines cross).
    */
   placeStem(x: number, y: number, out: number[]): boolean {
+    // FEAT-335: most stems are nowhere near a trench; the near index says so with no segment loop
+    this.near(x, y);
+    if (this.qA === this.qB) { out[0] = x; out[1] = y; return true; }
     // out to the nearer bank first; where that lands in another line's trench (lines crossing or braided), the other bank
     return this.pushOut(x, y, out, false) || this.pushOut(x, y, out, true);
   }
@@ -536,11 +615,12 @@ export class TreeLines {
     out[0] = x; out[1] = y;
     const s = this.seg, jit = STEM_JITTER * h01(Math.round(x * 16), Math.round(y * 16), 77);
     for (let pass = 0; pass < 4; pass++) {
-      const px = out[0], py = out[1], ids = this.grid.at(px, py);
-      if (!ids) return true;
+      const px = out[0], py = out[1];
+      this.near(px, py);
+      const ids = this.qIds, qe = this.qB;
       let worst = 0, cx = 0, cy = 0, need = 0, seg = -1;
-      for (const i of ids) {
-        const o = i * LINE_SEG;
+      for (let q = this.qA; q < qe; q++) {
+        const o = ids[q] * LINE_SEG;
         if (s[o + 5] < STEM_FAINT) continue; // dug under 5 cm: the woods close in
         const r = s[o + 4] + TRENCH_WALL + STEM_GAP;
         const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
@@ -561,9 +641,9 @@ export class TreeLines {
       out[0] = cx + ux * (need + jit); out[1] = cy + uy * (need + jit);
     }
     // still in a trench after the moves: crossing lines with no room between
-    const ids = this.grid.at(out[0], out[1]);
-    if (ids) for (const i of ids) {
-      const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL;
+    this.near(out[0], out[1]);
+    for (let q = this.qA; q < this.qB; q++) {
+      const o = this.qIds[q] * LINE_SEG, r = s[o + 4] + TRENCH_WALL;
       if (s[o + 5] >= STEM_FAINT && segD2(out[0], out[1], s[o], s[o + 1], s[o + 2], s[o + 3]) < r * r) return false;
     }
     return true;
@@ -571,11 +651,10 @@ export class TreeLines {
 
   /** (x, y) is inside a corridor's half-width, not counting the faint ends (the checks: no detected trunk in one) */
   inCorridor(x: number, y: number): boolean {
-    const ids = this.grid.at(x, y);
-    if (!ids) return false;
+    this.near(x, y);
     const s = this.seg;
-    for (const i of ids) {
-      const o = i * LINE_SEG, r = s[o + 4];
+    for (let q = this.qA; q < this.qB; q++) {
+      const o = this.qIds[q] * LINE_SEG, r = s[o + 4];
       if (s[o + 5] >= 0.15 && segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]) < r * r) return true;
     }
     return false;
