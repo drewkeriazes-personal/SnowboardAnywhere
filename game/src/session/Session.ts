@@ -94,6 +94,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     const prefetch = new Prefetch();
     const cam = new ChaseCamera(pack, window.innerWidth / window.innerHeight);
     cam.collider = collider; // BUG-032: keep the chase camera out of trees
+    cam.absorb = riderView.absorb; // BUG-065: follow the smoothed ground on a mogul field
     const controls = new Controls(canvas);
     const touch = TouchControls.wanted(params.touch) ? new TouchControls(controls) : null;
     let csmSize = 0;

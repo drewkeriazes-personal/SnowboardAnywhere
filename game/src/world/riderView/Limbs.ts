@@ -12,9 +12,9 @@ import { balanceArms } from './BodyPose';
 import { skateLegs } from './SkateLegs';
 
 /** FK from the blended pose: pelvis, spine, head and arms. Leg angles only stand when seated. */
-export function applyFK(v: RiderView, p: Pose, xOff: number, zOff = 0): void {
+export function applyFK(v: RiderView, p: Pose, xOff: number, zOff = 0, yOff = 0): void {
   const B = v.rig.bones;
-  B.Hips.position.set(xOff, p.hipsY, zOff);
+  B.Hips.position.set(xOff, p.hipsY + yOff, zOff);
   // pitch convention in the tables: positive = bend toward the face; +X rotation tips +Y toward
   // +Z (the back), so pitches are negated. The waist bend spreads over three spine bones.
   B.Hips.rotation.set(-p.hipsRot[0], p.hipsRot[1], p.hipsRot[2]);
@@ -162,7 +162,7 @@ export function settleBody(v: RiderView, r: Rider, dt: number, tuck: boolean, se
   p.hipsY += Math.sin(now * 2.1) * 0.004; p.torso[0] += Math.sin(now * 1.3) * 0.015;
   if (v.discipline === 'board') balanceArms(v, r, dt, free);
   // BUG-047: the hips sit over the loaded end and never below the deck under them
-  let hipZ = 0;
+  let hipZ = 0, knees = 0;
   if (v.discipline === 'board' && !seated) {
     // BUG-056: on a press the hips move over the loaded end ahead of the bend (a full lean bends it 0.6)
     const leanH = free && r.onGround ? fl * r.predictLean(v.leadHips) : 0;
@@ -178,8 +178,10 @@ export function settleBody(v: RiderView, r: Rider, dt: number, tuck: boolean, se
     const tipRise = Math.max(0, BOARD_HALF + v.flexDir * hipZ) * Math.sin(Math.max(0, v.tipF.x)); // the hips' distance from the loaded tip
     const floor = deckY(v.rig, hipZ) + 0.022 + HIP_CLEAR + tipRise;
     if (p.hipsY < floor) p.hipsY = floor;
+    // BUG-065: the knees soak up mogul bumps (world/BumpAbsorb.ts), never through the deck
+    knees = free ? Math.max(floor - p.hipsY, v.absorb.hips) : 0;
   }
-  applyFK(v, p, -pv, hipZ);
+  applyFK(v, p, -pv, hipZ, knees);
 
   // ---- legs: boots pinned to the bindings, or on a chair the board hangs from the feet
   const rig = v.rig;

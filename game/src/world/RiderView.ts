@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Rider } from '../sim/Rider';
 import type { Pack } from '../pack/Pack';
+import { BumpAbsorb } from './BumpAbsorb';
 import type { Collider } from '../sim/Collider';
 import { Ragdoll, RAGDOLL_RECOVER } from './Ragdoll';
 import { clonePose, defaultMaterials, POSES, SKI_POSES, type Pose, type RiderMaterials } from './RiderModel';
@@ -111,6 +112,8 @@ export class RiderView {
   readonly v4 = new THREE.Vector3();
   // ---- on foot (FEAT-067)
   pack: Pack | null = null;
+  /** BUG-065: the legs soak up mogul bumps; the board sits on the bumps as drawn */
+  readonly absorb = new BumpAbsorb();
   /** FEAT-046: crash tumble, and the blend back to the animated pose after it (s left) */
   private ragdoll: Ragdoll | null = null;
   recoverT = 0;
@@ -228,6 +231,7 @@ export class RiderView {
     Object.assign(this.pose, clonePose(this.poses.neutral));
     this.flex = 0; this.flexV = 0;
     this.visLive = false; // BUG-056: the follows snap on the next frame
+    this.absorb.reset();
     this.wasSeated = false;
     this.footActive = false; this.gaitLive = false;
     this.setFirstPerson(this.fp);
@@ -299,7 +303,8 @@ export class RiderView {
       return;
     }
     if (this.footActive) leaveFoot(this);
-    this.group.position.set(r.x, r.z, -r.y);
+    this.absorb.update(seated ? null : this.pack, r, dt);
+    this.group.position.set(r.x, r.z + this.absorb.boardOff, -r.y);
     // ---- orientation: board forward along its yaw (the heading, swung across the travel direction
     // while braking), up along the ground normal (toward world up in the air)
     const yaw = seated ? r.heading : r.boardYaw + (fl < 0 ? Math.PI : 0);

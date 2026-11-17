@@ -1,6 +1,7 @@
 // Mogul check (FEAT-059, FEAT-147): the bump function (size from the slope, spread, spacing, pattern
 // changes down the run, clamp, creep, fall direction) and the
-// Rider physics over a mogul field on exact planes (no pack, no browser). Riding a 25 degree bump run
+// Rider physics over a mogul field on exact planes (no pack, no browser). BUG-065: the snow tracks lie on the
+// bumps as the 1 m mesh draws them, and the legs and the chase camera soak the bumps up. Riding a 25 degree bump run
 // straight must throw the rider off the snow and bleed speed against the flat plane beside it; a
 // field that appears under the rider (its tile loading late) must not drop or fling them.
 // node tools/mogulcheck.mjs        (exit code 1 if a check fails)
@@ -19,6 +20,9 @@ const bundle = async (entry, name) => {
 };
 const { mogulHeight, mogulHeightGrad, mogulSize, fallFrom, downhillFrom, MOGUL_MAX_AMP, MOGUL_CELL } = await bundle(['terrain', 'Moguls.ts'], 'moguls.mjs');
 const { Rider } = await bundle(['sim', 'Rider.ts'], 'rider.mjs');
+const { BumpAbsorb } = await bundle(['world', 'BumpAbsorb.ts'], 'absorb.mjs');
+const { ChaseCamera } = await bundle(['world', 'ChaseCamera.ts'], 'camera.mjs');
+const { DrawnGround } = await bundle(['terrain', 'drawnGround.ts'], 'drawn.mjs');
 
 let fails = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ': ' + detail : ''}`); if (!ok) fails++; };
@@ -205,6 +209,81 @@ function ride(deg, amp, secs, onStep = null) {
   const steepFlat = ride(33, 0, 12);
   check('steep big-bump run is at least 10% slower than a smooth 33 deg plane', steep.meanSpeed < steepFlat.meanSpeed * 0.9,
     `${steep.meanSpeed.toFixed(1)} vs ${steepFlat.meanSpeed.toFixed(1)} m/s`);
+}
+
+
+// ---------------------------------------------------------------- BUG-065: drawn bumps, legs and camera
+/** a plane falling to -y at `deg` with a mogul field of `amp`, as a pack: what DrawnGround and BumpAbsorb read */
+function bumpPack(deg, amp) {
+  const SL = Math.tan(deg * Math.PI / 180);
+  const runIn = (y) => { const t = Math.min(1, Math.max(0, (-10 - y) / 5)); return t * t * (3 - 2 * t); };
+  const A = (_x, y) => amp * runIn(y);
+  const bump = (x, y) => mogulHeight(x, y, A(x, y), 0, -SL, 0);
+  const h = (x, y) => SL * y + bump(x, y);
+  return {
+    SL, coarseFallbacks: 0, moguls: {}, mogulScale: 1, mogulCreep: 0, decks: [],
+    mask: { sample: (_x, _y, o) => { const m = o ?? [0, 0, 0, 0]; m.fill(0); return m; } },
+    meta: { terrain: { fine: { res: 1, minX: -5000, minY: -5000 } }, zRange: [-5000, 5000] }, fine: { meta: { res: 1 }, contains: () => true },
+    mogulAmp: A, bumpAt: bump, terrainHeight: h, groundHeight: h,
+    groundNormal: (x, y, o) => {
+      const e = 0.25, dx = (h(x + e, y) - h(x - e, y)) / (2 * e), dy = (h(x, y + e) - h(x, y - e)) / (2 * e), l = Math.hypot(dx, dy, 1);
+      const n = o ?? [0, 0, 0]; n[0] = -dx / l; n[1] = -dy / l; n[2] = 1 / l; return n;
+    },
+  };
+}
+{
+  // the snow tracks' height is the mesh's: the 1 m vertices carry the exact bump, the triangles (split along
+  // (i, j) to (i + 1, j + 1) like Terrain.ts) interpolate it; the exact function is up to 13 cm off at 16 deg
+  const p = bumpPack(16, 0.61), dg = new DrawnGround(p);
+  let atVert = 0, vsMesh = 0, vsExact = 0;
+  for (let k = 0; k < 4000; k++) {
+    const x = 7.3 + (k % 63) * 0.71, y = -30 - Math.floor(k / 63) * 0.83;
+    const i = Math.floor(x + 5000), j = Math.floor(y + 5000), tx = x + 5000 - i, ty = y + 5000 - j;
+    const v = (di, dj) => p.terrainHeight(i - 5000 + di, j - 5000 + dj);
+    const mesh = tx >= ty ? v(0, 0) * (1 - tx) + v(1, 0) * (tx - ty) + v(1, 1) * ty : v(0, 0) * (1 - ty) + v(0, 1) * (ty - tx) + v(1, 1) * tx;
+    // the plane itself is linear, so the mesh of the base is exact and only the bumps differ
+    vsMesh = Math.max(vsMesh, Math.abs(dg.height(x, y) - mesh));
+    vsExact = Math.max(vsExact, Math.abs(p.groundHeight(x, y) - mesh));
+    atVert = Math.max(atVert, Math.abs(dg.height(Math.round(x), Math.round(y)) - p.groundHeight(Math.round(x), Math.round(y))));
+  }
+  check('drawn snow: the tracks sit on the bumps the mesh draws (within 1 mm)', vsMesh < 1e-3, `${(vsMesh * 100).toFixed(2)} cm off, the exact bumps ${(vsExact * 100).toFixed(1)} cm`);
+  check('drawn snow: the same as the exact bumps at the vertices', atVert < 1e-6, `${atVert.toExponential(1)} m`);
+  const flat = bumpPack(16, 0), dgf = new DrawnGround(flat);
+  check('drawn snow: off the fields it is the ground height', Math.abs(dgf.height(3.3, -40.6) - flat.groundHeight(3.3, -40.6)) < 1e-9);
+}
+/** ride straight (or weaving) down a bump plane for 12 s at 60 Hz, the rider view's absorb and the chase camera
+ *  following (or the camera without the absorb); vertical acceleration of the board and of the body (mean
+ *  |d2z/dt2| after 3 s), and the camera's peak yaw rate */
+function rideView(deg, amp, steer, absorb) {
+  const p = bumpPack(deg, amp), r = new Rider(p, null), ab = new BumpAbsorb(), cam = new ChaseCamera(p, 16 / 9);
+  cam.absorb = absorb ? ab : null;
+  r.reset(0, 0, Math.PI, 1);
+  const dt = 1 / 60, board = [], body = [], yaws = [], dir = cam.camera.position.clone();
+  const input = { ...inp };
+  for (let t = 0; t < 12; t += dt) {
+    input.steer = steer * Math.sign(Math.sin(t * 1.5));
+    r.update(dt, input);
+    if (r.crashed > 0) break;
+    ab.update(p, r, dt); cam.update(r, dt, false);
+    if (t < 3) continue;
+    board.push(r.z); body.push(r.z + (absorb ? ab.boardOff + ab.hips : 0));
+    cam.camera.getWorldDirection(dir); yaws.push(Math.atan2(dir.x, -dir.z));
+  }
+  const acc = (a) => { let s = 0; for (let i = 2; i < a.length; i++) s += Math.abs(a[i] - 2 * a[i - 1] + a[i - 2]) / (dt * dt); return s / Math.max(1, a.length - 2); };
+  let peak = 0;
+  for (let i = 1; i < yaws.length; i++) peak = Math.max(peak, Math.abs(Math.atan2(Math.sin(yaws[i] - yaws[i - 1]), Math.cos(yaws[i] - yaws[i - 1]))) / dt);
+  return { board: acc(board), body: acc(body), yawPeak: peak * 180 / Math.PI };
+}
+for (const [deg, amp, steer, bodyShare] of [[16, 0.61, 0, 0.3], [16, 0.61, 0.25, 0.3], [25, 0.7, 0, 0.6]]) {
+  const on = rideView(deg, amp, steer, true), off = rideView(deg, amp, steer, false);
+  const name = `${deg} deg bump run${steer ? ', weaving' : ''}`;
+  check(`${name}: the legs soak up the bumps (body jolts under ${bodyShare * 100}% of the board's)`, on.body < on.board * bodyShare,
+    `${on.body.toFixed(1)} vs ${on.board.toFixed(1)} m/s2`);
+  // weaving, the turns themselves swing the camera: there the bumps may add a quarter to the smooth plane's swing
+  const smooth = steer ? rideView(deg, 0, steer, true).yawPeak : 0;
+  check(`${name}: the chase camera turns ${steer ? 'about as hard as on a smooth plane' : 'at most half as hard as without the absorb'}`,
+    steer ? on.yawPeak <= 1.25 * smooth + 1 : on.yawPeak <= 0.5 * off.yawPeak + 1,
+    `peak ${on.yawPeak.toFixed(0)} vs ${off.yawPeak.toFixed(0)} deg/s without the absorb${steer ? `, ${smooth.toFixed(0)} on a smooth plane` : ''}`);
 }
 
 fs.rmSync(dir, { recursive: true, force: true });
