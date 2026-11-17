@@ -10,7 +10,7 @@ import { SlowSigns } from '../world/SlowSigns';
 import { StaticPeople, parsePeopleMode } from '../world/StaticPeople';
 import { Clouds } from '../world/Clouds';
 import { Snow } from '../world/Snow';
-import { Vegetation, setLod0Reach } from '../world/Vegetation';
+import { Vegetation, setLod0Reach, setStemClumps } from '../world/Vegetation';
 import { Shrubs } from '../world/Shrubs';
 import { TreeFade } from '../world/TreeFade';
 import { Rocks } from '../world/Rocks';
@@ -57,6 +57,7 @@ export function buildWorld(ctx: GameContext) {
   const collider = new Collider();
   const veg = new Vegetation(pack, collider);
   kitUniforms.uTrimK.value = params.notrim ? 0 : 1; // FEAT-303: module state, as the other kit uniforms
+  setStemClumps(!params.evenstems); // FEAT-337
   const treeFade = new TreeFade();
   add('trees', veg.group);
   const shrubs = new Shrubs(pack, collider, veg.kit); // FEAT-159: willow, juniper, sagebrush, oak and young conifers, buried by the snowpack
