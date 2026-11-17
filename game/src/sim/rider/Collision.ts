@@ -45,7 +45,7 @@ export function rideCollide(r: Rider): void {
             const rise = Math.max(0, h), vz = Math.sqrt(2 * G * rise);
             const k = Math.sqrt(Math.max(0, spdNow * spdNow - vz * vz)) / spdNow * (1 - R.loss * headOn);
             r.vx *= k; r.vy *= k;
-            r.vz = Math.max(r.vz, vz);
+            r.vz += vz; // on top of the speed along the snow: a rock on a 30 deg slope lifts you its height off the slope, not off flat ground
             r.rockOver = Math.min(R.scrapeMax, Math.max(R.scrapeMin, 2 * hit.radius / spdNow));
           }
           r.onGround = false; r.airTime = 0; r.spin = 0; r.flip = 0; r.flipRate = 0;

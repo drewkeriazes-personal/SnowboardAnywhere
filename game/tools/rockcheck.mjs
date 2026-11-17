@@ -1,7 +1,7 @@
 // Rock check (BUG-141, BUG-149), no pack, no browser.
-// Colliders: builds each rock variant's geometry as world/Rocks.ts does, places it the way Rocks.ts does (sunk and
-// scaled by type, on flat snow) and checks the collider stands no higher than the drawn rock and that a rock
-// that barely shows (all talus) has none. Before BUG-149 every collider stood 0.6 times the rock's size up.
+// Colliders: builds each rock variant's geometry and places it with world/Rocks.ts's placeRock on flat snow and on
+// slopes, and checks the collider covers the part drawn above the snow, tops out at its highest point and that a
+// rock that barely shows has none. Before BUG-149 every collider stood 0.6 times the rock's size up round the centre.
 // Riding: rides straight and slanting into one rampable rock on an exact flat plane through the rider's own
 // 60 fps update loop, in each jump mode. Realistic: no rock ever lifts you above its top; with the speed and a
 // gentle enough face on your line you ride up and over it (scraping), paying the climb out of your speed; too slow
@@ -19,54 +19,69 @@ const src = path.join(GAME, 'src').replace(/\\/g, '/');
 await build({
   stdin: {
     contents: `export { Rider } from '${src}/sim/Rider.ts'; export { Collider } from '${src}/sim/Collider.ts'; export { ROCK_RAMP } from '${src}/sim/rider/tuning.ts';
-      export { makeRock, rockCollider, rockSeed, VARIANTS, SINK, HEIGHT, ROCK_MIN_TOP } from '${src}/world/Rocks.ts';`,
+      export { makeRock, rockPoints, placeRock, rockCollider, rockSeed, VARIANTS, ROCK_MIN_TOP } from '${src}/world/Rocks.ts'; export { Matrix4 } from 'three';`,
     resolveDir: GAME, loader: 'ts',
   },
   bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error',
 });
-const { Rider, Collider, ROCK_RAMP, makeRock, rockCollider, rockSeed, VARIANTS, SINK, HEIGHT, ROCK_MIN_TOP } = await import(pathToFileURL(out).href);
+const { Rider, Collider, ROCK_RAMP, makeRock, rockPoints, placeRock, rockCollider, rockSeed, VARIANTS, ROCK_MIN_TOP, Matrix4 } = await import(pathToFileURL(out).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
 const m = (x) => `${x.toFixed(2)} m`;
 
 // ---- colliders against the drawn rocks (BUG-149)
-const TYPES = ['outcrop', 'boulder', 'talus'];
-for (let t = 0; t < 3; t++) {
-  let worst = -Infinity, buriedWithCollider = 0, count = 0, drawnMax = 0;
-  for (let v = 0; v < VARIANTS; v++) {
-    const g = makeRock(rockSeed(v)), pos = g.getAttribute('position');
-    let gy = -Infinity;
-    for (let i = 0; i < pos.count; i++) gy = Math.max(gy, pos.getY(i));
-    g.computeBoundingBox();
-    for (const size of [1, 1.5, 2.5, 4, 6, 8, 12]) {
-      const drawn = size * (gy * HEIGHT[t] - SINK[t]); // the highest vertex above the snow, upright on flat snow
-      drawnMax = Math.max(drawnMax, drawn);
-      const c = rockCollider(size, t, g.boundingBox.max.y);
-      if (c) { worst = Math.max(worst, c.top - drawn); count++; }
-      if (c && drawn < ROCK_MIN_TOP) buriedWithCollider++;
+// every variant of each type, sizes 1.5, 2.5 (Vail's median) and 6, spun 8 ways, on flat snow and on 15, 30 and
+// 40 deg slopes, placed by Rocks.ts's own placeRock. Points standing 0.2 m or more above the snow must sit inside the
+// collider (within the rider's body radius of it), its top must be the highest point drawn, and a rock showing less
+// than ROCK_MIN_TOP has none. The old collider was 0.6 x size up round the centre whatever showed.
+const TYPES = ['outcrop', 'boulder', 'talus'], M = new Matrix4(), FIT = { x: 0, y: 0, radius: 0, top: 0, base: 0 };
+const PTS = Array.from({ length: VARIANTS }, (_, v) => rockPoints(makeRock(rockSeed(v))));
+for (const deg of [0, 15, 30, 40]) {
+  const a = deg * Math.PI / 180, nn = [0, Math.sin(a), Math.cos(a)], t = Math.tan(a); // the snow falls toward +y: z = -t * y
+  for (let ty = 0; ty < 3; ty++) {
+    let rocks = 0, withCol = 0, pts = 0, outside = 0, topErr = 0, shown = 0, missing = 0;
+    for (let v = 0; v < VARIANTS; v++) for (const size of [1.5, 2.5, 6]) for (let k = 0; k < 8; k++) {
+      rocks++;
+      placeRock(M, 0, 0, 0, size, k * Math.PI / 4, ty, nn);
+      const c = rockCollider(PTS[v], M, 0, 0, 0, nn, FIT), e = M.elements, P = PTS[v];
+      let most = 0, hi = -Infinity;
+      for (let i = 0; i < P.length; i += 3) {
+        const px = e[0] * P[i] + e[4] * P[i + 1] + e[8] * P[i + 2] + e[12], pz = e[1] * P[i] + e[5] * P[i + 1] + e[9] * P[i + 2] + e[13];
+        const py = -(e[2] * P[i] + e[6] * P[i + 1] + e[10] * P[i + 2] + e[14]), above = pz + t * py;
+        most = Math.max(most, above);
+        if (above >= 0.05) hi = Math.max(hi, pz);
+        if (above < 0.2) continue;
+        pts++;
+        if (!c || Math.hypot(px - c.x, py - c.y) > c.radius + 0.4) outside++;
+      }
+      if (most >= ROCK_MIN_TOP) shown++;
+      if (most >= ROCK_MIN_TOP && !c) missing++;
+      if (c) { withCol++; topErr = Math.max(topErr, Math.abs(c.top - hi)); }
     }
+    check(`${TYPES[ty]} on ${deg} deg snow: the collider covers the drawn rock`, missing === 0 && outside <= 0.02 * pts && topErr < 1e-3,
+      `${shown} of ${rocks} show, ${withCol} colliders, ${outside} of ${pts} points 0.2 m up outside one, top off by ${m(topErr)}`);
   }
-  check(`${TYPES[t]} colliders no higher than the drawn rock`, worst <= 0.01 && buriedWithCollider === 0, `${count} with a collider, worst ${count ? m(worst) : '-'} above, tallest drawn ${m(drawnMax)} (the old collider stood 0.6 x size: ${m(0.6 * 2.5)} on a median 2.5 m rock)`);
-}
-{
-  let talus = 0;
-  for (let v = 0; v < VARIANTS; v++) { const g = makeRock(rockSeed(v)); g.computeBoundingBox(); for (const size of [1, 2.5, 6, 12]) if (rockCollider(size, 2, g.boundingBox.max.y)) talus++; }
-  check('buried talus has no collider', talus === 0, `${talus} talus colliders`);
 }
 
 // ---- riding into a rock (BUG-141)
+/** an exact plane falling toward +y at `deg` degrees */
+function plane(deg) {
+  const t = Math.tan(deg * Math.PI / 180), k = 1 / Math.hypot(t, 1);
+  return { mask: null, coarseFallbacks: 0, groundHeight: (x, y) => -t * y, groundNormal: (x, y, o = [0, 0, 1]) => { o[0] = 0; o[1] = t * k; o[2] = k; return o; } };
+}
 const flat = { mask: null, coarseFallbacks: 0, groundHeight: () => 0, groundNormal: (x, y, o = [0, 0, 1]) => { o[0] = 0; o[1] = 0; o[2] = 1; return o; } };
 const FRAME = 1 / 60;
 const input = () => ({ steer: 0, tuck: false, brake: false, jumpHeld: false, jumpReleased: false, grab: false, squat: false, lean: 0 });
 
 /** ride north at `v` m/s into a rock `h` m tall and `rad` m across, its centre `off` m to the side (0 square).
  *  Returns the peak height above the snow (m), the speed kept just after the hit, the hit kind and whether it threw you. */
-function ride(mode, v, h, { off = 0, rad = 1 } = {}) {
+function ride(mode, v, h, { off = 0, rad = 1, deg = 0 } = {}) {
   let scrapeT = 0;
-  const col = new Collider(), at = 6 + rad;
-  col.add(off, at, rad, -1, h, 1);
-  const r = new Rider(flat, col);
+  const col = new Collider(), at = 6 + rad, t = Math.tan(deg * Math.PI / 180), c = Math.cos(deg * Math.PI / 180);
+  const hitAt = at - rad - 0.4; // the snow where you meet it: `h` is its height above you there
+  col.add(off, at, rad, -t * at - 1, -t * hitAt + h, 1);
+  const r = new Rider(deg ? plane(deg) : flat, col);
   r.jumpMode = mode; r.reset(0, 0, 0);
   for (let i = 0; i < 30; i++) r.update(FRAME, input()); // settle on the snow
   let peak = 0, hit = '', kept = 0, crashed = false;
@@ -74,7 +89,7 @@ function ride(mode, v, h, { off = 0, rad = 1 } = {}) {
     if (!hit) { r.vx = 0; r.vy = v; } // hold the speed to the rock
     r.update(FRAME, input());
     if (!hit && r.lastHit) { hit = r.lastHit; kept = Math.hypot(r.vx, r.vy) / v; }
-    peak = Math.max(peak, r.z);
+    peak = Math.max(peak, (r.z + t * r.y) * c); // off the snow, square to it
     if (r.rockOver > 0) scrapeT += FRAME;
     crashed ||= r.crashed > 0;
     if (hit && r.onGround && k > 120) break;
@@ -106,6 +121,11 @@ const across = ride('real', 20, 0.8, { rad: 0.8, off: 0.95 * (0.8 + BODY) });
 check('Real 45 deg 0.8 m rock clipped on a slanting line at 20 m/s: up and over its edge', across.hit === 'rock' && !across.crashed && across.peak <= 0.82, `${across.hit}, peak ${m(across.peak)}, kept ${pct(across.kept)}`);
 const graze = ride('real', 20, 1, { rad: 0.8, off: 0.95 * (0.8 + BODY) });
 check('Real steep (51 deg) 1 m rock glanced at 20 m/s: never climbed, slides along it', graze.hit === 'graze' && !graze.crashed && graze.peak < 0.05, `${graze.hit}, kept ${pct(graze.kept)}`);
+
+for (const deg of [15, 30]) for (const v of [12, 25]) {
+  const a = ride('real', v, 0.5, { rad: 3.3, deg });
+  check(`Real ${v} m/s down a ${deg} deg slope into a 0.5 m rock: over it, never more than its height off the slope`, a.hit === 'rock' && !a.crashed && a.peak <= 0.5 + 0.05, `${a.hit}, peak ${m(a.peak)} off the snow`);
+}
 
 // Arcade: the old kicker, vz = v * min(0.9, 0.25 + 0.9) * 0.5 + 1.5 off a 1.5 m+ rock hit square
 for (const v of [10, 20, 30]) {

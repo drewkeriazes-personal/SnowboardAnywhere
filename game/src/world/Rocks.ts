@@ -15,16 +15,71 @@ export const ROCK_WALL_TOP = 1.5;
 /** the noise seed of rock variant `v` */
 export const rockSeed = (v: number): number => v * 7.31 + 1.7;
 
+const PU = new THREE.Vector3(0, 1, 0), PN = new THREE.Vector3(), PP = new THREE.Vector3(), PS = new THREE.Vector3();
+const PQ = new THREE.Quaternion(), PQ2 = new THREE.Quaternion();
 /**
- * BUG-149: the collider for a rock of `size` and `type` whose variant geometry tops out at `geoTop` (unit size):
- * the top of the rock as drawn above the snow at its centre (m) and its radius (m), or null when it barely
- * shows. Was always 0.6 times the size, half a metre to over a metre above most drawn rocks, and talus
- * collided fully buried.
+ * A rock's instance matrix (three.js space): its up axis halfway between the ground normal `nn` (pack x, y, z) and
+ * upright, spun by `yaw`, sunk and scaled by type. Outcrops and talus sit deep, boulders a bit less; outcrops are
+ * taller blocks now that they are only half tilted, so the uphill side is buried and the downhill side stands.
  */
-export function rockCollider(size: number, type: number, geoTop: number): { top: number; radius: number } | null {
+export function placeRock(m: THREE.Matrix4, x: number, y: number, z: number, size: number, yaw: number, type: number, nn: ArrayLike<number>): THREE.Matrix4 {
+  PN.set(nn[0], nn[2], -nn[1]).add(PU).normalize();
+  PQ.setFromUnitVectors(PU, PN);
+  PQ2.setFromAxisAngle(PU, yaw);
+  PQ.multiply(PQ2);
   const t = type === 0 || type === 1 ? type : 2;
-  const top = size * (geoTop * HEIGHT[t] - SINK[t]);
-  return size > 0.9 && top >= ROCK_MIN_TOP ? { top, radius: size * 0.55 } : null;
+  PP.set(x, z - size * SINK[t], -y);
+  if (t === 0) PS.set(size * 2.0, size * HEIGHT[0], size * 1.6);
+  else if (t === 1) PS.set(size * 1.1, size * HEIGHT[1], size * 1.0);
+  else PS.set(size * 1.6, size * HEIGHT[2], size * 1.3);
+  return m.compose(PP, PQ, PS);
+}
+
+/** A variant's distinct vertex positions (unit size, three.js space), for fitting its collider */
+export function rockPoints(g: THREE.BufferGeometry): Float32Array {
+  const p = g.getAttribute('position'), seen = new Set<string>(), out: number[] = [];
+  for (let i = 0; i < p.count; i++) {
+    const k = `${p.getX(i).toFixed(4)},${p.getY(i).toFixed(4)},${p.getZ(i).toFixed(4)}`;
+    if (!seen.has(k)) { seen.add(k); out.push(p.getX(i), p.getY(i), p.getZ(i)); }
+  }
+  return new Float32Array(out);
+}
+
+/** BUG-149: the share of the farthest visible point a collider's radius reaches: a circle round an oblong rock
+ *  overhangs its narrow sides, so it stops a little short of the long tips instead */
+const FIT_REACH = 0.9;
+export interface RockFit { x: number; y: number; radius: number; top: number; base: number }
+/**
+ * BUG-149: the collider for a rock placed by `m` (placeRock) on ground at (`gx`, `gy`, `gz`) with normal `nn` (pack
+ * space): a vertical cylinder round the part of the rock standing above the snow (the ground taken as the plane
+ * through the rock's centre), its top the highest point drawn (absolute z, m) and its base the lowest snow under it
+ * less 1 m; null when the rock shows less than ROCK_MIN_TOP. Rocks are sunk deep and tilted halfway to the slope, so
+ * on flat snow most barely show and on a slope the downhill side stands; the old collider, always 0.6 times the size
+ * up round the centre, stood far above most of them and buried talus collided at all.
+ */
+export function rockCollider(pts: Float32Array, m: THREE.Matrix4, gx: number, gy: number, gz: number, nn: ArrayLike<number>, out: RockFit): RockFit | null {
+  const e = m.elements, nz = Math.max(0.2, nn[2]);
+  let n = 0, sx = 0, sy = 0, top = -Infinity, low = Infinity, most = 0;
+  const vis: number[] = [];
+  for (let i = 0; i < pts.length; i += 3) {
+    const a = pts[i], b = pts[i + 1], c = pts[i + 2];
+    const px = e[0] * a + e[4] * b + e[8] * c + e[12];
+    const pz = e[1] * a + e[5] * b + e[9] * c + e[13];
+    const py = -(e[2] * a + e[6] * b + e[10] * c + e[14]);
+    const zg = gz - (nn[0] * (px - gx) + nn[1] * (py - gy)) / nz;
+    const above = pz - zg;
+    if (above < 0.05) continue;
+    vis.push(px, py); n++; sx += px; sy += py;
+    if (pz > top) top = pz;
+    if (zg < low) low = zg;
+    if (above > most) most = above;
+  }
+  if (n === 0 || most < ROCK_MIN_TOP) return null;
+  const cx = sx / n, cy = sy / n;
+  let r = 0;
+  for (let i = 0; i < vis.length; i += 2) r = Math.max(r, Math.hypot(vis[i] - cx, vis[i + 1] - cy));
+  out.x = cx; out.y = cy; out.radius = Math.max(0.2, r * FIT_REACH); out.top = top; out.base = low - 1;
+  return out;
 }
 
 /** `col`: the rocks' collider entries, removed when the cell drops (BUG-082); `dropped`: left before its load finished, so the load adds nothing;
@@ -50,17 +105,12 @@ export class Rocks {
   /** BUG-088: the terrain; a loaded cell is drawn once the ground under it has its real heights (null: at once) */
   ground: Ground | null = null;
   private readonly geos: THREE.BufferGeometry[] = [];
-  /** BUG-149: each variant's top (unit size), for the colliders */
-  private readonly geoTops: number[] = [];
+  /** BUG-149: each variant's distinct points, for fitting the colliders */
+  private readonly geoPts: Float32Array[] = [];
+  private readonly fit: RockFit = { x: 0, y: 0, radius: 0, top: 0, base: 0 };
   private readonly mat: THREE.MeshStandardMaterial;
   get material(): THREE.MeshStandardMaterial { return this.mat; }
   private readonly m = new THREE.Matrix4();
-  private readonly q = new THREE.Quaternion();
-  private readonly q2 = new THREE.Quaternion();
-  private readonly p = new THREE.Vector3();
-  private readonly s = new THREE.Vector3();
-  private readonly up = new THREE.Vector3(0, 1, 0);
-  private readonly n = new THREE.Vector3();
   private readonly c = new THREE.Color();
   private readonly normalTmp = [0, 0, 1];
   /** FEAT-106: how much new snow is on the boulders (0 = today's caps) and the downwind direction (three.js x, z) */
@@ -76,7 +126,7 @@ export class Rocks {
   constructor(pack: Pack, collider: Collider | null) {
     this.pack = pack;
     this.collider = collider;
-    for (let v = 0; v < VARIANTS; v++) { const g = makeRock(rockSeed(v)); g.computeBoundingBox(); this.geos.push(g); this.geoTops.push(g.boundingBox!.max.y); }
+    for (let v = 0; v < VARIANTS; v++) { const g = makeRock(rockSeed(v)); this.geos.push(g); this.geoPts.push(rockPoints(g)); }
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1.0, metalness: 0.0, flatShading: true });
     const uniforms = rockUniforms();
     this.mat.onBeforeCompile = (shader) => {
@@ -190,20 +240,8 @@ export class Rocks {
           // snap to loaded terrain when we have it; the pack's z is the fallback before tiles arrive
           let z = d[o + 2];
           for (const set of this.pack.sets) { if (set.contains(x, y)) { const h = set.sample(x, y); if (!Number.isNaN(h)) { z = h; break; } } }
-          // orient the rock's up axis halfway between the ground normal and upright, then spin around it
           const nn = this.pack.groundNormal(x, y, this.normalTmp) as number[];
-          this.n.set(nn[0], nn[2], -nn[1]).add(this.up).normalize();
-          this.q.setFromUnitVectors(this.up, this.n);
-          this.q2.setFromAxisAngle(this.up, yaw);
-          this.q.multiply(this.q2);
-          // sink: outcrops and talus sit deep, boulders a bit less; outcrops are taller blocks now
-          // that they are only half tilted, so the uphill side is buried and the downhill side stands
-          const ti = type === 0 || type === 1 ? type : 2, sink = SINK[ti];
-          this.p.set(x, z - size * sink, -y);
-          if (ti === 0) this.s.set(size * 2.0, size * HEIGHT[0], size * 1.6);
-          else if (ti === 1) this.s.set(size * 1.1, size * HEIGHT[1], size * 1.0);
-          else this.s.set(size * 1.6, size * HEIGHT[2], size * 1.3);
-          this.m.compose(this.p, this.q, this.s);
+          placeRock(this.m, x, y, z, size, yaw, type, nn);
           mesh.setMatrixAt(k, this.m);
           // tint near 1 (the shader supplies the rock tone): a little lighter or darker, warmer or cooler
           const t = hash01(x * 0.37 + y * 0.11);
@@ -212,9 +250,9 @@ export class Rocks {
           this.c.setRGB(tk * (0.98 + 0.05 * u), tk, tk * (1.0 + 0.05 * (1 - u)));
           mesh.setColorAt(k, this.c);
           // rocks can be ridden up (and launched off on Arcade); one standing over ROCK_WALL_TOP is a wall
-          // BUG-149: the collider stands as high as the rock is drawn; one that barely shows has none
-          const rc = this.collider ? rockCollider(size, type, this.geoTops[v]) : null;
-          if (rc) cell.col.push(this.collider!.add(x, y, rc.radius, z - 1, z + rc.top, rc.top > ROCK_WALL_TOP ? 0 : 1));
+          // BUG-149: the collider fits the part of the rock drawn above the snow; one that barely shows has none
+          const rc = this.collider && size > 0.9 ? rockCollider(this.geoPts[v], this.m, x, y, z, nn, this.fit) : null;
+          if (rc) cell.col.push(this.collider!.add(rc.x, rc.y, rc.radius, rc.base, rc.top, rc.top - z > ROCK_WALL_TOP ? 0 : 1));
         });
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
