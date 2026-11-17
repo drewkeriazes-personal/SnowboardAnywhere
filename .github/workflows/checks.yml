@@ -263,13 +263,13 @@ jobs:
 
       # FEAT-176: skip the rest when tools/ci/local_render_budgets.mjs already passed on Drew's PC for this exact
       # commit, with the same merge base, tools and synthetic pack, and no stills asked for. The job still
-      # reports success. Only the repo owner's statuses count (the repo is public).
+      # reports success. Only the maintainer's (drewkeriazes) statuses count (the repo is public).
       - name: Passed locally on this commit?
         id: local
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TRUSTED: ${{ github.repository_owner }}
+          TRUSTED: drewkeriazes # the maintainer login (FEAT-332: the repo owner is now the drewkeriazes-personal org)
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           STILLS: ${{ steps.want.outputs.stills }}
           SYNTH_KEY: ${{ needs.synth-pack.outputs.key }}
@@ -423,7 +423,7 @@ jobs:
           now=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq .head.sha)
           if [ "$now" != "$RUN_SHA" ]; then echo "the PR is at $now now, this run is for $RUN_SHA: not commenting"; echo "stale=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           id=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate \
-            --jq '.[] | select((.user.login == "github-actions[bot]" or .user.login == "${{ github.repository_owner }}") and (.body | startswith("<!-- ci-stills -->"))) | .id' | tail -n1)
+            --jq '.[] | select((.user.login == "github-actions[bot]" or .user.login == "drewkeriazes") and (.body | startswith("<!-- ci-stills -->"))) | .id' | tail -n1)
           echo "id=$id" | tee -a "$GITHUB_OUTPUT"
       - if: needs.render-budgets.outputs.skipped != 'true' && steps.find.outputs.stale != 'true'
         uses: actions/download-artifact@v4

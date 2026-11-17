@@ -121,7 +121,9 @@ export function prepare({ repo, sha = 'HEAD', pr: prArg, mode = 'manual', push =
   if (pr.isCrossRepository) die(`PR #${pr.number} comes from a fork; run it from a branch in this repo`);
   if (pr.labels.some((l) => l.name === 'stills')) die(`PR #${pr.number} has the stills label, so CI runs render-budgets anyway (the local run does not compare stills)`);
 
-  const owner = out('gh', ['repo', 'view', '--json', 'owner', '--jq', '.owner.login'], { cwd: repo });
+  // FEAT-332: the maintainer's login, not the repo owner (the repos belong to the drewkeriazes-personal org); it
+  // must match TRUSTED in .github/workflows/checks.yml.
+  const owner = 'drewkeriazes';
   const me = out('gh', ['api', 'user', '--jq', '.login'], { cwd: repo });
   if (me !== owner) die(`signed in to gh as ${me}; CI only trusts ${CONTEXT} statuses from ${owner}`);
 
