@@ -139,7 +139,9 @@ export class Terrain implements Ground {
     if (pack.ao) pack.ao.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.ao!.meta.minX + tx * pack.ao!.size, pack.ao!.meta.minY + ty * pack.ao!.size, pack.ao!.size, 0);
     if (pack.dir) pack.dir.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.dir!.meta.minX + tx * pack.dir!.size, pack.dir!.meta.minY + ty * pack.dir!.size, pack.dir!.size, 0);
     if (pack.moguls) pack.moguls.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.moguls!.meta.minX + tx * pack.moguls!.size, pack.moguls!.meta.minY + ty * pack.moguls!.size, pack.moguls!.size, 0);
-    if (pack.cover) pack.cover.onLevelLoaded = () => this.applyCover();
+    // BUG-160: the levels may have loaded already (Pack.load waits for them for the tree lines' forest gate), so hand
+    // over the ones that are here now, then each one as it arrives
+    if (pack.cover) { pack.cover.onLevelLoaded = () => this.applyCover(); this.applyCover(); }
     // FEAT-154: where the pack has tree instances (outside it the forest is the terrain's colour alone)
     const ins = pack.meta.instances;
     this.stemsDrawn = !!pack.meta.stands;
