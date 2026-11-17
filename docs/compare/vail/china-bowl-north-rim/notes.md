@@ -1,6 +1,6 @@
 # China Bowl, rock outcrop near the north rim
 
-Real: Street View, Mar 2018, taken standing on a rock outcrop near the north edge of the bowl, looking south-west back at the tree group used in the FEAT-069 pairs (link in spot.json; not stored here). The full write-up of the real photo is the third reference comment on [FEAT-069 (#106)](https://github.com/drewkeriazes/SnowboardAnywhere/issues/106). Game: `eye-southwest.jpg` (eye camera at the converted Street View pose, 2026-11-06, main after FEAT-020 1b06ab4).
+Real: Street View, Mar 2018, taken standing on a rock outcrop near the north edge of the bowl, looking south-west back at the tree group used in the FEAT-069 pairs (link in spot.json; not stored here). The full write-up of the real photo is the third reference comment on [FEAT-069 (#106)](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/106). Game: `eye-southwest.jpg` (eye camera at the converted Street View pose, 2026-11-06, main after FEAT-020 1b06ab4).
 
 **Sky (FEAT-094):** lighter sky with thin cirrus and contrails (third reference comment on FEAT-069 #106); tagged `weather: cirrus` (Thin high cloud).
 

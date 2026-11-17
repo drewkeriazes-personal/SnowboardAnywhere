@@ -218,7 +218,7 @@ async function firstResort() {
     const offline = e?.message === 'fetch failed' || e?.cause?.code; // fetch says only "fetch failed"; the cause has why
     const why = offline ? `no connection to the download server (${e.cause?.code ?? e.cause?.message ?? 'offline?'})`
       : String(e?.message ?? e).replace(/: update the game \(git pull\)$/, ''); // get_pack's hint is for a checkout
-    const releases = 'https://github.com/drewkeriazes/SnowboardAnywhere/releases';
+    const releases = 'https://github.com/drewkeriazes-personal/SnowboardAnywhere/releases';
     const tip = offline ? `Check the internet connection, then open ${EXE} again (the download starts over).`
       : /newer than this game/.test(why) ? `This SnowboardAnywhere is older than the published resorts: get the newest ${ZIP} from ${releases}`
       : `Open ${EXE} again later (the download starts over). If it keeps failing, get the newest zip from ${releases}`;

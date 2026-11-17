@@ -2,7 +2,7 @@
 
 **Resolved.** BUG-013 (#64) was closed on 2026-11-06 after both bridges (China Bridge Access Road and Cloud 9 - Lower by Tea Cup) were confirmed in the game. Kept as a record of how bridge detection works; nothing below is open. Later bridge bugs (for example BUG-022, #105, bridges where there are none) have their own cards.
 
-Issue: https://github.com/drewkeriazes/SnowboardAnywhere/issues/64. Commit with the first attempt: b3f14f4.
+Issue: https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/64. Commit with the first attempt: b3f14f4.
 
 ## The ask
 

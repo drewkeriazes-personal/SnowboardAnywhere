@@ -33,7 +33,7 @@ node tools/compare.mjs --a here --b here --b-packs ../../MapPacker-SnowboardAnyw
   - its own 11-05 pack is gone; vail-v1 loads in it, and its `trees/` is byte-identical to v4.
 
 ## Picking a pack an old commit can load
-- Packs are GitHub releases on MapPacker, tagged `<slug>-v<N>` with a dash (`vail-v1`). `RELEASES.md` shows `vail/v1`, but `gh release download vail-v1 -R drewkeriazes/MapPacker-SnowboardAnywhere`.
+- Packs are GitHub releases on MapPacker, tagged `<slug>-v<N>` with a dash (`vail-v1`). `RELEASES.md` shows `vail/v1`, but `gh release download vail-v1 -R drewkeriazes-personal/MapPacker-SnowboardAnywhere`.
 - Check `meta.json` `version` and the `terrain` layout against the old commit's `game/src/pack/types.ts`. Format 1 has loaded back to the first client.
 - Raw data to rebuild an old pack is in `C:\Users\Drew\Documents\snowboard-sim\raw\<slug>` (and the game checkout's `raw/`), but the old pipeline is slow. Try a release first.
 

@@ -94,7 +94,7 @@ async function makeBaseline() {
     info.packSource[slug] = { from: path.resolve(fromPack) };
   } else if (tag) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sba-pack-'));
-    run('gh', ['release', 'download', tag, '-R', 'drewkeriazes/MapPacker-SnowboardAnywhere', '-p', '*.zip', '-D', tmp]);
+    run('gh', ['release', 'download', tag, '-R', 'drewkeriazes-personal/MapPacker-SnowboardAnywhere', '-p', '*.zip', '-D', tmp]);
     const zip = fs.readdirSync(tmp).find((f) => f.endsWith('.zip'));
     fs.mkdirSync(packDir, { recursive: true });
     if (process.platform === 'win32') run(path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xf', path.join(tmp, zip), '-C', packDir]);

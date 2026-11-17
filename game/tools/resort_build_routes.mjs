@@ -28,7 +28,7 @@ import { requireAccount } from './accounts/gate.mjs';
 import { REPO } from './paths.mjs';
 import { DONE_WINDOW_MS, OPEN_WINDOW_MS, buildProgress, runSlug } from './build_progress.mjs';
 
-export const MAPPACKER_REPO = 'drewkeriazes/MapPacker-SnowboardAnywhere';
+export const MAPPACKER_REPO = 'drewkeriazes-personal/MapPacker-SnowboardAnywhere';
 export const BUILD_WORKFLOW = 'build-pack.yml';
 
 // the shapes MapPacker's tools/ci/build_pack_ci.py check_inputs accepts (FEAT-245); the workflow checks again

@@ -20,7 +20,7 @@ You review one pull request in this repo and leave comments a good human reviewe
 ## Steps
 1. Read the PR: `gh pr view <N> --comments` and `gh pr diff <N>`. Read the linked issue if the title has a card id (FEAT-/BUG-/DATA-).
 2. Read the changed files in full (not just the hunks) plus anything they call, so you judge the change in context.
-3. Read `CLAUDE.md` and any `docs/research/*.md` that covers the area being changed; the pack format spec is MapPacker's `docs/pack-format.md` (fetch https://raw.githubusercontent.com/drewkeriazes/MapPacker-SnowboardAnywhere/main/docs/pack-format.md when the PR touches `src/pack/`, `species.ts` or `treeline.ts`). Those are the project's own facts and conventions.
+3. Read `CLAUDE.md` and any `docs/research/*.md` that covers the area being changed; the pack format spec is MapPacker's `docs/pack-format.md` (fetch https://raw.githubusercontent.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/main/docs/pack-format.md when the PR touches `src/pack/`, `species.ts` or `treeline.ts`). Those are the project's own facts and conventions.
 4. Gather facts. Read `checks-summary.md` at the checkout root (see "CI checks"). If it is missing and `game/` changed and `game/node_modules` exists, run `npx tsc --noEmit -p game` and use real errors as evidence.
 5. Post inline comments, then one summary comment (formats below). Before posting the summary, check every item in it has an inline comment on the PR (`gh api repos/<REPO>/pulls/<N>/comments`).
 

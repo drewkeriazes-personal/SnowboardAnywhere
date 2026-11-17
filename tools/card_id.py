@@ -28,7 +28,7 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
-REPOS = ("drewkeriazes/SnowboardAnywhere", "drewkeriazes/MapPacker-SnowboardAnywhere")
+REPOS = ("drewkeriazes-personal/SnowboardAnywhere", "drewkeriazes-personal/MapPacker-SnowboardAnywhere")
 TYPES = ("FEAT", "BUG", "DATA")
 ID = re.compile(r"^(FEAT|BUG|DATA)-(\d+)")
 PER_PAGE = 100
