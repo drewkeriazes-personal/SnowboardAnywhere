@@ -92,6 +92,8 @@ def from_photo(path: Path, declination: float) -> dict:
     if 'GPSImgDirection' in g:
         mag = g.get('GPSImgDirectionRef', 'T') == 'M'
         out['heading'] = (float(g['GPSImgDirection']) + (declination if mag else 0.0)) % 360
+    else:
+        print(f'warning: no compass heading in {path}, using 0 (north); set it in the eye camera', file=sys.stderr)
     w, h = im.size
     if e.get(274) in (5, 6, 7, 8):  # rotated 90 degrees by its orientation tag
         w, h = h, w
@@ -100,6 +102,8 @@ def from_photo(path: Path, declination: float) -> dict:
         # a 35 mm equivalent focal length matches the diagonal (43.27 mm); the frame's height is its share of it
         side = 43.27 * h / math.hypot(w, h)
         out['fov'] = math.degrees(2 * math.atan(side / 2 / float(f35)))
+    else:
+        print(f'warning: no 35 mm focal length in {path}, using FOV 75; set it in the eye camera', file=sys.stderr)
     out['capture'] = ex.get(36867) or e.get(306) or ''
     return out
 
@@ -166,7 +170,7 @@ def main() -> None:
     print(link)
     print(f'  lat {v["lat"]:.7f} lon {v["lon"]:.7f} -> x {x:.1f} y {y:.1f}; heading {heading:.1f} true = {h:.1f} grid; pitch {pitch:.1f}; fov {fov:.1f}'
           + (f'; compass offset {a.offset:+.1f} applied' if a.offset else '')
-          + (' (photo: compass heading, level pitch)' if photo else '' if v['streetview'] else ' (not a Street View URL: heading and pitch defaulted)'), file=sys.stderr)
+          + ((' (photo: compass heading, level pitch)' if 'heading' in v else ' (photo: no compass, heading defaulted to north; level pitch)') if photo else '' if v['streetview'] else ' (not a Street View URL: heading and pitch defaulted)'), file=sys.stderr)
 
     if a.add:
         if not a.spot:
