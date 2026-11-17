@@ -219,7 +219,7 @@ export const FAKIE_SPEED = 2.5;
 export const SWITCH_GRIP = 0.04;
 
 /** FEAT-085 skating: mean push (m/s^2) from a standstill, top skating speed (m/s), steepest slope it works on (deg), stroke period (s) */
-export const SKATE_ACC = 4.2, SKATE_MAX = 5.5, SKATE_SLOPE = 10, SKATE_PERIOD = 0.6;
+export const SKATE_ACC = 4.2, SKATE_MAX = 5.5, SKATE_SLOPE = 20, SKATE_PERIOD = 0.6;
 /** BUG-054 snowboard skating with the back foot out: unclip and clip-in times (s), the share of each stroke the boot
  *  is planted and pushing (the rest it lifts and swings forward), the steer kept one-footed, the heading a full steer
  *  swings per second of push (rad/s), and how far under SKATE_MAX the rider must be to unclip (m/s, so a rider

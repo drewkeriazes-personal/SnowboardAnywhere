@@ -55,9 +55,10 @@ function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label
 
 console.log('hold skate 3 s from a standstill, snowboard:');
 const name = { [DOWN]: 'down the hill', [ACROSS]: 'across the hill', [UP]: 'up the hill' };
-for (const deg of [0, 1, 3, 6, 9]) {
+for (const deg of [0, 1, 3, 6, 9, 15, 19]) {
   for (const h of [ACROSS, DOWN, UP]) {
     if (deg === 0 && h !== ACROSS) continue;
+    if (h === UP && deg > 9) continue; // pointed straight up a steeper pitch the board slides back however hard you push
     const r = start(deg, h);
     const x0 = r.x, y0 = r.y;
     run(r, 3, input());
