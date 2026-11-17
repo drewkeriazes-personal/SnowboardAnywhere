@@ -19,13 +19,13 @@ const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rockcheck-')), 'roc
 const src = path.join(GAME, 'src').replace(/\\/g, '/');
 await build({
   stdin: {
-    contents: `export { Rider } from '${src}/sim/Rider.ts'; export { Collider } from '${src}/sim/Collider.ts'; export { ROCK_RAMP } from '${src}/sim/rider/tuning.ts';
+    contents: `export { Rider } from '${src}/sim/Rider.ts'; export { Collider } from '${src}/sim/Collider.ts'; export { ROCK_RAMP, ROCK_SPAN } from '${src}/sim/rider/tuning.ts';
       export { makeRock, rockPoints, placeRock, rockCollider, rockSeed, VARIANTS, ROCK_MIN_TOP } from '${src}/world/Rocks.ts'; export { Matrix4 } from 'three';`,
     resolveDir: GAME, loader: 'ts',
   },
   bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error',
 });
-const { Rider, Collider, ROCK_RAMP, makeRock, rockPoints, placeRock, rockCollider, rockSeed, VARIANTS, ROCK_MIN_TOP, Matrix4 } = await import(pathToFileURL(out).href);
+const { Rider, Collider, ROCK_RAMP, ROCK_SPAN, makeRock, rockPoints, placeRock, rockCollider, rockSeed, VARIANTS, ROCK_MIN_TOP, Matrix4 } = await import(pathToFileURL(out).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
@@ -82,7 +82,7 @@ const pct = (x) => `${(x * 100).toFixed(0)}%`;
  *  kept just past it. */
 function ride(mode, v, H, R, { off = 0, deg = 0 } = {}) {
   const t = Math.tan(deg * Math.PI / 180), c = Math.cos(deg * Math.PI / 180), at = 12, g0 = -t * at;
-  const col = new Collider(), rb = { b: 0, gx: 0, gy: 0 };
+  const col = new Collider(), rd = { h: 0, gx: 0, gy: 0, H: 0, cx: 0, cy: 0, r: 0 };
   col.add(off, at, R, g0 - 1, g0 + H, 1, mode === 'real' ? g0 : NaN);
   const r = new Rider(deg ? plane(deg) : flat, col);
   r.jumpMode = mode; r.reset(0, 0, 0);
@@ -92,7 +92,7 @@ function ride(mode, v, H, R, { off = 0, deg = 0 } = {}) {
   for (let k = 0; k < 600; k++) {
     if (!deg && r.y < at - R - 1) { r.vx = 0; r.vy = v; }
     r.update(FRAME, input());
-    const b = col.rockBump(r.x, r.y, rb).b, snow = -t * r.y;
+    const snow = -t * r.y, b = mode === "real" ? col.rockDome(r.x, r.y, ROCK_SPAN, rd).h : 0;
     if (b > 0.05) under = Math.max(under, snow + b - r.z);
     above = Math.max(above, (r.z - snow) * c);
     if (r.y > at + R) peakAir = Math.max(peakAir, (r.z - snow) * c);
@@ -111,13 +111,22 @@ for (const v of [8, 14, 25]) for (const [H, R] of GENTLE) {
   const a = ride('real', v, H, R);
   check(`Real ${v} m/s square into a ${H} m rock (${R} m round): up and over, never through or above it`, a.crossed && !a.crashed && !a.back && a.onRock && a.under < 0.03 && a.above <= H + 0.03, say(a));
 }
+// the low slab of Drew's clip on Vail: barely out of the snow, a small footprint (a rim 2 H / R over 40 deg as fitted)
+for (const deg of [0, 30]) for (const v of [8, 15, 25]) {
+  const a = ride('real', v, 0.25, 0.45, { deg });
+  check(`Real ${v} m/s ${deg ? 'down a 30 deg slope ' : ''}square into a low slab (0.25 m, 0.45 m round): a bump, ridden over`, a.crossed && !a.crashed && a.under < 0.03 && a.above <= 0.28, say(a));
+}
 const slow = ride('real', 2, 0.5, 3);
 check('Real 0.5 m rock at 2 m/s: too slow, stalls and slides back, never through it', !slow.crossed && slow.back && !slow.crashed && slow.under < 0.03, say(slow));
 const steep = ride('real', 14, 2, 3.6); // its rim 48 deg
 check('Real steep 2 m rock (48 deg rim) square at 14 m/s: stops you like a trunk, thrown', !steep.crossed && steep.crashed && steep.hit === 'wall' && steep.above < 0.05, say(steep));
 const slant = ride('real', 14, 2, 3.6, { off: 0.9 * (3.6 + 0.4) });
 check('Real steep 2 m rock met on a slanting line at 14 m/s: never through or above it', !slant.crashed && slant.under < 0.03 && slant.above <= 2.03, say(slant));
-for (const v of [8, 14, 25]) for (const [H, R] of [[0.5, 3], [2, 3.6]]) {
+for (const v of [8, 14, 25]) {
+  const a = ride('real', v, 2, 3.6, { deg: 30 });
+  check(`Real ${v} m/s down a 30 deg slope square into a steep 2 m rock (48 deg rim): stops you like a trunk, never through it`, !a.crossed && a.under < 0.03 && a.hit === 'wall', say(a));
+}
+for (const v of [8, 14, 25]) for (const [H, R] of [[0.5, 3], [0.9, 4]]) {
   const a = ride('real', v, H, R, { deg: 30 });
   check(`Real ${v} m/s down a 30 deg slope into a ${H} m rock (${R} m round): never through or above it`, !a.crashed && a.under < 0.03 && a.above <= H + 0.05 && a.peakAir <= H + 0.05, `${say(a)}, past it ${m(a.peakAir)} off the snow`);
 }

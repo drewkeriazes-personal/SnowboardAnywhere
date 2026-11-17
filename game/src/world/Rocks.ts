@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
-import { ROCK_STEEPEST } from '../sim/rider/tuning';
+import { ROCK_SPAN, ROCK_STEEPEST } from '../sim/rider/tuning';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
 
@@ -84,7 +84,7 @@ export function rockCollider(pts: Float32Array, m: THREE.Matrix4, gx: number, gy
   // dome would be too steep at its rim, or that stands over ROCK_WALL_TOP, is a wall in either mode
   out.ground = gz - (nn[0] * (cx - gx) + nn[1] * (cy - gy)) / nz;
   const H = top - out.ground;
-  out.wall = H > ROCK_WALL_TOP || 2 * H / out.radius > ROCK_STEEPEST;
+  out.wall = H > ROCK_WALL_TOP || 2 * H / Math.max(out.radius, ROCK_SPAN) > ROCK_STEEPEST;
   return out;
 }
 

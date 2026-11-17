@@ -42,6 +42,9 @@ function insidePoly(pts: [number, number][], x: number, y: number): boolean {
   return c;
 }
 
+/** BUG-141: Collider.rockDome's answer */
+export interface RockDome { h: number; gx: number; gy: number; H: number; cx: number; cy: number; r: number }
+
 export class Collider {
   private readonly cells = new Map<string, Float32Array[]>(); // packed [x, y, radius, zBase, zTop, kind, ground]
   private readonly hit: Hit = { x: 0, y: 0, nx: 0, ny: 0, kind: 0, top: 0, radius: 0, ground: NaN, inside: false, ledge: false };
@@ -245,21 +248,22 @@ export class Collider {
 
   /**
    * BUG-141: the rideable rocks (kind 1 with a ground) as ground you ride up and over on Realistic: over each a
-   * dome above the snow, its height H (top less the snow at its centre) times 1 - (d / radius)^2, steepest at the
-   * rim (2 H / radius) and level on top. `out.b` the highest dome here above the snow (m, 0 off every rock) and
-   * `out.gx`, `out.gy` its slope (rise per metre, east and north).
+   * dome above the snow, H (the rock's top above the snow at its centre) times 1 - (d / R)^2, R its radius but at
+   * least `span`, so it meets the snow round the rim as the drawn rock does and a low slab is a bump a board's
+   * length long, not a step. `out.h` the highest dome here above the snow (m, 0 off every rock), `out.gx`, `out.gy`
+   * its slope over the snow's (rise per metre, east and north), and that rock's H, centre and dome radius.
    */
-  rockBump(x: number, y: number, out: { b: number; gx: number; gy: number }): { b: number; gx: number; gy: number } {
-    out.b = 0; out.gx = 0; out.gy = 0;
+  rockDome(x: number, y: number, span: number, out: RockDome): RockDome {
+    out.h = 0; out.gx = 0; out.gy = 0;
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
       const cyl = this.cells.get(this.key(cx + i, cy + j));
       if (cyl) for (const c of cyl) {
         if (c[5] !== 1 || !(c[6] === c[6])) continue;
-        const dx = x - c[0], dy = y - c[1], R = c[2], d2 = dx * dx + dy * dy;
+        const R = Math.max(c[2], span), dx = x - c[0], dy = y - c[1], d2 = dx * dx + dy * dy;
         if (d2 >= R * R) continue;
-        const H = c[4] - c[6], b = H * (1 - d2 / (R * R));
-        if (b > out.b) { out.b = b; out.gx = -2 * H * dx / (R * R); out.gy = -2 * H * dy / (R * R); }
+        const H = c[4] - c[6], k = H / (R * R), h = H - k * d2;
+        if (h > out.h) { out.h = h; out.gx = -2 * k * dx; out.gy = -2 * k * dy; out.H = H; out.cx = c[0]; out.cy = c[1]; out.r = R; }
       }
     }
     return out;

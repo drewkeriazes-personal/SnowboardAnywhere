@@ -184,6 +184,8 @@ export class Rider {
   landingShock = 0;
   /** last collision this step: 'ramp' | 'graze' | 'wall' | '' (for sound and effects; cleared each frame) */
   lastHit = '';
+  /** BUG-141: on a rock's dome last step (Realistic), so stepping onto one is judged once */
+  rockOn = false;
   /** FEAT-217: the speed into the trunk, rock or wall of that collision (m/s; cleared with lastHit) */
   hitSpeed = 0;
   /** Outrun boost (FEAT-101): less drag for a few seconds */
@@ -334,7 +336,7 @@ export class Rider {
   /** End any brake swing: the board lines up with the heading again (internal: the rider modules call it). */
   squareBoard(): void {
     this.boardYaw = this.travelYaw = this.heading;
-    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0;
+    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0; this.rockOn = false;
   }
 
   /**

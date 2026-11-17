@@ -2,7 +2,7 @@
 import type { Rider } from '../Rider';
 import type { Input } from './types';
 import { FLIP_CLEAN, FLIP_CRASH } from './tuning';
-import { groundNormalAt } from './Collision';
+import { groundNormalAt, rockBumpAt } from './Collision';
 
 const COUNT = ['', '', 'Double ', 'Triple ', 'Quad '];
 /** "Backflip", "Double front flip", "Rodeo 540" (a backflip with a spin), "Front flip 360" */
@@ -31,6 +31,7 @@ export function land(r: Rider, ground: number, input: Input): void {
   const n = groundNormalAt(r, r.x, r.y, r.z); // BUG-141: landing on a rock's dome
   r.z = ground;
   r.onGround = true;
+  r.rockOn = (rockBumpAt(r, r.x, r.y)?.b ?? 0) > 0; // BUG-141: landed on a rock, not ridden into its face
   // impact normal to the surface
   const vn = r.vx * n[0] + r.vy * n[1] + r.vz * n[2];
   // remove normal component (inelastic), keep tangential

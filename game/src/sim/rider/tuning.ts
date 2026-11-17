@@ -211,6 +211,9 @@ export const ROCK_ON = 0.05;
 /** BUG-141: met where its dome's face along your line is steeper than this (rise per metre, about 40 deg) a rock is too
  *  steep to ride up on Realistic and stops you like a trunk (glancing you slide along it, square you bounce or are thrown) */
 export const ROCK_FACE = Math.tan(40 * D2R);
+/** BUG-141: a rock's dome is at least this far from its rim to its top (m), about half a board: a board bridges a low
+ *  slab rather than following its edge, so a short rock is a bump, not a step */
+export const ROCK_SPAN = 1.0;
 export const SQUAT_SPRING_WINDOW = 0.25;
 /** FEAT-110 flips: full-input pitch rate (1.1 rotations a second), how fast it builds and decays (1/s),
  * and the landing windows (rad): within FLIP_CLEAN of upright is clean, up to FLIP_CRASH a wobble, past it a crash */
