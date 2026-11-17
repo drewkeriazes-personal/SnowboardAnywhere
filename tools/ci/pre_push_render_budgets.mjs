@@ -70,7 +70,7 @@ function main() {
   // GitHub doesn't have the commit until after this hook: a detached process sets the status once it does
   const job = path.join(runDir, 'post.json');
   fs.writeFileSync(job, JSON.stringify({
-    repo, sha: HEAD, branch, prNumber: pr.number, prUrl: pr.url, owner: ctx.owner, desc: res.desc, body: res.body,
+    repo, sha: HEAD, branch, prNumber: pr.number, prUrl: pr.url, trusted: ctx.trusted, desc: res.desc, body: res.body,
     checkSeconds: ctx.L.secs(), hookDone: new Date().toISOString(),
   }, null, 2));
   const poster = path.join(path.dirname(fileURLToPath(import.meta.url)), 'render_budgets_post.mjs');
