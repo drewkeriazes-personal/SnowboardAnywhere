@@ -53,6 +53,10 @@ const EDGE = 0.9;
 const STEM_CLEAR = 1.0;
 /** mogul amplitude (0..1) at a line's full strength, and the share of a full-strength line's snow that is tracked */
 export const LINE_MOGUL = 0.85;
+/** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
+ *  the berm of pushed-aside snow on the rim, m high and wide (`trenchAt`) */
+export const TRENCH_DEPTH = 1.0;
+const TRENCH_WALL = 0.9, BERM_H = 0.15, BERM_W = 1.2;
 const LINE_SEG = 6; // floats per segment: ax, ay, bx, by, half-width, strength
 const GRID = 16; // m: the segment grid
 /** trim: a glade's level within GLADE_FULL m of its run's centreline, none past GLADE_NONE */
@@ -182,9 +186,11 @@ export class TrunkIndex {
 
 /** how far a line may bend off its plan to pass a trunk, m, and over how many points either side a bend eases in */
 const BEND_MAX = 5, BEND_EASE = 5;
-/** a detected trunk keeps this far out of a corridor (past its half-width, m); where no bend gets it there the corridor
- *  narrows to pass, down to SQUEEZE_HW */
-const TRUNK_CLEAR = 0.5, SQUEEZE_HW = 0.5;
+/** a detected trunk keeps this far out of a corridor (past its half-width, m: outside the trench's rim, so no trunk stands
+ *  in a wall); where no bend gets it there the corridor narrows to pass, down to SQUEEZE_HW */
+const TRUNK_CLEAR = TRENCH_WALL, SQUEEZE_HW = 0.5;
+/** steps (3 m each) either side of a break over which the line fades to nothing, so its trench ramps out */
+const RAMP_STEPS = 3;
 
 export class TreeLines {
   /** the corridors' segments, LINE_SEG floats each (empty until `finish`) */
@@ -300,17 +306,26 @@ export class TreeLines {
       for (let i = 0; i < n; i++) { p.x[i] += nx[i] * off[i]; p.y[i] += ny[i] * off[i]; }
       // squeeze past what is still too close: the segment narrows so the trunk keeps TRUNK_CLEAR out of it
       const w = p.w = new Float64Array(n).fill(p.hw);
+      // (the faint ends too: they are dug a little)
+      const broke: number[] = [];
       for (let i = 0; i + 1 < n; i++) {
-        if (p.str[i] < 0.15) continue;
+        if (p.str[i] <= 0.02) continue;
         const ax = p.x[i], ay = p.y[i], bx = p.x[i + 1], by = p.y[i + 1];
         trunks.near(ax, ay, R + STEP, (tx, ty) => {
           const d = Math.sqrt(segD2(tx, ty, ax, ay, bx, by));
           if (d < R) w[i] = Math.min(w[i], Math.max(SQUEEZE_HW, d - TRUNK_CLEAR));
         });
-        // a gap narrower than a squeezed corridor: the line breaks there for a step (the rider picks round the trunk)
+        // a gap narrower than a squeezed trench, rim to rim: the line breaks there for a step (the rider picks round the trunk)
+        const rim = w[i] + TRUNK_CLEAR;
         let blocked = false;
-        trunks.near(ax, ay, w[i] + STEP, (tx, ty) => { if (segD2(tx, ty, ax, ay, bx, by) < w[i] * w[i]) blocked = true; });
-        if (blocked) { p.str[i] = 0; left++; }
+        trunks.near(ax, ay, rim + STEP, (tx, ty) => { if (segD2(tx, ty, ax, ay, bx, by) < rim * rim) blocked = true; });
+        if (blocked) { p.str[i] = 0; broke.push(i); left++; }
+      }
+      // the trench climbs out to the snow's surface over the steps either side of a break, not a wall across it
+      for (const i of broke) for (let k = 1; k <= RAMP_STEPS; k++) {
+        const f = k / (RAMP_STEPS + 1);
+        if (i - k >= 0) p.str[i - k] = Math.min(p.str[i - k], f);
+        if (i + k < n - 1) p.str[i + k] = Math.min(p.str[i + k], f);
       }
     }
     return left;
@@ -329,7 +344,7 @@ export class TreeLines {
     for (let i = 0; i < this.count; i++) {
       const o = i * LINE_SEG;
       len += Math.hypot(this.seg[o + 2] - this.seg[o], this.seg[o + 3] - this.seg[o + 1]);
-      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + STEM_CLEAR);
+      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + Math.max(STEM_CLEAR, TRENCH_WALL + BERM_W));
     }
     this.length = len;
     this.trimTiles.clear();
@@ -380,6 +395,40 @@ export class TreeLines {
       if (v > w) w = v;
     }
     return w;
+  }
+
+  /**
+   * The line dug into the snow here, m (negative in the trench, a little positive on its berm), before the canopy gate.
+   * Off the lines the snow lies as it fell; on one it is ridden down like a bobsled run: TRENCH_DEPTH at full strength,
+   * a flat floor over the middle 0.3 of the way to the rim (TRENCH_WALL m past the corridor's half-width), then walls
+   * that curve up steeply (about 45 degrees at their steepest on a full-width line) and round over at the rim, and just
+   * past the rim the snow the riders pushed aside, a berm BERM_H high and BERM_W wide. A line squeezed narrow past a trunk
+   * is shallower, so its walls stay rideable. Where lines meet, the deepest trench wins and a berm never fills another
+   * line's trench.
+   */
+  private trenchRaw(x: number, y: number): number {
+    const ids = this.grid.at(x, y);
+    if (!ids) return 0;
+    const s = this.seg;
+    let dig = 0, berm = 0;
+    for (const i of ids) {
+      const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
+      const rim = hw + TRENCH_WALL, r = rim + BERM_W;
+      const d2 = segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
+      if (d2 >= r * r) continue;
+      const d = Math.sqrt(d2);
+      const t = -TRENCH_DEPTH * str * Math.min(1, (hw + 0.2) / 1.2) * (1 - smooth(0.3 * rim, rim, d));
+      if (t < dig) dig = t;
+      const u = (d - rim + 0.3) / (BERM_W + 0.3);
+      if (u > 0 && u < 1) { const b = BERM_H * str * Math.sin(Math.PI * u) ** 2; if (b > berm) berm = b; }
+    }
+    return dig + berm * Math.max(0, 1 + dig / 0.15);
+  }
+
+  /** FEAT-333: the height the snow is dug down (or banked up) by a tree line here, m, under the forest only */
+  trenchAt(x: number, y: number): number {
+    const h = this.trenchRaw(x, y);
+    return h !== 0 ? h * this.gate(x, y) : 0;
   }
 
   /** the canopy gate: no line where there is no forest round it */

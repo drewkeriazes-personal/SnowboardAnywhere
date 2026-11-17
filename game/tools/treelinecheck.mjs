@@ -7,6 +7,7 @@
 //   - the generated stems leave the corridors: a full-density stand over the trees14 cell grows no stem in one, the
 //     same stand away from every line loses none
 //   - the trim: full in the Steep and Deep trees, none in forest far from every run
+//   - a full line is dug about a metre into the snow like a bobsled run, with a berm on its rim; no trunk in its walls
 //   - the snow on a line is tracked (chop) and shallower than the powder either side; a storm softens it
 //   - the build takes under 1.5 s of CPU
 // node tools/treelinecheck.mjs [pack]        (exit code 1 if a check fails; packs from SHOT_PACKS or the repo's packs/)
@@ -65,12 +66,32 @@ if (slug === 'vail') {
   check('Steep and Deep has tree lines beside the run', best >= 2, `${best} corridors crossed on the best transect within 60 m of trees14`);
   check('the trees14 powder spot is off the lines', tl.wornAt(P[0], P[1]) === 0, `worn ${tl.wornAt(P[0], P[1]).toFixed(2)}`);
   check('the Steep and Deep trees are trimmed', tl.trimAt(P[0], P[1]) > 0.9, `trim ${tl.trimAt(P[0], P[1]).toFixed(2)}`);
+  check('the trees14 snow lies as it fell (no trench)', tl.trenchAt(P[0], P[1]) === 0, `${tl.trenchAt(P[0], P[1]).toFixed(2)} m`);
 }
 
+// the trench: the deepest point across each strong segment's middle, the berm just past its rim, nothing far off
+let deep = 0, deepN = 0, bermN = 0, segs = 0, shallow = 0;
+for (let i = 0; i < tl.count && segs < 2000; i += 37) {
+  const o = i * 6, s = tl.seg;
+  if (s[o + 5] < 0.95 || s[o + 4] < 1.2) continue;
+  segs++;
+  const mx = (s[o] + s[o + 2]) / 2, my = (s[o + 1] + s[o + 3]) / 2, l = Math.hypot(s[o + 2] - s[o], s[o + 3] - s[o + 1]) || 1;
+  const nx = -(s[o + 3] - s[o + 1]) / l, ny = (s[o + 2] - s[o]) / l;
+  const t = tl.trenchAt(mx, my);
+  deep += t; deepN++;
+  if (t > -0.5) shallow++;
+  let bermUp = false;
+  for (let d = 2.5; d <= 5; d += 0.25) for (const sg of [-1, 1]) if (tl.trenchAt(mx + nx * d * sg, my + ny * d * sg) > 0.05) bermUp = true;
+  if (bermUp) bermN++;
+}
+check('a full line is dug into the snow', deepN > 100 && deep / deepN < -0.5 && shallow / deepN < 0.1, `mean ${(deep / deepN).toFixed(2)} m at the centre of ${deepN} full-strength segments, ${shallow} shallower than 0.5 m (lines crossing at an angle)`);
+check('the pushed-aside snow banks up on the rim', bermN / deepN > 0.8, `${bermN} of ${deepN} with a berm over 5 cm 2.5 to 5 m out`);
+
 // no detected trunk inside a corridor
-let inside = 0, total = 0;
-for (const c of cells) for (let i = 0; i < c.length; i += 6) { total++; if (tl.inCorridor(c[i], c[i + 1])) inside++; }
+let inside = 0, inWall = 0, total = 0;
+for (const c of cells) for (let i = 0; i < c.length; i += 6) { total++; if (tl.inCorridor(c[i], c[i + 1])) inside++; if (tl.trenchAt(c[i], c[i + 1]) < -0.1) inWall++; }
 check('no detected trunk stands in a corridor', inside === 0, `${inside} of ${total}`);
+check('no detected trunk stands in a trench wall (it would float over the dug snow)', inWall === 0, `${inWall} of ${total} where the snow is dug over 10 cm`);
 
 // the generated stems: a full-density 4 m stand over a 1 km cell round the lines' busiest spot
 let bx = 0, by = 0, most = -1;

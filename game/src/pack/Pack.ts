@@ -108,7 +108,10 @@ export class Pack {
       if (s.meta.res * 16 < res && s !== this.sets[this.sets.length - 1]) continue;
       if (this.skipFine(s, x, y, res)) continue;
       const h = s.sample(x, y);
-      if (!Number.isNaN(h)) return bumps && res <= MOGUL_MAX_RES ? h + this.bumpAt(x, y) : h;
+      if (Number.isNaN(h)) continue;
+      // FEAT-333: the tree lines' trench is part of the ground the near chunks build (and take their normals from)
+      const g = res <= MOGUL_MAX_RES ? h + this.trenchAt(x, y) : h;
+      return bumps && res <= MOGUL_MAX_RES ? g + this.bumpAt(x, y) : g;
     }
     // last resort: any set that has data
     for (const s of this.sets) {
@@ -139,9 +142,9 @@ export class Pack {
   /** BUG-100: true while Rider.update runs its physics steps, so fallbacks count to `coarseFallbacks` */
   physicsSampling = false;
 
-  /** Terrain height from the finest loaded set plus the mogul bumps, ignoring bridges. Independent of render LOD. */
+  /** Terrain height from the finest loaded set plus the tree lines' trench (FEAT-333) and the mogul bumps, ignoring bridges. Independent of render LOD. */
   terrainHeight(x: number, y: number): number {
-    return this.baseHeight(x, y) + this.bumpAt(x, y);
+    return this.baseHeight(x, y) + this.trenchAt(x, y) + this.bumpAt(x, y);
   }
 
   setMoguls(scale: number, creepM: number): void {
@@ -164,6 +167,9 @@ export class Pack {
 
   /** the shader and bump geometry carry moguls: the pack has a moguls set, or tree lines (FEAT-333) */
   get hasMoguls(): boolean { return !!this.moguls || !!this.treeLines; }
+
+  /** FEAT-333: how far a tree line has dug the snow down here, m (negative; a little positive on its berm), 0 off them */
+  trenchAt(x: number, y: number): number { return this.treeLines ? this.treeLines.trenchAt(x, y) : 0; }
 
   /** FEAT-333: 0..1 how worn the snow is by a tree line here (0 off them, and under no forest) */
   wornAt(x: number, y: number): number { return this.treeLines ? this.treeLines.wornAt(x, y) : 0; }
