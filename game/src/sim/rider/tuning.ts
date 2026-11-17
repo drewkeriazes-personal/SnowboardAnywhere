@@ -200,12 +200,15 @@ export const JUMP_POP = { arcade: { base: 2.5, charge: 4.5, squat: 1.15, ollie: 
 export type JumpMode = keyof typeof JUMP_POP;
 /** BUG-141 riding into a rampable rock, by jump mode. Arcade keeps the old kicker: the upward speed grows with
  *  your speed (`kick` share of it at the most, plus `base` m/s), so a 1.5 m rock at 30 m/s sends you about 11 m up;
- *  `loss` the share of speed lost hit square. Realistic never launches you: a rock under `rideOver` m above the snow
- *  you ride over, losing `loss` of your speed hit square and dropping off its far side with no lift; a taller one
- *  is solid, like a trunk (a glancing hit slides along it, a square one bounces you off, over 7 m/s throws you). */
+ *  `loss` the share of speed lost hit square. Realistic never launches you: you ride up and over a rock when its
+ *  face rises no more than `steepest` per metre (its height over its radius) and no more than `maxFace` along your
+ *  line (that times how square you hit it, so a slanting line is gentler) and your speed squared is at least `margin` times 2 g its height; you
+ *  rise to its top and no higher, the climb paid for out of your speed, plus `loss` of it hit square for the
+ *  scrape, which sounds for the time over it (`scrapeMin` to `scrapeMax` s). Otherwise the rock is solid, like a
+ *  trunk (a glancing hit slides along it, a square one bounces you off, over 7 m/s throws you). */
 export const ROCK_RAMP = {
   arcade: { base: 1.5, kick: 0.5, loss: 0.12 },
-  real: { rideOver: 0.4, loss: 0.15 },
+  real: { steepest: Math.tan(50 * D2R), maxFace: Math.tan(35 * D2R), margin: 1.5, loss: 0.1, scrapeMin: 0.12, scrapeMax: 0.6 },
 } as const;
 export const SQUAT_SPRING_WINDOW = 0.25;
 /** FEAT-110 flips: full-input pitch rate (1.1 rotations a second), how fast it builds and decays (1/s),

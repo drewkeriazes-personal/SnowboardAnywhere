@@ -10,6 +10,8 @@ export const VARIANTS = 4;
 export const SINK = [0.55, 0.35, 0.5], HEIGHT = [1.4, 1.0, 0.6];
 /** BUG-149: a rock showing less than this above the snow (m) is ridden over as snow, no collider */
 export const ROCK_MIN_TOP = 0.15;
+/** BUG-149: a rock standing more than this above the snow (m) is a wall in either mode, never ridden over (was any boulder over size 2.2, most of them a hump under 0.3 m as drawn) */
+export const ROCK_WALL_TOP = 1.5;
 /** the noise seed of rock variant `v` */
 export const rockSeed = (v: number): number => v * 7.31 + 1.7;
 
@@ -209,10 +211,10 @@ export class Rocks {
           const tk = 0.85 + 0.3 * t;
           this.c.setRGB(tk * (0.98 + 0.05 * u), tk, tk * (1.0 + 0.05 * (1 - u)));
           mesh.setColorAt(k, this.c);
-          // tall boulders are walls; slabs, talus and small boulders can be ridden up and launched off
+          // rocks can be ridden up (and launched off on Arcade); one standing over ROCK_WALL_TOP is a wall
           // BUG-149: the collider stands as high as the rock is drawn; one that barely shows has none
           const rc = this.collider ? rockCollider(size, type, this.geoTops[v]) : null;
-          if (rc) cell.col.push(this.collider!.add(x, y, rc.radius, z - 1, z + rc.top, type === 1 && size > 2.2 ? 0 : 1));
+          if (rc) cell.col.push(this.collider!.add(x, y, rc.radius, z - 1, z + rc.top, rc.top > ROCK_WALL_TOP ? 0 : 1));
         });
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;

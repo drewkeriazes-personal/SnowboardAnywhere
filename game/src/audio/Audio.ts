@@ -417,7 +417,8 @@ export class GameAudio {
    */
   private rockScrape(r: Rider, onSnow: boolean, dt: number): void {
     const s = r.surface, spd = r.speed;
-    const rock = onSnow ? s.rock : 0, scree = onSnow ? s.scree : 0;
+    // BUG-141: riding up and over a rock on Realistic scrapes the base over it, in the air or not
+    const rock = Math.max(onSnow ? s.rock : 0, r.rockOver > 0 ? 1 : 0), scree = onSnow ? s.scree : 0;
     const v = Math.min(1, spd / 20), edge = Math.min(1, Math.abs(r.edgeAngle));
     const load = (RIDER_KG / 82) * (1 + 0.5 * Math.min(1.5, Math.abs(r.lateralG)) + r.landingShock);
     this.skipT -= dt;
@@ -508,7 +509,7 @@ export class GameAudio {
     if (r.strapState !== this.wasStrap && r.strapState !== 'none') this.bindings(r.strapState === 'on');
     this.wasStrap = r.strapState;
     // one-shots
-    if (this.wasOnGround && !r.onGround && r.airTime < 0.05 && r.lastHit !== 'ramp') {
+    if (this.wasOnGround && !r.onGround && r.airTime < 0.05 && r.lastHit !== 'ramp' && r.lastHit !== 'rock') {
       if (r.onFoot) this.burst('lowpass', 600, 0.1, 0.15); else this.jump(Math.min(1, r.vz / 7));
     }
     if (!this.wasOnGround && r.onGround && !r.onFoot) this.landing(r.landingShock, powder);

@@ -15,6 +15,8 @@ export interface Hit {
   kind: number;
   /** obstacle top height (m) for ramp launches */
   top: number;
+  /** BUG-141: a trunk's or rock's radius (m; 0 for a wall or building), for how steep a rock's face is */
+  radius: number;
   /** true when the point started inside a building footprint and was pushed out across an edge */
   inside: boolean;
   /** BUG-045: true when the hit is a building footprint's edge, a ledge whose top can be stood on */
@@ -40,7 +42,7 @@ function insidePoly(pts: [number, number][], x: number, y: number): boolean {
 
 export class Collider {
   private readonly cells = new Map<string, Float32Array[]>(); // packed [x, y, radius, zBase, zTop, kind]
-  private readonly hit: Hit = { x: 0, y: 0, nx: 0, ny: 0, kind: 0, top: 0, inside: false, ledge: false };
+  private readonly hit: Hit = { x: 0, y: 0, nx: 0, ny: 0, kind: 0, top: 0, radius: 0, inside: false, ledge: false };
   private readonly footprints = new Map<number, Footprint[]>();
 
   private key(cx: number, cy: number): string {
@@ -311,7 +313,7 @@ export class Collider {
         if (d < bestD) { const l = Math.sqrt(len2); bestD = d; bx = px; by = py; bnx = ey / l; bny = -ex / l; } // outward for CCW
       }
       x = bx + bnx * (r + 1e-3); y = by + bny * (r + 1e-3);
-      this.hit.x = x; this.hit.y = y; this.hit.nx = bnx; this.hit.ny = bny; this.hit.kind = 0; this.hit.top = fp.zTop; this.hit.inside = true; this.hit.ledge = false;
+      this.hit.x = x; this.hit.y = y; this.hit.nx = bnx; this.hit.ny = bny; this.hit.kind = 0; this.hit.top = fp.zTop; this.hit.radius = 0; this.hit.inside = true; this.hit.ledge = false;
       found = this.hit;
     }
     const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
@@ -327,7 +329,7 @@ export class Collider {
           if (d < min) {
             const nx = d > 1e-4 ? dx / d : 1, ny = d > 1e-4 ? dy / d : 0;
             x = c[0] + nx * min; y = c[1] + ny * min;
-            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = c[5]; this.hit.top = c[4]; this.hit.ledge = false;
+            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = c[5]; this.hit.top = c[4]; this.hit.radius = c[2]; this.hit.ledge = false;
             found = this.hit;
           }
         }
@@ -351,7 +353,7 @@ export class Collider {
             if (d > 1e-4) { nx = dx / d; ny = dy / d; }
             else { const l = Math.sqrt(len2); nx = ey / l; ny = -ex / l; }
             x = px + nx * r; y = py + ny * r;
-            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = 0; this.hit.top = w[5]; this.hit.ledge = w[6] === 1;
+            this.hit.x = x; this.hit.y = y; this.hit.nx = nx; this.hit.ny = ny; this.hit.kind = 0; this.hit.top = w[5]; this.hit.radius = 0; this.hit.ledge = w[6] === 1;
             found = this.hit;
           }
         }

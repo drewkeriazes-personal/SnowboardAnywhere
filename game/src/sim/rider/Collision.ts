@@ -1,6 +1,6 @@
 /** Ground height and collisions (split from sim/Rider.ts, FEAT-165) */
 import type { Rider } from '../Rider';
-import { BODY_R, ROCK_RAMP, STEP_UP } from './tuning';
+import { BODY_R, G, ROCK_RAMP, STEP_UP } from './tuning';
 
 /** BUG-045: terrain or a bridge deck, or the top of a building the rider is standing on */
 export function groundAt(r: Rider, x: number, y: number, z: number): number {
@@ -22,25 +22,31 @@ export function rideCollide(r: Rider): void {
       const spdNow = Math.hypot(r.vx, r.vy) || 1;
       const headOn = -vn / spdNow; // 1 = straight into it, 0 = grazing
       if (vn < 0) {
-        // BUG-141: on Realistic a rock never launches you. One under ROCK_RAMP.real.rideOver above the snow
-        // you ride over (a jolt and some speed, no lift); a taller one is solid, like a trunk
-        const real = r.jumpMode === 'real';
+        // BUG-141: on Realistic a rock never launches you. With the speed to climb it and a face gentle enough
+        // along your line you ride up and over it, scraping, rising no higher than its top; otherwise it is solid,
+        // like a trunk. Arcade keeps the kicker.
+        const real = r.jumpMode === 'real', R = ROCK_RAMP.real;
         const h = hit.top - r.z;
-        const solid = hit.kind !== 1 || (real && h >= ROCK_RAMP.real.rideOver);
-        if (!solid) {
-          r.lastHit = 'ramp';
+        const face = hit.radius > 0 ? Math.max(0, h) / hit.radius : Infinity; // the rock's own rise per metre
+        const climb = real && hit.kind === 1 && face <= R.steepest && face * headOn <= R.maxFace // and along your line
+          && spdNow * spdNow >= R.margin * 2 * G * Math.max(0, h);
+        if (hit.kind === 1 && (!real || climb)) {
           if (!real) {
             // Arcade: the rock is a kicker, launch angle from how square the hit is, upward speed from your speed
+            r.lastHit = 'ramp';
             const A = ROCK_RAMP.arcade, hk = Math.max(0.3, h);
             const launch = Math.min(0.9, 0.25 + 0.9 * headOn) * Math.min(1, hk / 1.5);
             r.vz = Math.max(r.vz, spdNow * launch * A.kick + A.base);
             r.vx *= 1 - A.loss * headOn; r.vy *= 1 - A.loss * headOn;
             r.z = Math.max(r.z, hit.top - 0.3);
           } else {
-            const loss = ROCK_RAMP.real.loss * headOn;
-            r.vx *= 1 - loss; r.vy *= 1 - loss;
-            r.vz = Math.max(0, r.vz);
-            r.z = Math.max(r.z, hit.top + 0.01); // over its top and down the far side, so the next step doesn't hit it again
+            // up and over: just the upward speed to reach the top, paid for out of your speed, plus the scrape
+            r.lastHit = 'rock';
+            const rise = Math.max(0, h), vz = Math.sqrt(2 * G * rise);
+            const k = Math.sqrt(Math.max(0, spdNow * spdNow - vz * vz)) / spdNow * (1 - R.loss * headOn);
+            r.vx *= k; r.vy *= k;
+            r.vz = Math.max(r.vz, vz);
+            r.rockOver = Math.min(R.scrapeMax, Math.max(R.scrapeMin, 2 * hit.radius / spdNow));
           }
           r.onGround = false; r.airTime = 0; r.spin = 0; r.flip = 0; r.flipRate = 0;
           r.landingShock = 0.3;

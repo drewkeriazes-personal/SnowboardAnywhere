@@ -184,6 +184,8 @@ export class Rider {
   landingShock = 0;
   /** last collision this step: 'ramp' | 'graze' | 'wall' | '' (for sound and effects; cleared each frame) */
   lastHit = '';
+  /** BUG-141: time left scraping over a rock ridden up and over on Realistic (s), for the rock scrape sound */
+  rockOver = 0;
   /** FEAT-217: the speed into the trunk, rock or wall of that collision (m/s; cleared with lastHit) */
   hitSpeed = 0;
   /** Outrun boost (FEAT-101): less drag for a few seconds */
@@ -334,7 +336,7 @@ export class Rider {
   /** End any brake swing: the board lines up with the heading again (internal: the rider modules call it). */
   squareBoard(): void {
     this.boardYaw = this.travelYaw = this.heading;
-    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0;
+    this.brakeAmt = 0; this.brakeSide = 0; this.brakeAcc = 0; this.brakePsi = 0; this.brakeMod = 0; this.scrape = 0; this.slip = 0; this.rockOver = 0;
   }
 
   /**
@@ -345,6 +347,7 @@ export class Rider {
     // moved from outside since the last step (lift, reset, teleport): nothing to interpolate from
     if (this.x !== this.end[0] || this.y !== this.end[1] || this.z !== this.end[2] || this.heading !== this.end[3]) { this.squareBoard(); this.snapPose(); }
     this.accum += Math.min(dt, 0.1);
+    this.rockOver = Math.max(0, this.rockOver - dt);
     // BUG-100: height reads in here count to pack.coarseFallbacks, everything else's to otherFallbacks
     this.pack.physicsSampling = true;
     try { this.runSteps(input); } finally { this.pack.physicsSampling = false; }
