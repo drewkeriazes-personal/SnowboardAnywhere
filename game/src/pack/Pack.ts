@@ -56,6 +56,7 @@ export class Pack {
     this.coarse = meta.terrain.coarse ? new HeightSet(`${baseUrl}/coarse`, meta.terrain.coarse) : null;
     this.mid = meta.terrain.mid ? new HeightSet(`${baseUrl}/mid`, meta.terrain.mid) : null;
     this.far = meta.terrain.far ? new HeightSet(`${baseUrl}/far`, meta.terrain.far) : null;
+    this.sets = [this.fine, this.coarse, this.mid, this.far].filter((s): s is HeightSet => !!s);
     this.mask = meta.mask ? new MaskSet(`${baseUrl}/mask`, meta.mask) : null;
     // BUG-087: the greyscale sets decode without the WebGL readback
     this.ao = meta.ao ? new MaskSet(`${baseUrl}/ao`, meta.ao, { opaque: true }) : null;
@@ -84,10 +85,8 @@ export class Pack {
     return pack;
   }
 
-  /** Sets ordered finest first. */
-  get sets(): HeightSet[] {
-    return [this.fine, this.coarse, this.mid, this.far].filter((s): s is HeightSet => !!s);
-  }
+  /** Sets ordered finest first (FEAT-339: made once; every height read walks it) */
+  readonly sets: HeightSet[];
 
   /**
    * FEAT-229: a chunk at `res` m or coarser leaves the fine set to the coarse one where that has data (the 4 and 8 m
@@ -113,9 +112,13 @@ export class Pack {
       const h = s.sample(x, y);
       if (Number.isNaN(h)) continue;
       // FEAT-333: the tree lines' trench is part of the ground the near chunks build (and take their normals from)
-      const g = res <= MOGUL_MAX_RES ? h + this.trenchAt(x, y) : h;
+      const t = res <= MOGUL_MAX_RES ? this.trenchAt(x, y) : 0;
+      this.lastTrench = t;
+      const g = h + t;
       return bumps && res <= MOGUL_MAX_RES ? g + this.bumpAt(x, y) : g;
     }
+    // the shading still reads the trench here (as it did before the cache), though the returned height leaves it out
+    this.lastTrench = res <= MOGUL_MAX_RES ? this.trenchAt(x, y) : 0;
     // last resort: any set that has data
     for (const s of this.sets) {
       if (!s.contains(x, y)) continue;
@@ -125,6 +128,10 @@ export class Pack {
     if (this.sets.some((s) => s.waiting(x, y))) this.waitingSamples++;
     return this.meta.zRange[0];
   }
+
+  /** FEAT-339: the tree lines' trench the last height() call added, m (0 when it added none), so the chunk builder need
+   *  not look it up again */
+  lastTrench = 0;
 
   /**
    * BUG-088: count of height() calls that found no data yet because the tiles there are still to load (the
@@ -255,11 +262,26 @@ export class Pack {
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and
    *  sized by its slope (FEAT-147). */
   bumpAt(x: number, y: number): number {
-    const amp = this.mogulAmp(x, y);
+    return this.bumpWith(x, y, this.mogulAmp(x, y, true), null);
+  }
+
+  /**
+   * FEAT-339: `bumpAt` from the raw amplitude (`mogulAmp(x, y, true)`) the caller already has, and the fall line from
+   * `fallAt` when it has that too (else null), so the chunk builder reads each once per vertex and gets the very numbers
+   * the physics does.
+   */
+  bumpWith(x: number, y: number, rawAmp: number, fall: number[] | null): number {
+    if (this.mogulScale <= 0) return 0;
+    const amp = rawAmp * this.mogulScale;
     if (amp < 0.005) return 0;
-    // BUG-064: a wide difference so the rows hold their direction; its length is the slope (FEAT-147)
-    const f = downhillFrom(this.baseFn, x, y, this.fallTmp, MOGUL_FALL_D);
+    const f = fall ?? this.fallAt(x, y, this.fallTmp);
     return mogulHeight(x, y, amp, f[0], f[1], this.mogulCreep);
+  }
+
+  /** FEAT-339: the mogul field's downhill vector here (pack east, north; its length the slope, FEAT-147), BUG-064's wide
+   *  difference of the DEM MOGUL_FALL_D either side: what `bumpAt` aligns the bumps to, and the shader's fall line too */
+  fallAt(x: number, y: number, out: number[]): number[] {
+    return downhillFrom(this.baseFn, x, y, out, MOGUL_FALL_D);
   }
 
   private readonly baseFn = (x: number, y: number) => this.baseHeight(x, y);
