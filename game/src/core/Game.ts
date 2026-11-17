@@ -56,7 +56,7 @@ export class Game {
     status.textContent = `Loading ${packSlug}...`;
     let pack: Pack;
     try {
-      pack = await Pack.load(`${import.meta.env.BASE_URL}packs/${packSlug}`, { treeLines: !params.notreelines }); // FEAT-333
+      pack = await Pack.load(`${import.meta.env.BASE_URL}packs/${packSlug}`, { treeLines: !params.notreelines, bakedTreeLines: !params.treelinesFromRuns }); // FEAT-333, FEAT-334
     } catch (e) {
       if (headless) throw e; // the test tools keep the plain error in #status (main.ts)
       // BUG-105: a ?pack= that isn't there keeps its error, on the first-run screen with the picker

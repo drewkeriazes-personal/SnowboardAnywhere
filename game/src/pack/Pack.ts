@@ -2,7 +2,7 @@ import { HeightSet } from './HeightSet';
 import { MaskSet } from './MaskSet';
 import { CoverSet } from './CoverSet';
 import { CanopyGrid } from './CanopyGrid';
-import type { Features, PackMeta } from './types';
+import type { BakedTreeLines, Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
 import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
 
@@ -68,8 +68,9 @@ export class Pack {
   /** FEAT-330: canopy score 0..1 at pack (x, y); 0 without a grid, outside it, or before it loads */
   canopyAt(x: number, y: number): number { return this.canopy ? this.canopy.sample(x, y) : 0; }
 
-  /** `treeLines` false: no FEAT-333 tree lines or FEAT-303 trim (`?notreelines`) */
-  static async load(baseUrl: string, opts: { treeLines?: boolean } = {}): Promise<Pack> {
+  /** `treeLines` false: no FEAT-333 tree lines or FEAT-303 trim (`?notreelines`); `bakedTreeLines` false: plan them from
+   *  the runs even when the pack has its own (FEAT-334, `?treelines=runs`) */
+  static async load(baseUrl: string, opts: { treeLines?: boolean; bakedTreeLines?: boolean } = {}): Promise<Pack> {
     const resp = await fetch(`${baseUrl}/meta.json`);
     if (!resp.ok) throw new Error(`Pack not found at ${baseUrl}/ (HTTP ${resp.status}). Run the Vite dev server (cd game && npm run dev) and open http://localhost:5173/?pack=<slug>; the pack folder must exist at packs/<slug>/ next to game/.`);
     const meta = (await resp.json()) as PackMeta;
@@ -79,7 +80,7 @@ export class Pack {
     } catch (e) {
       console.warn('no features.json', e);
     }
-    if (opts.treeLines !== false) await pack.setTreeLines(true);
+    if (opts.treeLines !== false) await pack.setTreeLines(true, opts.bakedTreeLines !== false);
     return pack;
   }
 
@@ -179,13 +180,22 @@ export class Pack {
   /**
    * FEAT-333: build the tree lines from the runs (on), or drop them. The
    * lines bend round the pack's detected trunks, so this fetches the tree cells they cross first (the same files the
-   * trees stream later, so the browser has them); the generated stems just leave the corridors.
+   * trees stream later, so the browser has them); the generated stems just leave the corridors. FEAT-334: a pack with
+   * baked lines (`meta.treeLines`, traced from its terrain and already clear of its trunks) loads those instead and
+   * fetches no tree cells, unless `baked` is false; a file that will not load falls back to the plan from the runs.
    */
-  async setTreeLines(on: boolean): Promise<void> {
+  async setTreeLines(on: boolean, baked = true): Promise<void> {
     if (!on) { this.treeLines = null; return; }
     const t0 = performance.now();
-    const tl = new TreeLines(this.features.runs);
-    const inst = this.meta.instances;
+    let file: BakedTreeLines | null = null;
+    if (baked && this.meta.treeLines) {
+      try {
+        const r = await fetch(`${this.baseUrl}/${this.meta.treeLines.file}`);
+        if (r.ok) file = (await r.json()) as BakedTreeLines; else console.warn(`tree lines: ${this.meta.treeLines.file} HTTP ${r.status}, planning from the runs`);
+      } catch (e) { console.warn(`tree lines: ${this.meta.treeLines.file} did not load, planning from the runs`, e); }
+    }
+    const tl = new TreeLines(this.features.runs, file);
+    const inst = tl.baked ? undefined : this.meta.instances;
     let left = 0, trunkCount = 0, failed = 0, cells = 0;
     // the forest gate's cover levels load alongside the trunks (review on #770: a gate that changes after load moves the
     // ground under the rider)
@@ -220,7 +230,8 @@ export class Pack {
     tl.setCanopy(this.forestGate());
     this.treeLines = tl;
     const fails = failed ? `, ${failed} of ${cells} tree cells failed to load (their trunks were not avoided)` : '';
-    console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km, bent round ${trunkCount} trunks (${left} steps broken at a trunk${fails}), ${(performance.now() - t0).toFixed(0)} ms`);
+    if (tl.baked) console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km baked in the pack (${tl.count} segments), ${(performance.now() - t0).toFixed(0)} ms`);
+    else console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km, bent round ${trunkCount} trunks (${left} steps broken at a trunk${fails}), ${(performance.now() - t0).toFixed(0)} ms`);
     if (failed) console.warn(`tree lines: ${failed} of ${cells} tree cells failed to load`);
   }
 

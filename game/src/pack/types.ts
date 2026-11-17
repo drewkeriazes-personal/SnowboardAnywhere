@@ -49,6 +49,25 @@ export interface CoverMeta {
  * FEAT-330: the canopy score grid (MapPacker FEAT-331), `canopy.png` at the pack root: 8-bit greyscale, byte / 255 =
  * canopy 0..1. Same frame and orientation as a cover level: lower-left corner in pack metres, row 0 the north edge.
  */
+/**
+ * FEAT-334: the glade tree lines baked from the terrain (MapPacker pipeline/tree_lines.py), `treeLines.json` at the pack
+ * root. The game loads them in place of its own plan from the runs (pack/treeLines.ts).
+ */
+export interface TreeLinesMeta {
+  file: string;
+  /** how many lines, and their length (km), for the log */
+  lines: number;
+  km: number;
+}
+
+/** FEAT-334: treeLines.json: each line's points as x, y (pack metres), half-width (m), strength (0..1), every `step` m */
+export interface BakedTreeLines {
+  version: number;
+  step: number;
+  /** `open`: the metres from the line's start the forest gate does not apply (an entrance leaving the cat track) */
+  lines: { p: number[]; open?: number }[];
+}
+
 export interface CanopyMeta {
   /** cell size (m), 10 */
   res: number;
@@ -125,6 +144,8 @@ export interface PackMeta {
   cover?: CoverMeta;
   /** FEAT-330: canopy score grid for the darkening under dense glades; absent = no canopy anywhere (no darkening) */
   canopy?: CanopyMeta;
+  /** FEAT-334: the tree lines baked from the terrain; absent = the game plans them from the runs (FEAT-333) */
+  treeLines?: TreeLinesMeta;
   instances?: InstancesMeta;
   /** DATA-020: 2 = tree species ids 0..7, FEAT-233: 3 = 0..9 (see MapPacker's docs/pack-format.md); absent = 0..2 */
   treeSpecies?: number;

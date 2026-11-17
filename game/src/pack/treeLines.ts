@@ -1,4 +1,4 @@
-import type { RunFeature } from './types';
+import type { BakedTreeLines, RunFeature } from './types';
 
 /**
  * FEAT-333: worn tree lines, and FEAT-303: trimmed glade trees, from the pack's runs alone (no new data).
@@ -21,6 +21,11 @@ import type { RunFeature } from './types';
  * kit's shader: full in the trees of a gladed or expert run, half along a black run's edges, most of it in the strips of forest between two runs, and round the
  * tree lines; nothing in the deep forest away from the runs. Sampled on an 8 m grid per 256 m tile, made on
  * first use.
+ *
+ * Baked lines (FEAT-334): a pack with `treeLines.json` (MapPacker pipeline/tree_lines.py) carries lines traced from its own
+ * terrain and trunks: riders walked down a cost field from the fall line, merging in gullies and funnelling at the flats.
+ * Those replace the plan above (`baked`), already clear of the detected trunks, so `avoid` has nothing to do; everything
+ * downstream (trench, berm, moguls, worn snow, stems, trim) is the same. `?treelines=runs` plans from the runs anyway.
  *
  * All pack metres (x east, y north). Pure: same runs, same lines.
  */
@@ -269,8 +274,54 @@ export class TreeLines {
   /** FEAT-335: grid cells indexed so far (the checks) */
   subsMade = 0;
 
-  /** plans the lines from the runs; `finish` (after `avoid`, when the pack has its trees) makes them count */
-  constructor(runs: RunFeature[]) {
+  /** true when the lines came from the pack (FEAT-334), already clear of its trunks */
+  readonly baked: boolean;
+
+  /** plans the lines from the runs, or takes the pack's `baked` ones (FEAT-334); `finish` (after `avoid`, when the pack
+   *  has its trees) makes them count. The trim reads the runs either way. */
+  constructor(runs: RunFeature[], baked?: BakedTreeLines | null) {
+    this.baked = !!baked;
+    if (baked) this.takeBaked(baked); else this.planRuns(runs);
+    // the runs for the trim (all of them: a strip between any two runs is ridden)
+    const rs: number[] = [];
+    runs.forEach((r, ri) => {
+      const p = r.points;
+      const g = r.gladed ? 1 : GLADE_LEVEL[r.difficulty ?? ''] ?? 0;
+      for (let i = 0; i + 1 < p.length; i++) rs.push(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], ri, g);
+    });
+    this.runSeg = new Float32Array(rs);
+    const T = TRIM_TILE;
+    for (let i = 0; i < rs.length / 6; i++) {
+      const o = i * 6, pad = STRIP_NONE;
+      const x0 = Math.floor((Math.min(rs[o], rs[o + 2]) - pad) / T), x1 = Math.floor((Math.max(rs[o], rs[o + 2]) + pad) / T);
+      const y0 = Math.floor((Math.min(rs[o + 1], rs[o + 3]) - pad) / T), y1 = Math.floor((Math.max(rs[o + 1], rs[o + 3]) + pad) / T);
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+        const key = cy * 100003 + cx, a = this.runGrid.get(key);
+        if (a) a.push(i); else this.runGrid.set(key, [i]);
+      }
+    }
+  }
+
+  /** FEAT-334: the pack's lines as plans: x, y, half-width, strength per point; `open` m from the start ungated */
+  private takeBaked(b: BakedTreeLines): void {
+    for (const ln of b.lines) {
+      const p = ln.p, n = Math.floor(p.length / 4);
+      if (n < 2) continue;
+      const plan: Plan = { x: [], y: [], str: [], hw: 0, w: [], open: [] };
+      let s = 0;
+      for (let i = 0; i < n; i++) {
+        const o = i * 4;
+        if (i) s += Math.hypot(p[o] - p[o - 4], p[o + 1] - p[o - 3]);
+        plan.x.push(p[o]); plan.y.push(p[o + 1]); plan.w.push(p[o + 2]); plan.str.push(p[o + 3]);
+        plan.open.push(ln.open && s < ln.open ? 1 : 0);
+        plan.hw = Math.max(plan.hw, p[o + 2]);
+      }
+      this.plans.push(plan);
+    }
+  }
+
+  /** FEAT-333: the lines planned from the runs alone */
+  private planRuns(runs: RunFeature[]): void {
     const pt = [0, 0, 0, 0];
     runs.forEach((r, ri) => {
       if (!(r.gladed || (r.difficulty && LINE_DIFF.has(r.difficulty)))) return;
@@ -297,24 +348,6 @@ export class TreeLines {
         this.walk(l, ri, k, sx, sy, side * target, 1, LEN_MIN + LEN_RANGE * h01(ri, k, 3), 0, ENTRY_OPEN);
       }
     });
-    // the runs for the trim (all of them: a strip between any two runs is ridden)
-    const rs: number[] = [];
-    runs.forEach((r, ri) => {
-      const p = r.points;
-      const g = r.gladed ? 1 : GLADE_LEVEL[r.difficulty ?? ''] ?? 0;
-      for (let i = 0; i + 1 < p.length; i++) rs.push(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], ri, g);
-    });
-    this.runSeg = new Float32Array(rs);
-    const T = TRIM_TILE;
-    for (let i = 0; i < rs.length / 6; i++) {
-      const o = i * 6, pad = STRIP_NONE;
-      const x0 = Math.floor((Math.min(rs[o], rs[o + 2]) - pad) / T), x1 = Math.floor((Math.max(rs[o], rs[o + 2]) + pad) / T);
-      const y0 = Math.floor((Math.min(rs[o + 1], rs[o + 3]) - pad) / T), y1 = Math.floor((Math.max(rs[o + 1], rs[o + 3]) + pad) / T);
-      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
-        const key = cy * 100003 + cx, a = this.runGrid.get(key);
-        if (a) a.push(i); else this.runGrid.set(key, [i]);
-      }
-    }
   }
 
   /** the planned lines' points as [minX, minY, maxX, maxY] boxes, one per line, for fetching the trees they cross */
