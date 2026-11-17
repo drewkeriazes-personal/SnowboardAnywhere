@@ -8,7 +8,7 @@
 // It builds the merge base with origin/<base> ("before") and the commit ("after") in their own detached
 // worktrees, runs the commit's game/tools/cishot.mjs on both with the synthetic pack CI downloads (FEAT-241:
 // MapPacker's release, the catalog's synth at this game's PACK_FORMAT, one pack for both sides), then the
-// commit's tools/ci/render_report.py: the same commands as the CI job. CI accepts the status only when it was set by the repo owner, on the exact
+// commit's tools/ci/render_report.py: the same commands as the CI job. CI accepts the status only when it was set by TRUSTED (the maintainer), on the exact
 // head SHA, with the PR's current merge base, the same tools hash (tools/ci/render_budgets_key.sh) and the
 // same synthetic pack key, and the PR did not ask for stills.
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -19,6 +19,9 @@ import { CATALOG_URL } from '../../game/tools/get_pack.mjs';
 
 export const MARKER = '<!-- ci-stills -->';
 export const CONTEXT = 'render-budgets/local';
+/** the one login whose `render-budgets/local` statuses and stills comments CI trusts (checks.yml, pr-review.yml).
+ *  Not the repo owner: that is the drewkeriazes-personal org since #759, and nobody signs in as an org (BUG-157). */
+export const TRUSTED = 'drewkeriazes';
 /** set on the `git push` that local_render_budgets.mjs --push makes, so the pre-push hook doesn't run the check again */
 export const PUSH_GUARD = 'SA_RENDER_BUDGETS_PUSH';
 /** testing aid for a machine without a GPU (a cloud session testing the tools): the cishot flag, default --gpu.
@@ -121,9 +124,8 @@ export function prepare({ repo, sha = 'HEAD', pr: prArg, mode = 'manual', push =
   if (pr.isCrossRepository) die(`PR #${pr.number} comes from a fork; run it from a branch in this repo`);
   if (pr.labels.some((l) => l.name === 'stills')) die(`PR #${pr.number} has the stills label, so CI runs render-budgets anyway (the local run does not compare stills)`);
 
-  const owner = out('gh', ['repo', 'view', '--json', 'owner', '--jq', '.owner.login'], { cwd: repo });
   const me = out('gh', ['api', 'user', '--jq', '.login'], { cwd: repo });
-  if (me !== owner) die(`signed in to gh as ${me}; CI only trusts ${CONTEXT} statuses from ${owner}`);
+  if (me !== TRUSTED) die(`signed in to gh as ${me}; CI only trusts ${CONTEXT} statuses from ${TRUSTED}`);
 
   let needPush = false;
   if (mode === 'manual' && SHA !== pr.headRefOid) {
@@ -144,7 +146,7 @@ export function prepare({ repo, sha = 'HEAD', pr: prArg, mode = 'manual', push =
   const BASH = findBash();
   const TOOLS = out(BASH, ['tools/ci/render_budgets_key.sh', SHA], { cwd: repo });
   L.info(`PR #${pr.number}: before = merge base ${BASE.slice(0, 12)} with origin/${pr.baseRefName}, after = ${SHA.slice(0, 12)}; tools ${TOOLS}; cache ${cache}`);
-  return { repo, git, L, pr, owner, SHA, BASE, TOOLS, BASH, needPush, cache, keep };
+  return { repo, git, L, pr, trusted: TRUSTED, SHA, BASE, TOOLS, BASH, needPush, cache, keep };
 }
 
 // installed versions must be what the lockfile says, as `npm ci` gives CI: a different three, vite or playwright
@@ -264,10 +266,10 @@ export function runCheck(ctx) {
 }
 
 /** The `render-budgets/local` status (first: CI's job reads it about 30 s after a push), then the PR comment. */
-export function post({ repo, sha, prNumber, prUrl, owner, desc, body }) {
+export function post({ repo, sha, prNumber, prUrl, trusted = TRUSTED, desc, body }) {
   out('gh', ['api', `repos/{owner}/{repo}/statuses/${sha}`, '-f', 'state=success', '-f', `context=${CONTEXT}`, '-f', `description=${desc}`, '-f', `target_url=${prUrl}`], { cwd: repo });
   const ids = out('gh', ['api', `repos/{owner}/{repo}/issues/${prNumber}/comments?per_page=100`, '--paginate', '--jq',
-    `.[] | select((.user.login == "github-actions[bot]" or .user.login == "${owner}") and (.body | startswith("${MARKER}"))) | .id`], { cwd: repo });
+    `.[] | select((.user.login == "github-actions[bot]" or .user.login == "${trusted}") and (.body | startswith("${MARKER}"))) | .id`], { cwd: repo });
   const id = ids.split('\n').filter(Boolean).pop();
   const patched = id && tryOut('gh', ['api', '-X', 'PATCH', `repos/{owner}/{repo}/issues/comments/${id}`, '-F', `body=@${body}`, '--jq', '.html_url'], { cwd: repo });
   return patched || out('gh', ['api', `repos/{owner}/{repo}/issues/${prNumber}/comments`, '-F', `body=@${body}`, '--jq', '.html_url'], { cwd: repo });
