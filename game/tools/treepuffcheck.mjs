@@ -20,6 +20,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
+// BUG-144: TreeBrush draws its particles (clump or cloud, size, speed) from Math.random, and the counts
+// below are asserted, so seed it: every run sees the same draws. TREEPUFF_SEED picks another seed.
+const SEED = Number(process.env.TREEPUFF_SEED ?? 1);
+{
+  let a = SEED >>> 0;
+  Math.random = () => { a = (a + 0x6d2b79f5) >>> 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'treepuffcheck-'));
 const entry = path.join(dir, 'entry.ts');
 const src = (m) => JSON.stringify(path.join(GAME, 'src', 'world', `${m}.ts`).replace(/\\/g, '/'));

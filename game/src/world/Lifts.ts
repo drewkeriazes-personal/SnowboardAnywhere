@@ -389,6 +389,13 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     return best;
   }
 
+  /** FEAT-323: every lift whose loading point is within `maxDist` m, nearest first (the lift picker's list). */
+  boardableNear(x: number, y: number, maxDist: number): LiftRuntime[] {
+    const out: [number, LiftRuntime][] = [];
+    for (const l of this.lifts) { const d = Math.hypot(l.bottom[0] - x, l.bottom[1] - y); if (d < maxDist) out.push([d, l]); }
+    return out.sort((a, b) => a[0] - b[0]).map((o) => o[1]);
+  }
+
   /** Rideable length between the loading and unloading points. */
   rideLength(l: LiftRuntime): number { return rideLength(l); }
 

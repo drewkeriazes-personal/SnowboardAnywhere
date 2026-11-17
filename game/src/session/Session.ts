@@ -37,7 +37,7 @@ import { KeyLabels } from '../ui/KeyLabels';
 import { Toast } from '../ui/Toast';
 import { SceneRender } from '../world/SceneRender';
 import { SunClock } from '../world/SunClock';
-import { warmUp as warmUpWorld } from './warmUp';
+import { warmUp as warmUpWorld, streamUntilSettled } from './warmUp';
 import { saveShot as saveShotFile, saveTake as saveTakeFile, saveMenuShot } from './devSaves';
 import { askMenuShot } from '../ui/MenuShotForm';
 import { buildWorld } from './World';
@@ -54,6 +54,8 @@ import { RidingState } from '../states/RidingState';
 import { RewindState } from '../states/RewindState';
 import { PausedState } from '../states/PausedState';
 import { ReplayState } from '../states/ReplayState';
+import { LiftPickState } from '../states/LiftPickState';
+import { LiftPicker } from '../ui/LiftPicker';
 import { MapState } from '../states/MapState';
 import { Modes } from '../modes/Modes';
 
@@ -87,6 +89,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     riderView.setPack(pack, collider); // FEAT-046: the crash ragdoll hits trunks, rocks and walls
     const liftRide = new LiftRide(pack, lifts, collider);
     liftRide.gate = (l, x, y) => liftLines.inGate(l, x, y); // FEAT-073: board from inside the maze
+    if (params.boardRange) liftRide.boardRange = params.boardRange; // FEAT-323: try another boarding zone size
     const prefetch = new Prefetch();
     const cam = new ChaseCamera(pack, window.innerWidth / window.innerHeight);
     cam.collider = collider; // BUG-032: keep the chase camera out of trees
@@ -395,6 +398,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     });
     if (settings.keysNote) { frame.boardNote = 'New default key layout available: Settings > Controls > Reset keys'; settings.keysNote = false; saveSettings(settings); }
     const restartRing = new RestartRing();
+    const liftPicker = new LiftPicker(keyLabels); // FEAT-323: two or more lifts in range
     const rewind = new RewindState({ controls, touch, rider, liftRide, modes, replay, pack, frame, rewindTo }, states);
     states
       .add(new RidingState({
@@ -404,7 +408,8 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       .add(rewind)
       .add(new PausedState({ controls, touch, pause, audio, fps, pauseInfo, draw }, states))
       .add(new ReplayState({ controls, touch, rider, replay, replayBar, pack, cam, settings, modes, audio, frame, debugHud, applySun, replayBlockedReason, saveTake }, states))
-      .add(new MapState({ controls, touch, map, settings, keyLabels, audio, frame, onClosed: () => modes.mapClosed() }, states));
+      .add(new MapState({ controls, touch, map, settings, keyLabels, audio, frame, onClosed: () => modes.mapClosed() }, states))
+      .add(new LiftPickState({ controls, touch, rider, liftRide, picker: liftPicker, frame, dist: (m) => settings.units === 'metric' ? `${m.toFixed(0)} m` : `${(m * 3.28084).toFixed(0)} ft` }, states)); // FEAT-323
     const attract = menu ? new AttractState({ menu, shot, ghosts, cam, pack, settings, controls, rider, runCard, map, look, frame, startLabel, menuCourses: () => modes.trials.list(), holdShotConditions, shotFromStart }) : null;
     if (attract) states.add(attract);
 
@@ -425,7 +430,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       trialWorld.dispose();
       modes.dispose();
       padFx.stop();
-      runCard.dispose(); speedLines.dispose(); pressMeter.dispose(); restartRing.dispose(); eat.dispose(); puffs.dispose(); bigprints.dispose();
+      runCard.dispose(); speedLines.dispose(); pressMeter.dispose(); restartRing.dispose(); liftPicker.dispose(); eat.dispose(); puffs.dispose(); bigprints.dispose();
       disconnectSources(); events.clear(); // FEAT-163
       frame.clear();
       goggles.destroy();
@@ -495,6 +500,8 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         installSimDebug({ events, ghosts, menu, shot, rider, riderView, controls, padFx, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, people: world.people, map, liftRide, lifts, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
           setWeather: (w: string | null) => { weatherOverride = parseWeather(w) ?? initialWeather; applySettings(settings, 'weather'); },
+          /** shoot.mjs (FEAT-087): stream the scene round the camera until nothing is loading or building, without stepping the sim */
+          settleStreaming: (timeoutMs = 60000) => streamUntilSettled(world, pack, warmFocus, cam.camera, timeoutMs),
           /** snowcheck.mjs: apply a settings field changed in place (for example 'newSnow') as the settings panel would */
           applySettings: (what: string) => applySettings(settings, what),
           /** shoot_attract.mjs: draw the menu shot's conditions, from its start (as the live menu does) */

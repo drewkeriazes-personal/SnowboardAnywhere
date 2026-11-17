@@ -1,7 +1,11 @@
 // Render and ride check: serves dist/ and ../packs, loads the sim, steps frames, saves screenshots.
-// node tools/shoot.mjs [pack] [outDir] [--headed | --gpu | --cpu]
+// node tools/shoot.mjs [pack] [outDir] [--headed [--exit] | --gpu | --cpu] [--no-settle]
 //   GPU or software is picked by tools/browser.mjs: real GPU by default on Windows, SwiftShader + lowgfx elsewhere.
-//   --headed (or SHOT_HEADED=1): visible window on the real GPU; stays open at the end until you close it
+//   --headed (or SHOT_HEADED=1): visible window on the real GPU; stays open at the end until you close it,
+//     unless --exit (or SHOT_EXIT=1) closes it when the run ends (unattended sessions)
+//   FEAT-087: before each still the scene streams until settled (__sim.settleStreaming: no terrain chunk, height
+//     or mask tile, tree cell, rock or shrub cell still loading or building), up to SHOT_SETTLE_MS (default 60000)
+//     per still; --no-settle (or SHOT_SETTLE=0) takes the still after the fixed frame count only, as before.
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -10,6 +14,9 @@ import { DIST, PACKS } from './paths.mjs';
 
 const args = process.argv.slice(2);
 const headed = args.includes('--headed') || process.env.SHOT_HEADED === '1';
+const exitAtEnd = args.includes('--exit') || process.env.SHOT_EXIT === '1';
+const settleScene = !args.includes('--no-settle') && process.env.SHOT_SETTLE !== '0';
+const settleMs = Number(process.env.SHOT_SETTLE_MS ?? 60000);
 const positional = args.filter((a) => !a.startsWith('--'));
 const pack = positional[0] ?? 'synth';
 const outDir = positional[1] ?? 'shots';
@@ -49,9 +56,17 @@ async function settle(frames, label) {
     await page.evaluate((n) => (window).__step(n, 1 / 60), Math.ceil(frames / 6));
     await page.waitForTimeout(500);
   }
+  // FEAT-087: wait for the scene round the camera to finish streaming, so the still is not half built
+  const streamed = !settleScene ? null : await page.evaluate((ms) => {
+    const s = (window).__sim;
+    return s.settleStreaming ? s.settleStreaming(ms) : null; // an older build (SHOT_DIST) has no settle hook
+  }, settleMs);
+  if (settleScene && !streamed) console.log('  (this build has no __sim.settleStreaming: still taken after the fixed frames)');
+  else if (streamed && !streamed.settled) console.log(`  not settled after ${streamed.ms} ms: ${JSON.stringify(streamed)}`);
   const stats = await page.evaluate(() => { const s = (window).__sim; return { chunks: s.terrain.stats.chunks, tris: s.terrain.stats.triangles, trees: s.veg.stats.instances, x: s.rider.x, y: s.rider.y, z: s.rider.z, speed: s.rider.speed, onGround: s.rider.onGround, footGap: +(s.riderView?.footGap ?? 0).toFixed(4), fine: s.pack.fine?.loadedCount, mid: s.pack.mid?.loadedCount, far: s.pack.far?.loadedCount }; });
   const dataUrl = await page.evaluate(() => (window).__shot());
   fs.writeFileSync(path.join(outDir, `${label}.png`), Buffer.from(dataUrl.split(',')[1], 'base64'));
+  if (streamed) stats.settle = { ms: streamed.ms, settled: streamed.settled };
   console.log(label, JSON.stringify(stats));
 }
 
@@ -83,7 +98,7 @@ await settle(40, '10_free_view_from_summit');
 
 console.log('console issues:', errors.length);
 for (const e of errors.slice(0, 15)) console.log('  ', e.slice(0, 300));
-if (headed) {
+if (headed && !exitAtEnd) {
   console.log('headed: close the browser window to exit');
   await page.waitForEvent('close', { timeout: 0 }).catch(() => {});
 }

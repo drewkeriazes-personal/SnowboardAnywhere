@@ -9,7 +9,8 @@ import { dualSense } from './DualSense';
  * Board: A / D steer, W tuck (front flip in the air), S brake (backflip in the air), hold and release
  * Space to jump (Space + W / S nollie / ollie), Shift squats on the snow and grabs in the air,
  * Q / Z nose / tail press (W / S balance it, FEAT-140), X skate. On foot: WASD walk, Shift sprint, Space jump / climb.
- * Everywhere: E interact (lift, skip, strap in or out when stopped away from lifts), hold G to look
+ * Everywhere: E interact (lift, skip, strap in or out when stopped away from lifts), B strap in or out
+ * anywhere (FEAT-323), hold G to look
  * behind, Alt or the right mouse button to free look, C camera, M map, P piste lines, N next track,
  * T time trial, hold R to restart, K replay, Backspace rewind, F boost in Outrun, ` free fly.
  *

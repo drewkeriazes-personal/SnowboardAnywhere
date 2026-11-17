@@ -50,7 +50,7 @@ export function padButtonName(kind: PadKind, b: number): string { return NAMES[k
  */
 export const DEFAULT_PAD: Record<string, number[]> = {
   jump: [PAD.A], grab: [PAD.X], squat: [], pressNose: [PAD.RB], pressTail: [PAD.LB], skate: [PAD.B], tuck: [PAD.RT], brake: [PAD.LT],
-  lift: [PAD.Y], board: [], glance: [PAD.R3],
+  lift: [PAD.Y], board: [PAD.L3], glance: [PAD.R3],
   camera: [PAD.UP], map: [PAD.RIGHT, PAD.TOUCH], piste: [PAD.LEFT], track: [PAD.DOWN], trial: [], restart: [], replay: [PAD.SELECT], rewind: [], fly: [],
   boost: [PAD.L3],
 };

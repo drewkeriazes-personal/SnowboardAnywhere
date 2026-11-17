@@ -74,18 +74,24 @@ export class RidingState implements GameState {
     if (controls.action('track')) audio.nextTrack();
     if (controls.action('fly')) { cam.mode = cam.mode === 'free' ? settings.camera : 'free'; if (cam.mode === 'free') cam.enterFree(); }
     // board on / off: unstrap when nearly stopped, strap in standing still. FEAT-124: E (interact)
-    // straps in or out when there is no lift near; the separate strap key is optional
+    // straps in or out when there is no lift near. FEAT-323: the strap key (B, L3) straps anywhere, by a
+    // lift too, and never boards; E in a boarding zone boards (with two or more lifts in range it opens
+    // the lift picker)
     const detached = cam.mode === 'free' || cam.mode === 'eye';
     const interact = controls.action('lift') || !!touch?.once('lift');
-    const strapAsk = controls.action('board') || !!touch?.once('board') || (interact && !liftRide.riding && !liftRide.nearby);
+    const boost = controls.action('boost');
+    // the controller's L3 is both boost and strap: while a chase runs it boosts (FEAT-124: F, Outrun only)
+    const strapKey = (controls.action('board') || !!touch?.once('board')) && !(boost && modes.outrun.running);
+    const strapAsk = strapKey || (interact && !liftRide.riding && !liftRide.nearby);
     if (strapAsk && !detached && !liftRide.riding) {
       const why = rider.toggleBoard();
       if (why === '' && rider.strapState === 'off') modes.interrupt('Unstrapped');
       frame.say(why === 'fast' ? 'slow down to unstrap' : why === 'moving' ? 'stand still to strap in' : why === 'air' ? 'land first' : '');
     }
+    if (interact && !detached && !liftRide.riding && liftRide.canBoard && liftRide.choices.length > 1) { this.states.go('liftpick'); return; }
     // Outrun: no lift skip while it runs (the monster is on the towers behind you), the boost key
     this.plan.interact = interact && !detached && !(modes.liftSkipBlocked && liftRide.riding);
-    modes.boostKey(controls.action('boost')); // FEAT-124: F, Outrun only
+    modes.boostKey(boost);
     frame.update(dt, stepped, this.plan);
   }
 
