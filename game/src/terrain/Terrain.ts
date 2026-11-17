@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES, MOGUL_SHADE_MAX_RES } from '../pack/Pack';
+import { exposure, finestChunkRes } from './exposure';
 import { treelineOf } from '../pack/treeline';
 import { MOGUL_FALL_D } from './Moguls';
 import { createTerrainMaterial, COVER_SLOTS, EMPTY_RECT } from './TerrainMaterial';
@@ -86,6 +87,7 @@ export class Terrain implements Ground {
   private readonly dirty = new Set<string>();
   private frame = 0;
   private readonly maskSample = [0, 0, 0, 0];
+  private readonly exposureTmp = { rock: 0, scree: 0 };
   private readonly coverSample = [0, 0, 0, 0];
   /** FEAT-168: the material's placeholder tree map, put back when no loaded cover level has crowns */
   private readonly blankTreeMap: THREE.Texture;
@@ -242,10 +244,7 @@ export class Terrain implements Ground {
 
   /** Finest resolution worth rendering at a point: 1 m inside the fine set, else mid, else far. */
   private minRes(cx: number, cy: number): number {
-    const p = this.pack;
-    if (p.fine && p.fine.contains(cx, cy)) return p.fine.meta.res;
-    if (p.mid && p.mid.contains(cx, cy)) return p.mid.meta.res / 2;
-    return (p.far?.meta.res ?? 128) / 2;
+    return finestChunkRes(this.pack, cx, cy);
   }
 
   private onTileLoaded(minX: number, minY: number, size: number, res: number): void {
@@ -472,26 +471,11 @@ export class Terrain implements Ground {
           }
         }
         ao[v] = a;
-        // exposure (FEAT-020): rock and talus where snow cannot stay, unioned with the imagery mask.
-        // The shader thresholds these weights against noise, so 0.5 is where patches start.
-        // Steep faces: weight 0.5 at about 45 deg near the rider; coarse chunks average slopes down,
-        // so the threshold eases lower with vertex spacing (about 37 deg at 128 m).
-        const steepLo = 0.68 - 0.022 * Math.log2(Math.max(1, res));
-        const steep = THREE.MathUtils.smoothstep(slope, steepLo, steepLo + 0.2);
-        // wind-scoured convex ridges above about 3,250 m: relief over the mean of four neighbours d away
-        const d = Math.max(12, res);
-        const relief = h - 0.25 * (pack.height(x + d, y, resB) + pack.height(x - d, y, resB) + pack.height(x, y + d, resB) + pack.height(x, y - d, resB));
-        const scour = THREE.MathUtils.smoothstep(relief / d, 0.06, 0.2) * THREE.MathUtils.smoothstep(h, 3250, 3550) * (1 - fo);
-        rock = Math.max(rock, steep, scour * 0.8);
-        // talus apron at the foot of steep faces: the line to a point 15 m uphill is steeper than about
-        // 48 deg while the ground here is gentler
-        if (res <= 8 && slope > 0.2) {
-          const du = 15, gl = Math.hypot(nxp, nyp);
-          const up = pack.height(x - (nxp / gl) * du, y - (nyp / gl) * du, resB);
-          const talus = THREE.MathUtils.smoothstep((up - h) / du, 0.95, 1.4) * (1 - steep);
-          scree = Math.max(scree, talus * 0.9);
-        }
-        col[v * 3] = rock; col[v * 3 + 1] = scree * (1 - rock); col[v * 3 + 2] = groom * (1 - rock);
+        // exposure (FEAT-020): rock and talus where snow cannot stay, unioned with the imagery mask
+        // (exposure.ts; the rider reads the same weights, BUG-035)
+        const ex = exposure(pack, x, y, h, nxp, nyp, res, fo, rock, scree, this.exposureTmp);
+        rock = ex.rock;
+        col[v * 3] = rock; col[v * 3 + 1] = ex.scree; col[v * 3 + 2] = groom * (1 - rock);
         const mog = shadeMoguls ? pack.mogulAmp(x, y, true) * (1 - rock) : 0;
         mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath;
         // moguls take the same wide fall line as Pack.bumpAt (BUG-064), so the shaded field matches the

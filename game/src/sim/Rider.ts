@@ -2,6 +2,7 @@ import type { Pack } from '../pack/Pack';
 import type { Collider } from './Collider';
 import { Rng } from './Rng';
 import { rockCover } from '../terrain/rockCover';
+import { exposureAt } from '../terrain/exposure';
 import { DEFAULT_SNOW_WORLD, newSnowState, snowAt, type SnowState, type SnowWorld } from './SnowConditions';
 import type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
 import type { JumpMode } from './rider/tuning';
@@ -244,6 +245,7 @@ export class Rider {
   private crashing = false;
   private readonly maskTmp = [0, 0, 0, 0];
   private readonly coverTmp = { rock: 0, scree: 0 };
+  private readonly exposureTmp = { rock: 0, scree: 0 };
   // render interpolation: pose before the last step, pose after it (to spot external moves), and
   // the sim pose stashed while the interpolated one is applied
   private readonly prev = [0, 0, 0, 0, 0];
@@ -488,8 +490,10 @@ export class Rider {
     if (pack.mask) {
       const m = pack.mask.sample(this.x, this.y, this.maskTmp);
       // BUG-043: rock and scree as the terrain shader draws them (crisp patches), not the soft mask
-      const cov = rockCover(m[0], m[1], this.x, this.z, -this.y, n[2], this.coverTmp);
-      this.surface.rock = cov.rock; this.surface.scree = cov.scree; this.surface.groomed = m[2]; this.surface.canopy = m[3];
+      // BUG-035: with the steep-face, ridge and talus rock the terrain adds to the mask
+      const ex = exposureAt(pack, this.x, this.y, m[0], m[1], m[3], this.exposureTmp);
+      const cov = rockCover(ex.rock, ex.scree, this.x, this.z, -this.y, n[2], this.coverTmp);
+      this.surface.rock = cov.rock; this.surface.scree = cov.scree; this.surface.groomed = m[2] * (1 - ex.rock); this.surface.canopy = m[3];
     }
     // BUG-141: riding over a rock on Realistic the board is on rock: its grip, drag and the FEAT-103 rock scrape
     const rb = this.onGround ? rockBumpAt(this, this.x, this.y) : null;

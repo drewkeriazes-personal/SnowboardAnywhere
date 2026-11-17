@@ -6,7 +6,11 @@
 //   3. E inside the zone boards a strapped-in rider (one lift: no picker);
 //   4. with two lifts in range (a second one faked beside the real one) E opens the lift picker instead of
 //      boarding, listing both nearest first; Down then E boards the second; Esc closes it without boarding;
-//   5. ?boardRange=40 widens the zone; no console errors.
+//   5. BUG-150: with the lift-line maze built and its gate on, anywhere inside the gold ring boards (points
+//      across the ring, beside the station and the maze), the ring is drawn at the zone radius, the corral
+//      boards where it reaches past the ring, and beside the ring does not;
+//   6. ?boardRange=40 widens the zone and the ring;
+//   7. with ?boardRange=8 the back of the corral still boards; no console errors.
 // node tools/liftboardcheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
@@ -141,11 +145,69 @@ await press('KeyE');
 st = await state();
 check('Down then E boards the second lift', st.riding && st.lift === 'Second Chair' && st.state === 'riding' && !st.pick, JSON.stringify(st));
 
-// 5. ?boardRange=
+// 5. BUG-150: the gold ring is the zone, maze or not
+await load();
+await place(0);
+const ringAt = () => page.evaluate(() => {
+  const s = window.__sim, l = s.lifts.lifts[0];
+  let ring = null;
+  s.scene.traverse((o) => { if (o.name === `marker ring ${l.feature.name ?? '(unnamed)'}`) ring = o.geometry.parameters.outerRadius; });
+  return { ring, range: s.liftRide.boardRange };
+});
+let rg = await ringAt();
+check('the gold ring is drawn at the zone radius', rg.ring === rg.range, JSON.stringify(rg));
+const maze = await page.evaluate(() => {
+  const s = window.__sim, l = s.lifts.lifts[0], ll = s.liftLines;
+  ll.maintain(l.bottom[0], l.bottom[1]);
+  const m = ll.mazes.find((q) => q.lift === l);
+  s.liftRide.gate = (q, x, y) => ll.inGate(q, x, y); // the session's gate (place() cleared it)
+  return m ? { built: m.built, len: m.len, halfW: m.halfW, ux: m.ux, uy: m.uy } : null;
+});
+check('the lift has a built lift-line maze', !!maze?.built, JSON.stringify(maze));
+const at = (pts) => page.evaluate((pts) => {
+  const s = window.__sim, r = s.rider, lr = s.liftRide, l = s.lifts.lifts[0], ll = s.liftLines;
+  lr.gate = (q, x, y) => ll.inGate(q, x, y);
+  return pts.map(([dx, dy]) => {
+    r.x = l.bottom[0] + dx; r.y = l.bottom[1] + dy; r.vx = r.vy = r.vz = 0; r.speed = 0; r.onGround = true;
+    lr.update(r, 1 / 60, false);
+    return lr.canBoard;
+  });
+}, pts);
+const R = rg.range, ringPts = [];
+for (const d of [3, 8, 14, 20, R - 1.5]) for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; ringPts.push([Math.cos(a) * d, Math.sin(a) * d]); }
+const inRing = await at(ringPts);
+const missed = ringPts.filter((_, i) => !inRing[i]).map(([x, y]) => `${Math.hypot(x, y).toFixed(0)}m@${(Math.atan2(y, x) * 57.3).toFixed(0)}`);
+check(`every point inside the ring boards with the maze gate on (${ringPts.length} points)`, missed.length === 0, missed.slice(0, 8).join(' '));
+const outside = await at([0, 1, 2, 3].map((k) => [Math.cos(k * 1.57 + 0.8) * (R + 15), Math.sin(k * 1.57 + 0.8) * (R + 15)]).filter(([x, y]) => Math.abs(x * maze.uy - y * maze.ux) > maze.halfW + 3));
+check('beside the ring, off the maze, does not board', outside.every((b) => !b), JSON.stringify(outside));
+const back = 3 + maze.len - 1; // the corral's back end, behind the loading point
+if (back > R) {
+  const [c] = await at([[-maze.ux * back, -maze.uy * back]]);
+  check(`the corral boards past the ring (${back.toFixed(0)} m back)`, c, '');
+} else console.log(`     (the maze ends ${back.toFixed(0)} m back, inside the ${R} m ring: no corral past it to check)`);
+
+// 6. ?boardRange=
 await load('&boardRange=40');
 await place(35);
 z = await zone();
 check('?boardRange=40 boards 35 m out', z.range === 40 && z.canBoard, JSON.stringify(z));
+rg = await ringAt();
+check('?boardRange=40 draws the ring at 40 m', rg.ring === 40, JSON.stringify(rg));
+
+// 7. a small ?boardRange= still lets the whole corral board (the search reaches the maze's back end at any range)
+await load('&boardRange=8');
+await place(0);
+const small = await page.evaluate(() => {
+  const s = window.__sim, l = s.lifts.lifts[0], ll = s.liftLines, r = s.rider, lr = s.liftRide;
+  ll.maintain(l.bottom[0], l.bottom[1]);
+  const m = ll.mazes.find((q) => q.lift === l);
+  lr.gate = (q, x, y) => ll.inGate(q, x, y);
+  const back = 3 + m.len - 1;
+  r.x = l.bottom[0] - m.ux * back; r.y = l.bottom[1] - m.uy * back; r.vx = r.vy = r.vz = 0; r.speed = 0; r.onGround = true;
+  lr.update(r, 1 / 60, false);
+  return { range: lr.boardRange, back, canBoard: lr.canBoard };
+});
+check(`?boardRange=8: the corral's back end (${small.back} m) still boards`, small.range === 8 && small.canBoard, JSON.stringify(small));
 
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 await browser.close();
