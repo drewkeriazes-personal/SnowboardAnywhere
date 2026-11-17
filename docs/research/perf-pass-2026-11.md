@@ -29,7 +29,7 @@ Main-thread time per frame by system (vsync off, means): `renderer.render` 16 to
 | hidden | start (18.1 ms) | calls | forest (11.8 ms) | calls |
 |---|---|---|---|---|
 | terrain | **10.3 ms** | 372 | **3.1 ms** | 380 |
-| sun (shadow lookups in every lit fragment) | **4.6 ms** | 0 | 1.0 ms | 0 |
+| sun (all of the sunlight: the direct light, the snow's wrap and glints, and the shadow lookups; FEAT-237 below) | **4.6 ms** | 0 | 1.0 ms | 0 |
 | shadow map pass | 1.8 ms | | **2.9 ms** | |
 | hemisphere light | 1.3 ms | 0 | | |
 | clouds | 1.3 ms | 1 | 0.5 ms | 1 |
@@ -50,3 +50,7 @@ Smaller, not carded: the bridges at Lionshead take 180 draw calls (one mesh per 
 ## What the JavaScript profile shows, and why it misleads
 
 A sampling profile of the tuck (`playperf.mjs --profile` on an unminified build) puts the top self time in WebGL calls: `uniform4fv` 12%, `vertexAttribPointer` 11%, `bufferSubData` 10%, `uniformMatrix4fv` 8%. The scene itself does little that would cost that: per frame it uploads about 35 KB of snow puffs and the lift chairs' instance matrices, switches material 48 times, and has 172 draws that share a geometry (rocks and lift towers). The frame is GPU-bound, so whichever WebGL call fills the command buffer waits for the GPU, and the profile spreads that wait across the calls. The ablation, which times the whole frame, is the measure to trust.
+
+## Follow-up: what the shadows really cost (FEAT-237, 2026-11-17)
+
+GPU timer queries (`tools/gpu_ab.mjs`, High, 1920 x 1080, the start view, Born Free and The Slot corner on `main` at 1450701) put the whole of the sun's shadows, map pass and lookups together, at **0.3 to 0.9 ms** a frame (`?shadowtype=off` against the default). Hiding the sun in the ablation above takes away all of the direct sunlight, not only the shadow lookups, and those wall-clock differences carry the queue effects of vsync off; the shadows were never 6.4 ms. The filter barely matters: three.js PCF costs the same as PCF soft, and the single-tap basic filter saves 0.1 ms; a 2048 map saves 0.2 to 0.3 ms against 4096. None of that is worth softer or blockier shadows, so the defaults stay (PCF soft; 4096 on High, 2048 on Medium). The shadow pass at the start draws 311 calls and 1.4 M triangles: terrain chunks 234 calls and 0.54 M, trees 0.55 M, lifts 0.23 M, rocks 0.07 M. Found along the way and fixed: three.js allocates the shadow map once, so changing Quality between High and Medium kept the old map (Medium drew 4096 texels while the box snapped to 2048-texel steps); the map is now reallocated when its size changes.
