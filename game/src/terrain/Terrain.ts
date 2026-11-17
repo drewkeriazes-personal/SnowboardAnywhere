@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES, MOGUL_SHADE_MAX_RES } from '../pack/Pack';
 import { exposure, finestChunkRes, gridOrigin } from './exposure';
 import { treelineOf } from '../pack/treeline';
-import { MOGUL_FALL_D } from './Moguls';
+import { MOGUL_FALL_D, WORN_K } from './Moguls';
+import { TRENCH_DEPTH } from '../pack/treeLines';
 import { createTerrainMaterial, COVER_SLOTS, EMPTY_RECT } from './TerrainMaterial';
 import { vegetationFarRadius, vegetationStemReach, vegetationClumpBand, vegetationTreeEnd } from '../world/Vegetation';
 import { CLUMP_RHO } from '../world/trees/clumps';
@@ -209,7 +210,7 @@ export class Terrain implements Ground {
     const u = this.material.userData.uniforms as { uMogulScale: { value: number }; uMogulCreep: { value: number } };
     const sc = Math.max(0, Math.min(1, scale));
     u.uMogulScale.value = sc; u.uMogulCreep.value = creepM;
-    if (!this.pack.moguls) return;
+    if (!this.pack.hasMoguls) return;
     if (Math.abs(sc - this.mogulBuiltScale) <= 0.05 && Math.abs(creepM - this.mogulBuiltCreep) <= 0.3) return;
     this.mogulBuiltScale = sc; this.mogulBuiltCreep = creepM;
     for (const c of this.chunks.values()) if (c.mesh && c.res <= MOGUL_MAX_RES) this.dirty.add(c.key);
@@ -418,8 +419,9 @@ export class Terrain implements Ground {
     // north) from the same 30 m difference as Pack.bumpAt, its length the slope that sizes the bumps
     // (FEAT-147), kept apart from `fall` so the corduroy's 6 m line and run axis never size them.
     const mogul = new Float32Array(vertCount * 4);
-    const shadeMoguls = !!pack.moguls && res <= MOGUL_SHADE_MAX_RES;
-    const geoMoguls = !!pack.moguls && res <= MOGUL_MAX_RES;
+    const shadeMoguls = pack.hasMoguls && res <= MOGUL_SHADE_MAX_RES;
+    const geoMoguls = pack.hasMoguls && res <= MOGUL_MAX_RES;
+    const wornOn = !!pack.treeLines && res <= 8; // FEAT-333: the tree lines' ski tracks, near the rider
     const mogPath = geoMoguls ? 2 : shadeMoguls ? 1 : 0;
     const aoSet = pack.ao && res <= AO_MAX_RES ? pack.ao : null;
     // footprint for the AO lookup: one 2 m sample near the rider, a 2 x 2 box of samples on coarser chunks
@@ -500,7 +502,10 @@ export class Terrain implements Ground {
         rock = ex.rock;
         col[v * 3] = rock; col[v * 3 + 1] = ex.scree; col[v * 3 + 2] = groom * (1 - rock);
         const mog = shadeMoguls ? pack.mogulAmp(x, y, true) * (1 - rock) : 0;
-        mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath;
+        // FEAT-333: y's fraction carries how deep in a tree line's trench this is (0 at the rim .. WORN_K on its floor), for the
+        // shader's wall shade and ski tracks; the whole part stays the path
+        const dug = wornOn ? Math.min(1, Math.max(0, -pack.trenchAt(x, y) / TRENCH_DEPTH)) : 0;
+        mogul[v * 4] = mog; mogul[v * 4 + 1] = mogPath + WORN_K * dug * (1 - rock);
         // moguls take the same wide fall line as Pack.bumpAt (BUG-064), so the shaded field matches the
         // bumps in the geometry and the physics
         let mgx = 0, mgy = 0;

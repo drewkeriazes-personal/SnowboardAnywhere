@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type { GameContext } from '../core/GameContext';
 import { Terrain } from '../terrain/Terrain';
+import { kitUniforms } from '../world/trees';
 import { Collider } from '../sim/Collider';
 import { buildCourses } from '../sim/Courses';
 import { Bridges } from '../world/Bridges';
@@ -55,6 +56,7 @@ export function buildWorld(ctx: GameContext) {
   add('terrain', terrain.group);
   const collider = new Collider();
   const veg = new Vegetation(pack, collider);
+  kitUniforms.uTrimK.value = params.notrim ? 0 : 1; // FEAT-303: module state, as the other kit uniforms
   const treeFade = new TreeFade();
   add('trees', veg.group);
   const shrubs = new Shrubs(pack, collider, veg.kit); // FEAT-159: willow, juniper, sagebrush, oak and young conifers, buried by the snowpack

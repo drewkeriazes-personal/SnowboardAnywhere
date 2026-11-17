@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_BODY, TREE_FADE_FRAG_ALPHA } from '../TreeFade';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
+import { TRIM, TRIM_GLSL } from './trim';
 
 /**
  * FEAT-156: the tree kit's materials. Each LOD draws only inside its distance band (measured from the
@@ -30,6 +31,8 @@ export const kitUniforms = {
   uFarEdge: { value: new THREE.Vector2(1e8, 1e8 + 1) },
   /** FEAT-298: 1 when the pack's crowns are widened per tree (crownWidths): the trunk then keeps its natural width (KIT_CORE) */
   uKitCore: { value: 0 },
+  /** FEAT-303: the glade trim's strength (0 with `?notrim`, for before / after looks) */
+  uTrimK: { value: 1 },
 };
 
 /**
@@ -57,10 +60,14 @@ export type Band = { value: THREE.Vector4 };
 export const newBand = (): Band => ({ value: new THREE.Vector4(-2, -1, 1e8, 1e8 + 1) });
 
 const LOD_VERT = /* glsl */ `
-  uniform vec3 uLodCam; uniform vec4 uLodBand; uniform float uKitCore;
+  uniform vec3 uLodCam; uniform vec4 uLodBand; uniform float uKitCore; uniform float uTrimK;
   // FEAT-298 (generate.ts Builder.core): natural crown radius / height, core radius and the lean per unit height (crown-radius frame)
   attribute vec4 kCore;
-  varying float vLodVis; varying float vLodIn;
+  #ifndef SHRUB
+    // FEAT-303: per instance (t, bare, hs): how far the tree's lower branches are trimmed, bare below the line, the line's height scale (trim.ts)
+    attribute vec3 aTrim;
+  #endif
+  varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
   // 0..1 visibility at this distance; isIn is 1 on the fade-in edge, 0 on the fade-out edge
   float lodVis(vec3 o, out float isIn) {
     float d = distance(o, uLodCam);
@@ -69,9 +76,17 @@ const LOD_VERT = /* glsl */ `
     isIn = d < 0.5 * (uLodBand.y + uLodBand.z) ? 1.0 : 0.0;
     return isIn > 0.5 ? vin : vout;
   }
+  ${TRIM_GLSL}
 `;
 const LOD_FRAG_HEAD = /* glsl */ `
-  varying float vLodVis; varying float vLodIn;
+  varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
+`;
+/**
+ * FEAT-303: a trimmed tree's low needles are thinner: the fragment drops a noisy share of them (most at full trim,
+ * all of them on a bare tree), so the limbs that are left read as sparse. Needs the snow varyings (vSnowRel) and treeSnowNoise.
+ */
+const TRIM_FRAG = /* glsl */ `
+  if (vTrimLow > 0.01 && treeSnowNoise(vSnowRel * 2.3 + 11.0) < mix(${TRIM.THIN.toFixed(2)}, 1.3, vTrimBare) * vTrimLow) discard;
 `;
 /** the same 8x8 Bayer matrix as TreeFade, for the far shader (which has no see-through fade) */
 const BAYER = /* glsl */ `
@@ -104,6 +119,25 @@ const KIT_BEGIN = /* glsl */ `
       if (kr > 1e-5 && abs(kw - 1.0) > 1e-3) {
         float kn = kr < ka ? kr / kw : ka / kw + (kr - ka) * (1.0 - ka / kw) / (1.0 - ka);
         transformed.xz = kAx + kD * (kn / kr);
+      }
+    }
+  #endif
+  vTrimLow = 0.0; vTrimBare = 0.0;
+  #ifndef SHRUB
+    // FEAT-303: a glade tree's lower branches are worn back by the riders (trim.ts, the same profile as the puffs): below
+    // the tree's own trim line they reach TRIM.PULL less far out at full trim and thin (TRIM_FRAG), all gone on a bare tree;
+    // just over it they grow out fuller
+    if (aTrim.x * uTrimK > 0.0) {
+      float kH = length(ktm[1].xyz);
+      vTrimBare = aTrim.y;
+      vec2 kLU = trimLowUp(vec3(aTrim.x * uTrimK, aTrim.yz), kH, position.y * kH);
+      if (kLU.x > 0.0 || kLU.y > 0.0) {
+        vec2 tAx = position.y * kCore.zw, tD = transformed.xz - tAx;
+        float tr = length(tD), ta = max(kCore.y, 0.05);
+        if (tr > ta) {
+          transformed.xz = tAx + tD * ((ta + (tr - ta) * (1.0 - ${TRIM.PULL.toFixed(2)} * kLU.x) * (1.0 + ${TRIM.BUSH.toFixed(2)} * kLU.y)) / tr);
+          vTrimLow = kLU.x * smoothstep(ta, mix(2.0 * ta + 0.05, 1.3 * ta + 0.02, vTrimBare), tr); // none on the trunk
+        }
       }
     }
   #endif
@@ -241,7 +275,7 @@ export function treeMaterial(atlas: THREE.Texture, o: TreeMaterialOpts): THREE.M
         #endif
         ${COLLAPSE}`);
     shader.fragmentShader = TREE_FADE_FRAG_HEAD + LOD_FRAG_HEAD + SNOW_FRAG_HEAD + TREE_SNOW_LIGHT + shader.fragmentShader
-      .replace('#include <clipping_planes_fragment>', `${LOD_FRAG_BODY}\n${TREE_FADE_FRAG_BODY}\n#include <clipping_planes_fragment>`)
+      .replace('#include <clipping_planes_fragment>', `${LOD_FRAG_BODY}\n${TRIM_FRAG}\n${TREE_FADE_FRAG_BODY}\n#include <clipping_planes_fragment>`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${SNOW_COLOR}`)
       .replace('#include <alphatest_fragment>', `#include <alphatest_fragment>\n${TREE_FADE_FRAG_ALPHA}`)
       .replace('#include <normal_fragment_begin>', NORMAL_NO_FLIP)

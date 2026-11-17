@@ -45,6 +45,9 @@ export const MOGUL_MAX_AMP = 1.8;
 export const MOGUL_CREEP_M_PER_DAY = 0.08;
 /** half-width of the central difference the fall line is measured over, metres (BUG-064) */
 export const MOGUL_FALL_D = 30;
+/** FEAT-333: the share of the terrain's mogul attribute y a fully worn tree line adds (under 0.5, so the draw path's
+ *  whole part reads the same); TerrainMaterial divides it out for the tree lines' ski tracks */
+export const WORN_K = 0.45;
 /** anchor cell size, metres: the pattern is laid out from each cell's centre (BUG-064) */
 export const MOGUL_CELL = 40;
 /** anchor cells per side of a pattern region: the set of rider lines changes every 80 m (FEAT-147) */

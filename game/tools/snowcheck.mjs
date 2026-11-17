@@ -5,7 +5,8 @@
 // faster than a north-facing powder face, that powder turns wider, that spring-morning ice holds
 // less than the same groomer at 1 pm, and that chop rattles where powder does not. BUG-084: also
 // reloads with ?time=7 on "Resort default" and checks the snow follows the URL hour like the sun does
-// (spring-morning ice on Simba), and that "Resort default" alone still reads the 1 pm snow.
+// (spring-morning ice on Simba), and that "Resort default" alone still reads the 1 pm snow. FEAT-333: a worn tree line
+// beside Steep and Deep is tracked, shallower than the trees and a mogul line.
 // BUG-136: each spot waits for the trees, rocks and shrubs round it to finish loading before the rider sets off
 // (they stream in on their own, so a run used to hit a trunk or miss it depending on timing), and a crash
 // reports what caused it: a trunk hit in the forest a run reaches below the open face is not the snow's doing.
@@ -45,6 +46,8 @@ const SPOTS = {
     { id: 'wild9', name: 'Wildcard (NW) 9 am', x: -2453, y: 661, h: 315, hour: 9, day: 'mid', weather: null },
     { id: 'wild13', name: 'Wildcard (NW) 1 pm', x: -2453, y: 661, h: 315, hour: 13, day: 'mid', weather: null },
     { id: 'trees14', name: 'Steep and Deep trees 2 pm', x: 1827, y: -3506, h: 325, hour: 14, day: 'mid', weather: null },
+    // FEAT-333: on a worn tree line 13 m beside the run (pack/treeLines.ts), heading down it
+    { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1814.6, y: -3510.7, h: 10, hour: 14, day: 'mid', weather: null },
     { id: 'chicken15', name: 'Chicken Yard (SE, open) 3 pm', x: -698, y: -612, h: 160, hour: 15, day: 'mid', weather: null },
     { id: 'chicken9', name: 'Chicken Yard (SE, open) 9 am', x: -698, y: -612, h: 160, hour: 9, day: 'mid', weather: null },
     { id: 'golden15', name: 'Tea Cup Glades (S, low, open) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },
@@ -116,7 +119,7 @@ const ride = (n, input = {}) => page.evaluate(([n, input]) => {
     r.update(1 / 60, inp);
     // BUG-136: what started a crash: a trunk or wall ('wall'), an edge catch ('catch'), or '' (a washout, a slam)
     if (was <= 0 && r.crashed > 0) out.push({ crash: true, cause: r.lastHit || 'washout or slam', canopy: r.surface.canopy, x: r.x, y: r.y, speed: r.speed });
-    if (i % 10 === 9) out.push({ speed: r.speed, x: r.x, y: r.y, z: r.z, heading: r.heading, travel: Math.atan2(r.vx, r.vy), kind: r.snow.kind, w: [r.snow.groomed, r.snow.powder, r.snow.chop, r.snow.ice, r.snow.slush, r.snow.rock].map((v) => +v.toFixed(2)), grip: r.snow.grip, turn: r.snow.turn, drag: r.snow.drag0 + r.snow.drag1 * 10, depth: r.snow.depth, chop: r.chop, sink: r.noseSink, skid: r.skid, R: r.turnRadius, slope: r.slopeDeg, crashed: r.crashed, onGround: r.onGround, hit: r.lastHit });
+    if (i % 10 === 9) out.push({ speed: r.speed, x: r.x, y: r.y, z: r.z, heading: r.heading, travel: Math.atan2(r.vx, r.vy), kind: r.snow.kind, w: [r.snow.groomed, r.snow.powder, r.snow.chop, r.snow.ice, r.snow.slush, r.snow.rock].map((v) => +v.toFixed(2)), grip: r.snow.grip, turn: r.snow.turn, drag: r.snow.drag0 + r.snow.drag1 * 10, depth: r.snow.depth, worn: r.surface.worn ?? 0, mog: r.surface.moguls, chop: r.chop, sink: r.noseSink, skid: r.skid, R: r.turnRadius, slope: r.slopeDeg, crashed: r.crashed, onGround: r.onGround, hit: r.lastHit });
   }
   return out;
 }, [n, input]);
@@ -163,7 +166,7 @@ for (const sp of spots) {
   await page.evaluate(() => { const r = window.__sim.rider, n = r.normal; r.vx = r.vy = 0; r.edge = 0; r.heading = Math.atan2(n[0], n[1]); r.squareBoard?.(); });
   const go = (await ride(240, { steer: 0 })).filter((s) => !s.crash);
   const restart = go[go.length - 1].speed;
-  results[sp.id] = { top, kind: at.kind, w: at.w, grip: at.grip, turn: at.turn, depth: at.depth, drag: at.drag, chopPeak, turned, R, skidPeak, restart, slope: go[go.length - 1].slope, sink: Math.max(...go.map((s) => s.sink)), kinds, crashed: run.some((s) => s.crashed > 0), crash };
+  results[sp.id] = { top, kind: at.kind, w: at.w, grip: at.grip, turn: at.turn, depth: at.depth, worn: at.worn, mog: at.mog, drag: at.drag, chopPeak, turned, R, skidPeak, restart, slope: go[go.length - 1].slope, sink: Math.max(...go.map((s) => s.sink)), kinds, crashed: run.some((s) => s.crashed > 0), crash };
   const r = results[sp.id];
   console.log(`${sp.name.padEnd(40)} ${r.kind.padEnd(8)} g${r.w[0]} p${r.w[1]} c${r.w[2]} i${r.w[3]} s${r.w[4]} r${r.w[5]}  slope ${r.slope.toFixed(0)}  top ${r.top.toFixed(1)} m/s  carve ${(r.turned * 180 / Math.PI).toFixed(0)} deg R ${Number.isFinite(r.R) ? r.R.toFixed(0) : 'inf'} m skid ${r.skidPeak.toFixed(2)}  chop ${r.chopPeak.toFixed(2)}  restart ${r.restart.toFixed(1)} m/s sink ${r.sink.toFixed(2)}${r.crashed ? `  CRASHED (${r.crash ? `${r.crash.cause} at ${r.crash.speed.toFixed(0)} m/s, canopy ${r.crash.canopy.toFixed(2)}` : 'down from before the run'})` : ''}${r.kinds.length > 1 ? '  kinds ' + r.kinds.join('/') : ''}`);
 }
@@ -190,6 +193,7 @@ check('the morning has clearly less chop than the afternoon', R.wild9.w[2] < R.w
 check('the open south face is Chop at 3 pm and rattles', (R.chicken15.kind === 'chop' || R.golden15.kind === 'chop') && Math.max(R.chicken15.chopPeak, R.golden15.chopPeak) > 0.3, `${R.chicken15.kind} ${R.chicken15.chopPeak.toFixed(2)}, ${R.golden15.kind} ${R.golden15.chopPeak.toFixed(2)}`);
 check('the trees are deep powder and the slowest', R.trees14.kind === 'powder' && R.trees14.depth > 0.25, `depth ${(R.trees14.depth * 100).toFixed(0)} cm, top ${R.trees14.top.toFixed(1)}`);
 check('a stopped rider gets going again in deep powder on this pitch', R.trees14.restart > 1 || R.trees14.slope < 8, `restart ${R.trees14.restart.toFixed(1)} m/s on ${R.trees14.slope.toFixed(0)} deg, nose sink ${R.trees14.sink.toFixed(2)}`);
+if (R.line14) check('a worn tree line is tracked, shallower than the trees beside it, and a mogul line', R.line14.worn > 0.5 && R.line14.w[2] > R.line14.w[1] && R.line14.depth < R.trees14.depth * 0.6 && R.line14.mog > 0.3, `worn ${R.line14.worn.toFixed(2)}, ${R.line14.kind} c${R.line14.w[2]} p${R.line14.w[1]}, depth ${(R.line14.depth * 100).toFixed(0)} vs ${(R.trees14.depth * 100).toFixed(0)} cm, mogul amplitude ${R.line14.mog.toFixed(2)}`);
 check('spring afternoon low is Slush with more drag than the same spot mid-season', R.goldenSpring.kind === 'slush' && R.goldenSpring.drag > R.golden15.drag * 1.3, `${R.goldenSpring.kind}, drag at 10 m/s ${R.goldenSpring.drag.toFixed(2)} vs ${R.golden15.drag.toFixed(2)}`);
 check('the high ridge is firmer than the north face', R.twoElk13.w[3] > 0.3, `ice ${R.twoElk13.w[3]} (${R.twoElk13.kind})`);
 // BUG-136: a trunk hit under a closed canopy is the forest a 12 s run reaches below the open face (Prima Browns Face

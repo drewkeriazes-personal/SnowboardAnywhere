@@ -114,14 +114,14 @@ export class CoverSet {
   readonly levels: CoverLevel[];
   /** called once per level as it arrives */
   onLevelLoaded: ((level: CoverLevel) => void) | null = null;
+  /** settles once every level has loaded or failed (FEAT-333: the tree lines' forest gate waits for it) */
+  readonly ready: Promise<void>;
   private readonly tmp = [0, 0, 0, 0];
 
   constructor(baseUrl: string, meta: CoverMeta) {
     this.meta = meta;
     this.levels = meta.levels.map((m) => new CoverLevel(m)).sort((a, b) => b.meta.res - a.meta.res);
-    for (const l of this.levels) {
-      l.load(baseUrl).then(() => this.onLevelLoaded?.(l), (e) => console.warn('cover level not loaded', e));
-    }
+    this.ready = Promise.all(this.levels.map((l) => l.load(baseUrl).then(() => this.onLevelLoaded?.(l), (e) => console.warn('cover level not loaded', e)))).then(() => undefined);
   }
 
   /**
