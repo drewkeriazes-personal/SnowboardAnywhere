@@ -3,7 +3,7 @@
 Decided 2026-11-05. Drew runs more than one Claude session on this project. This is the contract between them.
 
 ## Single source of truth: this repo
-- `drewkeriazes/SnowboardAnywhere`, branch `main`.
+- `drewkeriazes-personal/SnowboardAnywhere`, branch `main`.
 - Canonical checkout on Drew's PC: `C:\Users\Drew\git\SnowboardAnywhere`.
 - The pipeline that builds packs is not here: since EPIC-16 it lives in the sibling clone `C:\Users\Drew\git\MapPacker-SnowboardAnywhere`, with its own `CLAUDE.md` and board rules. Raw data still sits in this checkout's `raw/` (gitignored); MapPacker reads it through `SBA_RAW_ROOT` until it moves there.
 - Code that exists only in a session's cloud sandbox is not done. Every session attaches the repo, pulls `main` before starting, commits its work, and pushes. Rebase on conflict.

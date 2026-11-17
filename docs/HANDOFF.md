@@ -4,8 +4,8 @@ Read this first when picking the project up in Claude Code / VS Code. Current wo
 
 ## Where things are
 
-- Repo: `C:\Users\Drew\git\SnowboardAnywhere` (origin github.com/drewkeriazes/SnowboardAnywhere). Everything below is committed on `main`.
-- The pipeline (fetch, build, report, publish) is not here since EPIC-16: it lives in the sibling clone `C:\Users\Drew\git\MapPacker-SnowboardAnywhere` (github.com/drewkeriazes/MapPacker-SnowboardAnywhere), with its history. Pipeline work, resort data and packs are MapPacker cards and PRs. The dated notes below that name `pipeline/<file>` or `.cmd` launchers mean those files in MapPacker now.
+- Repo: `C:\Users\Drew\git\SnowboardAnywhere` (origin github.com/drewkeriazes-personal/SnowboardAnywhere). Everything below is committed on `main`.
+- The pipeline (fetch, build, report, publish) is not here since EPIC-16: it lives in the sibling clone `C:\Users\Drew\git\MapPacker-SnowboardAnywhere` (github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere), with its history. Pipeline work, resort data and packs are MapPacker cards and PRs. The dated notes below that name `pipeline/<file>` or `.cmd` launchers mean those files in MapPacker now.
 - Raw data (Vail 1.4 GB, and the other resorts) sits in this checkout's `raw\` (gitignored), which MapPacker reads through `SBA_RAW_ROOT` until it moves there. Not in git.
 - Packs: `cd game && npm run get <slug>` downloads a published one; `npm run get -- --from ..\..\MapPacker-SnowboardAnywhere\packs\<slug>` copies in one built in MapPacker, to ride it before it is published (FEAT-242). Synthetic test pack: `npm run get synth`, the copy MapPacker publishes (release `synth-v<N>`, FEAT-241); the client runs against it with `?pack=synth`.
 
@@ -117,5 +117,5 @@ Previous status: `aaa8454` moved `meta.start` to Born Free (15 m below its top, 
 ## Conventions
 
 - Pack coordinates: x east, y north, z up, metres from `meta.origin` (UTM 13N 384300, 4384250 for Vail). three.js: x east, y up, z = -north.
-- Pack format is MapPacker's [`docs/pack-format.md`](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md) (FEAT-239). Its Contract section lists the values `src/pack/`, `species.ts` and `treeline.ts` share with the pipeline; a format change lands here first or together with MapPacker's.
+- Pack format is MapPacker's [`docs/pack-format.md`](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md) (FEAT-239). Its Contract section lists the values `src/pack/`, `species.ts` and `treeline.ts` share with the pipeline; a format change lands here first or together with MapPacker's.
 - Fetch lessons (USGS 500s above 1500 px, Overpass flakiness, PowerShell quirks) are in `docs/data/vail-raw-data-inventory.md`, written when the pipeline lived here.

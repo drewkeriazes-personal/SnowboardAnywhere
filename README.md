@@ -17,7 +17,7 @@ times) something notices.
 **Just want to ride?** Follow [PLAY.md](PLAY.md): on Windows or an Apple Silicon Mac, download the zip and double-click it (nothing to install); anywhere else, five copy-paste steps. Plus fixes for the common problems.
 
 On Windows without any tools: download `SnowboardAnywhere-win.zip` from
-[the latest release](https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest), unzip it, double-click
+[the latest release](https://github.com/drewkeriazes-personal/SnowboardAnywhere/releases/latest), unzip it, double-click
 `SnowboardAnywhere.exe`. The first launch downloads Vail in its small window (about 270 MB, a few minutes), then
 the game opens in your browser; later launches start straight away, and more resorts come from Change resort.
 On Windows the first launch also asks which installed browser to use; `SnowboardAnywhere.exe --pick-browser` or Settings > Launcher > Browser changes it.
@@ -46,7 +46,7 @@ Signing in is optional and changes nothing about riding: the game starts as a gu
 ### Getting a resort
 
 Resort packs are not in this repo. Published ones (Vail, Breckenridge, Big Sky) are release downloads in
-[MapPacker-SnowboardAnywhere](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere):
+[MapPacker-SnowboardAnywhere](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere):
 
 ```
 cd game
@@ -305,12 +305,12 @@ the card to dismiss it; it hides itself after 10 s.
 ## How a resort gets built
 
 Not in this repo. A Python pipeline in
-[MapPacker-SnowboardAnywhere](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere) downloads
+[MapPacker-SnowboardAnywhere](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere) downloads
 public data for a resort (USGS 1 m lidar, NAIP imagery, LANDFIRE vegetation, OpenStreetMap), turns it
 into a "pack" of height tiles, masks, trees and features, and publishes it; the game downloads the pack
 and streams it. One command there takes a resort's name to a published pack (`add_resort.cmd "<name>"`);
 its README has the rest. The pack layout both repos follow is MapPacker's
-[`docs/pack-format.md`](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md).
+[`docs/pack-format.md`](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md).
 
 ## More
 

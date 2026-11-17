@@ -1,6 +1,6 @@
 // FEAT-222 `npm run get <slug>` (node tools/get_pack.mjs <slug> [--force] [--sha256] [--catalog <url|file>] | --list):
 // download a published resort pack into packs/<slug>. Reads catalog.json from the resorts repo
-// (drewkeriazes/MapPacker-SnowboardAnywhere, written by MapPacker-SnowboardAnywhere/pipeline/publish_pack.py), downloads the release zip in
+// (drewkeriazes-personal/MapPacker-SnowboardAnywhere, written by MapPacker-SnowboardAnywhere/pipeline/publish_pack.py), downloads the release zip in
 // Node (GitHub release assets send no CORS headers, so the page can't), checks its sha256 and pack format against
 // this game's, unzips it next to packs/<slug> and swaps it in, then rewrites packs/index.json.
 // The dev and host servers (vite.config.ts /__packs/*) call getPack() for the resort picker's Download button.
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 import { GAME, PACKS } from './paths.mjs';
 
-export const RESORTS_REPO = 'drewkeriazes/MapPacker-SnowboardAnywhere';
+export const RESORTS_REPO = 'drewkeriazes-personal/MapPacker-SnowboardAnywhere';
 /** The raw file on main: the fallback, and what CI's synth-pack job reads. GitHub's CDN caches it for 5 minutes. */
 export const CATALOG_URL = `https://raw.githubusercontent.com/${RESORTS_REPO}/main/catalog.json`;
 /** BUG-096: the same file through the contents API, which reads main as it is now (one unauthenticated API call). */

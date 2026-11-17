@@ -2,7 +2,7 @@
 
 Designed 2026-11-11 against `main` at 76da1ff. Idea from Drew: type a resort name, a pipeline builds its config and pack using everything DATA-022 (#439) taught us, and the pack is published somewhere free so it can be downloaded. Packs and resort data live in a second repo. Edge case to design for: Boston Mills, Ohio.
 
-> **Superseded in part by EPIC-16 ([MapPacker-SnowboardAnywhere#9](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/issues/9), 2026-11-11):** the pipeline moved to MapPacker (FEAT-238 to FEAT-242) and this repo just plays packs. The pack format is the contract between the repos, with its spec in MapPacker. Plan: [`docs/pipeline-move.md`](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/blob/main/docs/pipeline-move.md). Section 2's "all pipeline code" row and "How the two repos link" describe the layout before that move; the `pipeline/` paths in this note are history and name the same files in MapPacker.
+> **Superseded in part by EPIC-16 ([MapPacker-SnowboardAnywhere#9](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/issues/9), 2026-11-11):** the pipeline moved to MapPacker (FEAT-238 to FEAT-242) and this repo just plays packs. The pack format is the contract between the repos, with its spec in MapPacker. Plan: [`docs/pipeline-move.md`](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/main/docs/pipeline-move.md). Section 2's "all pipeline code" row and "How the two repos link" describe the layout before that move; the `pipeline/` paths in this note are history and name the same files in MapPacker.
 
 This epic sits on top of FEAT-175 (#409). FEAT-175 makes the build repeatable and measured (`pack_report.py`, no Vail constants, `build_resort.py`). This epic adds the two ends it does not have: **a name in** (no hand-written `resorts/<slug>.json`) and **a download out** (packs published and fetched by slug).
 
@@ -92,11 +92,11 @@ No git submodule; two sibling clones linked by a path, a URL, a version number a
 |---|---|
 | On disk | Sibling clones: `C:\Users\Drew\git\SnowboardAnywhere` and `C:\Users\Drew\git\MapPacker-SnowboardAnywhere`. The pipeline finds MapPacker at `../MapPacker-SnowboardAnywhere`; `--resorts-repo <path>` overrides. |
 | Resort configs | `pipeline/resorts/*.json` and `*_ept_nodes*.txt` move to MapPacker `resorts/` (one home per file, not copies). The pipeline reads them from there. |
-| Publish (pipeline to MapPacker) | `publish_pack.py` writes the config, `reports/<slug>.md` and `catalog.json` into the MapPacker clone, commits as Drew, pushes, then `gh release create <slug>-v<N> -R drewkeriazes/MapPacker-SnowboardAnywhere`. Uses Drew's local `gh` login; no tokens in either repo. |
-| Download (game to MapPacker) | One constant in `game/tools/get_pack.mjs`: `https://raw.githubusercontent.com/drewkeriazes/MapPacker-SnowboardAnywhere/main/catalog.json`. `SBA_CATALOG_URL` overrides it (a local path works, for testing). |
+| Publish (pipeline to MapPacker) | `publish_pack.py` writes the config, `reports/<slug>.md` and `catalog.json` into the MapPacker clone, commits as Drew, pushes, then `gh release create <slug>-v<N> -R drewkeriazes-personal/MapPacker-SnowboardAnywhere`. Uses Drew's local `gh` login; no tokens in either repo. |
+| Download (game to MapPacker) | One constant in `game/tools/get_pack.mjs`: `https://raw.githubusercontent.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/main/catalog.json`. `SBA_CATALOG_URL` overrides it (a local path works, for testing). |
 | Version | `formatVersion` in the client constant, `meta.json` and the catalog entry. A mismatch shows "needs rebuild", never a broken load. |
-| Traceability | Each catalog entry and release note records the SnowboardAnywhere commit (`pipeline`) and the card that built it: `Built by drewkeriazes/SnowboardAnywhere@<sha> (<card>)`. |
-| Board | One board (projects/2) pulls issues from both repos; card ids are one sequence across them (`tools/card_id.py` reads both). A card lives in the repo whose PR closes it; cross-repo PRs use `Fixes drewkeriazes/MapPacker-SnowboardAnywhere#<n>`. `docs/BOARD.md`. |
+| Traceability | Each catalog entry and release note records the SnowboardAnywhere commit (`pipeline`) and the card that built it: `Built by drewkeriazes-personal/SnowboardAnywhere@<sha> (<card>)`. |
+| Board | One board (projects/2) pulls issues from both repos; card ids are one sequence across them (`tools/card_id.py` reads both). A card lives in the repo whose PR closes it; cross-repo PRs use `Fixes drewkeriazes-personal/MapPacker-SnowboardAnywhere#<n>`. `docs/BOARD.md`. |
 | Docs | MapPacker README: what it holds, how to get a pack, data licences, link back here. This repo's `docs/developer-guide.md` and `docs/pack-format.md` link to MapPacker. |
 
 **Later, not now:** Cloudflare R2 (10 GB-month free, free egress, S3 API) when packs need to be fetched straight from a hosted page, since R2 can send CORS headers. A database (Supabase or D1) only when there is per-player data to store (accounts, times, shared ghosts) or hundreds of resorts; until then `catalog.json` is the database.
@@ -116,7 +116,7 @@ No git submodule; two sibling clones linked by a path, a URL, a version number a
       "pack": {
         "version": 1, "formatVersion": 7, "build": "20261120T150000Z-3fa2c1", "built": "2026-11-20", "pipeline": "76da1ff",
         "bytes": 120000000, "sha256": "...",
-        "url": "https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/releases/download/boston-mills-v1/boston-mills.zip"
+        "url": "https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/releases/download/boston-mills-v1/boston-mills.zip"
       },
       "report": "reports/boston-mills.md"
     }

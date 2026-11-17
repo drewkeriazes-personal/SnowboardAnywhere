@@ -51,7 +51,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
-      MAPPACKER: drewkeriazes/MapPacker-SnowboardAnywhere
+      MAPPACKER: drewkeriazes-personal/MapPacker-SnowboardAnywhere
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v6

@@ -14,5 +14,5 @@ Real: Street View, March 2012, about midday, thin high cloud (links in spot.json
 ## In the game (FEAT-171 branch, 15 March noon, clear, `tools/aerial.mjs --gpu` at 1600x900)
 1. **Tree shadows:** sparse trees from 260 m to about 2 km carry their own crisp shadow, attached at the trunk (FEAT-171). Before it, the 4 m tree map painted soft patches there.
 2. **Tones:** far forest under the horizon 62 to 70, mid-distance trees about 1 : 4 to 1 : 6 against the snow; snow stays even. Close to the targets.
-3. **Snow against the sky:** about equal (snow 200 to 208, sky 195 to 207); the photos have the snow about 1.25 x brighter. -> [FEAT-178 #414](https://github.com/drewkeriazes/SnowboardAnywhere/issues/414)
+3. **Snow against the sky:** about equal (snow 200 to 208, sky 195 to 207); the photos have the snow about 1.25 x brighter. -> [FEAT-178 #414](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/414)
 4. **Sky:** the photos have thin high cloud. Since FEAT-094 the spot is tagged `weather: cirrus` and the shots are re-taken in it (still at noon); the measurements above were made on the default-weather shots.

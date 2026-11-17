@@ -6,7 +6,7 @@ The short version for riders. No coding needed.
 
 Nothing to install and no commands. You need about 1 GB of free space.
 
-1. Open https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest and download **SnowboardAnywhere-win.zip** (under Assets).
+1. Open https://github.com/drewkeriazes-personal/SnowboardAnywhere/releases/latest and download **SnowboardAnywhere-win.zip** (under Assets).
 2. Right-click the downloaded zip > **Extract All** > **Extract**.
 3. Open the folder it made (`SnowboardAnywhere-win`) and double-click **SnowboardAnywhere.exe**.
 4. If Windows says **"Windows protected your PC"**: click **More info**, then **Run anyway**. The game isn't code-signed yet, so Windows warns about it once.
@@ -37,7 +37,7 @@ Everything else (controls, choppy game, no sound) is the same as below: see Basi
 
 For Macs with Apple Silicon (M1 or newer: Apple menu > About This Mac says "Chip Apple M..."). Nothing to install and no commands. You need about 1 GB of free space. An Intel Mac needs the Git and Node.js way below.
 
-1. Open https://github.com/drewkeriazes/SnowboardAnywhere/releases/latest and download **SnowboardAnywhere-mac.zip** (under Assets).
+1. Open https://github.com/drewkeriazes-personal/SnowboardAnywhere/releases/latest and download **SnowboardAnywhere-mac.zip** (under Assets).
 2. Double-click the downloaded zip (in Downloads). It makes a folder, `SnowboardAnywhere-mac`.
 3. Open that folder and double-click **SnowboardAnywhere**.
 4. The first time, macOS blocks it, because the game isn't signed by an Apple developer yet. Let it through once (see **First launch on a Mac** below).
@@ -108,7 +108,7 @@ Copy and paste these, one line at a time:
 
 ```
 cd %USERPROFILE%
-git clone https://github.com/drewkeriazes/SnowboardAnywhere.git
+git clone https://github.com/drewkeriazes-personal/SnowboardAnywhere.git
 cd SnowboardAnywhere\game
 npm ci
 ```

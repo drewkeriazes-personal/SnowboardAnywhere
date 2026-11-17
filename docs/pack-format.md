@@ -1,1 +1,1 @@
-The pack format spec lives with the pipeline that writes packs: [MapPacker-SnowboardAnywhere `docs/pack-format.md`](https://github.com/drewkeriazes/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md) (FEAT-239).
+The pack format spec lives with the pipeline that writes packs: [MapPacker-SnowboardAnywhere `docs/pack-format.md`](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/main/docs/pack-format.md) (FEAT-239).

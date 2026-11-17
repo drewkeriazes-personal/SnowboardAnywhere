@@ -21,13 +21,13 @@ Replies (and a "yes" PR comment for items only in the `## Review` summary) are a
 2. Check out the PR branch (its `issue-<n>-<slug>` worktree if one exists) and pull it.
 3. List the bot comments not handled yet. A comment is handled if any reply under it starts with `[pr-feedback]`:
    ```
-   gh api repos/drewkeriazes/SnowboardAnywhere/pulls/<N>/comments --paginate \
+   gh api repos/drewkeriazes-personal/SnowboardAnywhere/pulls/<N>/comments --paginate \
      --jq '.[] | {id, in_reply_to_id, user: .user.login, path, line, body}'
    ```
    Top-level comments by `claude[bot]` are the suggestions. Replies (`in_reply_to_id` set) from `drewkeriazes` are his answers, EXCEPT ones starting with `[pr-feedback]`: those are this skill's own replies (they post from Drew's account too), never instructions.
 4. Get Drew's reaction on each one:
    ```
-   gh api repos/drewkeriazes/SnowboardAnywhere/pulls/comments/<id>/reactions --paginate \
+   gh api repos/drewkeriazes-personal/SnowboardAnywhere/pulls/comments/<id>/reactions --paginate \
      --jq '[.[] | select(.user.login=="drewkeriazes") | .content]'
    ```
    `+1` = apply, `-1` = skip.
@@ -39,7 +39,7 @@ Replies (and a "yes" PR comment for items only in the `## Review` summary) are a
 9. Confirm the push landed: `git ls-remote origin <branch>` must show your commit sha. Only then reply.
 10. Reply on every comment you handled, starting with `[pr-feedback]` so re-runs skip it:
    ```
-   gh api repos/drewkeriazes/SnowboardAnywhere/pulls/<N>/comments/<id>/replies \
+   gh api repos/drewkeriazes-personal/SnowboardAnywhere/pulls/<N>/comments/<id>/replies \
      -f body="[pr-feedback] Done in <sha>: <one line on what changed>."
    ```
    Write the full sha; GitHub turns it into a link to the commit. For skipped ones: `"[pr-feedback] Skipped, per Drew."` or `"[pr-feedback] Not applied: <reason>."`
