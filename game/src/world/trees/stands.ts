@@ -54,20 +54,21 @@ function groundAt(g: StandGrid, x: number, y: number): number {
  * The generated stems of a cell at `density` (0..1 of the stand's full density), as pack tree records
  * (x, y, z, height, crown, species id). The crown is 0 (the species' own) unless the pack has `crownWidths`
  * (FEAT-298), when it is the radius to draw: the species' times the cell's width factor times the stem's own draw.
- * FEAT-333: a stem whose spot `clears` (a worn tree line runs there) is left out.
+ * FEAT-333: `place` moves a stem off a worn tree line to the line's bank (written into its `out`), or returns false to
+ * leave it out.
  */
-export function generateStems(g: StandGrid, density: number, widths: CrownWidthsMeta | null = null, clears: ((x: number, y: number) => boolean) | null = null): Float32Array {
+export function generateStems(g: StandGrid, density: number, widths: CrownWidthsMeta | null = null, place: ((x: number, y: number, out: number[]) => boolean) | null = null): Float32Array {
   const n = g.size, res = g.res, top = g.minY + n * res, px = g.px;
   if (density <= 0) return new Float32Array(0);
   // the cells that keep a stem, and where it stands
-  const keep: number[] = [], at: number[] = [];
+  const keep: number[] = [], at: number[] = [], moved = [0, 0];
   for (let i = 0, o = 0; i < n * n; i++, o += 4) {
     const p = px[o];
     if (p === 0) continue;
     const cx = g.minX + ((i % n) + 0.5) * res, cy = top - (Math.floor(i / n) + 0.5) * res;
     if (hash01(cx, cy, S_KEEP) >= (p / 255) * density) continue;
-    const x = cx + (hash01(cx, cy, S_JX) - 0.5) * res * JITTER, y = cy + (hash01(cx, cy, S_JY) - 0.5) * res * JITTER;
-    if (clears && clears(x, y)) continue;
+    let x = cx + (hash01(cx, cy, S_JX) - 0.5) * res * JITTER, y = cy + (hash01(cx, cy, S_JY) - 0.5) * res * JITTER;
+    if (place) { if (!place(x, y, moved)) continue; x = moved[0]; y = moved[1]; }
     keep.push(i); at.push(x, y);
   }
   const count = keep.length;

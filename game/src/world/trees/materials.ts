@@ -30,6 +30,8 @@ export const kitUniforms = {
   uFarEdge: { value: new THREE.Vector2(1e8, 1e8 + 1) },
   /** FEAT-298: 1 when the pack's crowns are widened per tree (crownWidths): the trunk then keeps its natural width (KIT_CORE) */
   uKitCore: { value: 0 },
+  /** FEAT-303: the glade trim's strength (0 with `?notrim`, for before / after looks) */
+  uTrimK: { value: 1 },
 };
 
 /**
@@ -64,7 +66,7 @@ export type Band = { value: THREE.Vector4 };
 export const newBand = (): Band => ({ value: new THREE.Vector4(-2, -1, 1e8, 1e8 + 1) });
 
 const LOD_VERT = /* glsl */ `
-  uniform vec3 uLodCam; uniform vec4 uLodBand; uniform float uKitCore;
+  uniform vec3 uLodCam; uniform vec4 uLodBand; uniform float uKitCore; uniform float uTrimK;
   // FEAT-298 (generate.ts Builder.core): natural crown radius / height, core radius and the lean per unit height (crown-radius frame)
   attribute vec4 kCore;
   #ifndef SHRUB
@@ -129,9 +131,9 @@ const KIT_BEGIN = /* glsl */ `
   #ifndef SHRUB
     // FEAT-303: a glade tree's lower branches are worn back by the riders: from the base to about head height over the
     // snow (less on a small tree) they reach TRIM_PULL less far out from the trunk at full trim, and thin (TRIM_FRAG)
-    if (aTrim > 0.0) {
+    if (aTrim * uTrimK > 0.0) {
       float kH = length(ktm[1].xyz);
-      float kLow = aTrim * (1.0 - smoothstep(min(${TRIM_H0}, 0.45 * kH), min(${TRIM_H1}, 0.65 * kH), position.y * kH));
+      float kLow = aTrim * uTrimK * (1.0 - smoothstep(min(${TRIM_H0}, 0.45 * kH), min(${TRIM_H1}, 0.65 * kH), position.y * kH));
       if (kLow > 0.0) {
         vec2 tAx = position.y * kCore.zw, tD = transformed.xz - tAx;
         float tr = length(tD), ta = max(kCore.y, 0.05);

@@ -49,8 +49,10 @@ const FADE_IN = 12, FADE_OUT = 45;
 const HW_NEAR = 1.5, HW_FAR = 0.75;
 /** the corridor's soft edge past its half-width, m */
 const EDGE = 0.9;
-/** a generated stem keeps this far past the corridor's half-width, m */
-const STEM_CLEAR = 1.0;
+/** a generated stem planned in a trench moves out to this far past its rim, m, plus a seeded 0 to STEM_JITTER m (`placeStem`) */
+const STEM_GAP = 0.15, STEM_JITTER = 0.6;
+/** a line fainter than this (its trench under 5 cm) leaves the stems where they are */
+const STEM_FAINT = 0.05;
 /** mogul amplitude (0..1) at a line's full strength, and the share of a full-strength line's snow that is tracked */
 export const LINE_MOGUL = 0.85;
 /** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
@@ -67,7 +69,7 @@ const GLADE_LEVEL: Record<string, number> = { expert: 1, freeride: 1, extreme: 1
 /** trim between two runs: a strip of forest narrower than STRIP_FULL m (centreline to centreline) gets STRIP_K, none past STRIP_NONE */
 const STRIP_FULL = 110, STRIP_NONE = 170, STRIP_K = 0.7;
 /** trim round a tree line: LINE_TRIM within LINE_NEAR m of its centre, none past LINE_FAR */
-const LINE_NEAR = 6, LINE_FAR = 22, LINE_TRIM = 0.85;
+const LINE_NEAR = 6, LINE_FAR = 22, LINE_TRIM = 1;
 const TRIM_TILE = 256, TRIM_RES = 8, TRIM_N = TRIM_TILE / TRIM_RES + 1;
 
 /** integer hash to 0..1 */
@@ -344,7 +346,7 @@ export class TreeLines {
     for (let i = 0; i < this.count; i++) {
       const o = i * LINE_SEG;
       len += Math.hypot(this.seg[o + 2] - this.seg[o], this.seg[o + 3] - this.seg[o + 1]);
-      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + Math.max(STEM_CLEAR, TRENCH_WALL + BERM_W));
+      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + TRENCH_WALL + BERM_W);
     }
     this.length = len;
     this.trimTiles.clear();
@@ -442,18 +444,46 @@ export class TreeLines {
     return w > 0 ? w * this.gate(x, y) : 0;
   }
 
-  /** a generated stem at (x, y) would stand in a corridor (FEAT-333: the stems leave it) */
-  clears(x: number, y: number): boolean {
-    const ids = this.grid.at(x, y);
-    if (!ids) return false;
-    const s = this.seg;
-    for (const i of ids) {
-      const o = i * LINE_SEG;
-      if (s[o + 5] < 0.15) continue; // a faint end: the woods close in
-      const r = s[o + 4] + STEM_CLEAR;
-      if (segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]) < r * r) return true;
+  /**
+   * Where a generated stem planned at (x, y) stands, written into `out`; false when it has nowhere to go. The forest keeps
+   * its count (so it looks the same from a distance): a stem whose spot is in a trench, or within STEM_GAP of its rim, moves
+   * straight out to just past the rim (STEM_GAP plus a seeded 0 to STEM_JITTER m), so the trees stand right up to the
+   * bank. It is left out only when every way out lands in another line's trench (where lines cross).
+   */
+  placeStem(x: number, y: number, out: number[]): boolean {
+    out[0] = x; out[1] = y;
+    const s = this.seg, jit = STEM_JITTER * h01(Math.round(x * 16), Math.round(y * 16), 77);
+    for (let pass = 0; pass < 3; pass++) {
+      const px = out[0], py = out[1], ids = this.grid.at(px, py);
+      if (!ids) return true;
+      let worst = 0, cx = 0, cy = 0, need = 0, seg = -1;
+      for (const i of ids) {
+        const o = i * LINE_SEG;
+        if (s[o + 5] < STEM_FAINT) continue; // dug under 5 cm: the woods close in
+        const r = s[o + 4] + TRENCH_WALL + STEM_GAP;
+        const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
+        let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = ax + dx * t, qy = ay + dy * t, d = Math.hypot(px - qx, py - qy);
+        if (r - d > worst) { worst = r - d; cx = qx; cy = qy; need = r; seg = o; }
+      }
+      if (seg < 0) return true;
+      let ux = out[0] - cx, uy = out[1] - cy;
+      const l = Math.hypot(ux, uy);
+      if (l > 1e-3) { ux /= l; uy /= l; } else {
+        // on the centreline: out to the side the hash picks
+        const dx = s[seg + 2] - s[seg], dy = s[seg + 3] - s[seg + 1], dl = Math.hypot(dx, dy) || 1, side = jit < STEM_JITTER / 2 ? 1 : -1;
+        ux = -dy / dl * side; uy = dx / dl * side;
+      }
+      out[0] = cx + ux * (need + jit); out[1] = cy + uy * (need + jit);
     }
-    return false;
+    // still in a trench after three moves: crossing lines with no room between
+    const ids = this.grid.at(out[0], out[1]);
+    if (ids) for (const i of ids) {
+      const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL;
+      if (s[o + 5] >= STEM_FAINT && segD2(out[0], out[1], s[o], s[o + 1], s[o + 2], s[o + 3]) < r * r) return false;
+    }
+    return true;
   }
 
   /** (x, y) is inside a corridor's half-width, not counting the faint ends (the checks: no detected trunk in one) */

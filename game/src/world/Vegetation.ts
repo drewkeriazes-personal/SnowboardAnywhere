@@ -614,7 +614,7 @@ export class Vegetation {
     const solid = cell.col !== null;
     if (solid) this.setSolid(cell, false);
     const tl = this.pack.treeLines;
-    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y) => tl.clears(x, y) : null) : null;
+    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null) : null;
     if (stems && stems.length) { const d = new Float32Array(base.length + stems.length); d.set(base); d.set(stems, base.length); cell.data = d; }
     else cell.data = base;
     cell.gen = k;

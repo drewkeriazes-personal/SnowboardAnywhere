@@ -4,8 +4,8 @@
 //   - Steep and Deep (trees14, 1827, -3506): at least 2 corridors within 60 m of the run, the spot itself off them
 //     (snowcheck's deep-powder spot)
 //   - no detected trunk inside a corridor anywhere in the pack (the lines bend round them or squeeze past)
-//   - the generated stems leave the corridors: a full-density stand over the trees14 cell grows no stem in one, the
-//     same stand away from every line loses none
+//   - the generated stems leave the trenches for their banks: a full-density stand round the busiest lines grows no stem
+//     in a trench and keeps over 98 % of its stems, the same stand away from every line is unchanged
 //   - the trim: full in the Steep and Deep trees, none in forest far from every run
 //   - a full line is dug about a metre into the snow like a bobsled run, with a berm on its rim; no trunk in its walls
 //   - the snow on a line is tracked (chop) and shallower than the powder either side; a storm softens it
@@ -101,12 +101,19 @@ for (const [k, n] of counts) if (n > most) { most = n; [bx, by] = k.split(',').m
 const size = 250, res = 4, px = new Uint8ClampedArray(size * size * 2 * 4);
 for (let i = 0; i < size * size; i++) { px[i * 4] = 255; px[i * 4 + 1] = 60; px[i * 4 + 3] = 255; }
 const g = { px, size, res, minX: bx, minY: by, zBase: 0, zScale: 1, hStep: 0.25 };
-const all = generateStems(g, 1), kept = generateStems(g, 1, null, (x, y) => tl.clears(x, y));
-let inLine = 0;
-for (let i = 0; i < kept.length; i += 6) if (tl.inCorridor(kept[i], kept[i + 1]) || tl.clears(kept[i], kept[i + 1])) inLine++;
-check('no generated stem in a corridor', inLine === 0 && kept.length < all.length, `${(all.length - kept.length) / 6} of ${all.length / 6} stems left out in the 1 km cell at (${bx}, ${by}), ${inLine} in a line`);
+const place = (x, y, out) => tl.placeStem(x, y, out);
+const all = generateStems(g, 1), kept = generateStems(g, 1, null, place);
+let inTrench = 0, nearBank = 0, banked = 0;
+for (let i = 0; i < kept.length; i += 6) {
+  const t = tl.trenchAt(kept[i], kept[i + 1]);
+  if (tl.inCorridor(kept[i], kept[i + 1]) || t < -0.05) inTrench++;
+  if (t > 0.02) banked++; // on a berm: right at the bank
+}
+for (let i = 0; i < all.length; i += 6) if (tl.trenchAt(all[i], all[i + 1]) < -0.05) nearBank++;
+check('no generated stem in a trench', inTrench === 0, `${inTrench} of ${kept.length / 6} stems in the 1 km cell at (${bx}, ${by})`);
+check('the stems a trench would take stand on its bank instead (the forest keeps its count)', kept.length / all.length > 0.98 && banked >= nearBank * 0.5, `${kept.length / 6} of ${all.length / 6} kept (${((1 - kept.length / all.length) * 100).toFixed(2)} % left out where lines cross); ${nearBank} planned in a trench, ${banked} now on a berm`);
 const far = { ...g, minX: meta.instances ? meta.instances.minX - 50000 : -1e6, minY: -1e6 };
-check('stems away from every line all stay', generateStems(far, 1, null, (x, y) => tl.clears(x, y)).length === generateStems(far, 1).length, 'a stand far outside the pack');
+check('stems away from every line all stay', generateStems(far, 1, null, place).length === generateStems(far, 1).length, 'a stand far outside the pack');
 
 // trim: none in forest far from every run (the farthest of a coarse grid of points inside the pack)
 const runs = features.runs.flatMap((r) => r.points);
