@@ -3,6 +3,7 @@ import type { Pack } from '../pack/Pack';
 import type { Rider } from '../sim/Rider';
 import { rockCover } from '../terrain/rockCover';
 import { ExposureSampler } from '../terrain/exposure';
+import { DrawnGround } from '../terrain/drawnGround';
 import { DEFORM_GLSL, deformUniforms, laneStampMaterial, markStampDirty } from './Deform';
 import { SNOW_ALBEDO } from './snowLook';
 
@@ -340,6 +341,8 @@ export class Tracks {
   readonly stampGroup = new THREE.Group();
   private readonly stampMat = laneStampMaterial();
   private readonly pack: Pack;
+  /** BUG-065: the snow as drawn, so a groove over moguls follows the bumps the mesh shows */
+  private readonly drawn: DrawnGround;
   private readonly mat: THREE.MeshStandardMaterial;
   private lanes: Lane[] = [];
   private offsets: number[] = [0];
@@ -365,6 +368,7 @@ export class Tracks {
 
   constructor(pack: Pack) {
     this.pack = pack;
+    this.drawn = new DrawnGround(pack);
     // BUG-021: the same lighting model and roughness as the terrain's snow (was Lambert, lit brighter)
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: true, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
     // the floor is below the terrain surface: bias the depth a few cm toward the camera so the
@@ -406,12 +410,12 @@ export class Tracks {
     const fl = Math.hypot(fx, fy) || 1;
     const ax = fy / fl, ay = -fx / fl; // across the slide
     const rx = Math.cos(r.heading), ry = -Math.sin(r.heading); // the boots sit either side of the body
-    const surface = (x: number, z: number) => this.pack.groundHeight(x, -z);
+    const surface = (x: number, z: number) => this.drawn.height(x, -z);
     const depth = Math.max(0.015, r.sink * 0.7);
     for (let i = 0; i < 2; i++) {
       const side = i === 0 ? -1 : 1;
       const cx = r.x + rx * side * 0.11, cy = r.y + ry * side * 0.11;
-      const g = this.pack.groundHeight(cx, cy);
+      const g = this.drawn.height(cx, cy);
       if (Number.isNaN(g)) continue;
       const pn = this.pack.groundNormal(cx, cy, this.nTmp); // BUG-021: lit like the slope, not flat ground
       this.gnTmp[0] = pn[0]; this.gnTmp[1] = pn[2]; this.gnTmp[2] = -pn[1];
@@ -502,7 +506,7 @@ export class Tracks {
     const ridge = 0.07 * r.scrape * (0.4 + 0.6 * Math.max(0, 1 - sp / 12)) * (0.6 + 0.6 * powder);
     const dn = Math.hypot(r.normal[0], r.normal[1]);
     const ridgeSide = dn > 0.02 ? (ax * r.normal[0] + ay * r.normal[1]) / dn : 0; // + = the right side is downhill
-    const surface = (x: number, z: number) => this.pack.groundHeight(x, -z);
+    const surface = (x: number, z: number) => this.drawn.height(x, -z);
     // BUG-044: once the two ski bands overlap (a hockey stop) their lips poke through each other's
     // floor; draw one band centred between the skis instead, and split back when they separate.
     // Hysteresis (merge at overlap, split once the gap is back to 80 %) stops it flickering.
@@ -519,7 +523,7 @@ export class Tracks {
       const bandHalf = moved > 6 || Number.isNaN(prev) ? want : Math.min(want, prev + HALF_GROW_PER_M * moved);
       this.laneHalf[i] = bandHalf;
       const cx = r.x + ax * o, cy = r.y + ay * o;
-      const g = this.pack.groundHeight(cx, cy);
+      const g = this.drawn.height(cx, cy);
       // BUG-043: no groove in rock the player can see; it fades out over the last bit of snow
       // before the rock edge and starts again on the snow below
       const rock = this.rockAt(cx, cy, g);
