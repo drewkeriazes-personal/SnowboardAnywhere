@@ -45,4 +45,4 @@ New issues reach the board on their own, by a different route per repo (FEAT-226
 
 Closed cards carry no `status:` label.
 
-From the cloud sandbox, issues and labels work through `gh api repos/drewkeriazes/<repo>/issues` (REST), for each repo the session has attached. The project board itself is GraphQL only, which the sandbox cannot reach, so column moves beyond open/close happen in the browser or by Drew; closing an issue is what moves it to Done.
+From the cloud sandbox, issues and labels work through `gh api repos/drewkeriazes-personal/<repo>/issues` (REST), for each repo the session has attached. The project board itself is GraphQL only, which the sandbox cannot reach, so column moves beyond open/close happen in the browser or by Drew; closing an issue is what moves it to Done.
