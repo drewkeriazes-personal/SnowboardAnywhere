@@ -26,6 +26,9 @@
   -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); }
 
 /* FEAT-140: the press meter over the head (its size comes from the drawing, set in PressMeter.ts) */
+/* FEAT-049: the input display (Settings > Controls > Input display), low in the middle, above the toasts */
+.input-view { position: fixed; left: 50%; bottom: 72px; transform: translateX(-50%); pointer-events: none; z-index: 5; display: none; }
+body.paused .input-view { visibility: hidden; }
 .press-meter { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 6; opacity: 0; transition: opacity .2s; will-change: transform; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6)); }
 
 /* FEAT-045: the speed lines canvas */
