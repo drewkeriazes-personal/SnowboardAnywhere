@@ -366,6 +366,6 @@ export class RiderView {
     const free = !seated && r.crashed <= 0;
     bodyLayer(this, r, dt, free, yaw, pressRoll);
     settleBody(this, r, dt, tuck, seated, free, fl, pv);
-    updateSpray(this, r, dt, f, right, true);
+    updateSpray(this, r, dt, f, right, !seated); // BUG-058: no spray off a chair or a gondola (the sim reads on the ground at lift speed)
   }
 }

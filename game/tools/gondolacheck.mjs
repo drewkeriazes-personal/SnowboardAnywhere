@@ -6,7 +6,7 @@
 //      and the board off the feet (the rig's board hidden, the racked one shown);
 //   3. the first person and helmet cam eyes are inside the cabin, at seated head height above the floor,
 //      also looking round as far as free look goes; the cabin is drawn in the body pass (near 0.05 m);
-//   4. the chase camera is outside the cabin;
+//   4. the chase camera is outside the cabin; no snow spray comes off the seated rider;
 //   5. at the top the rider steps out on foot and straps in where they stand, the board back on the feet;
 // and no console errors. The cabin sizes are LiftModels CABIN's.
 // node tools/gondolacheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
@@ -70,7 +70,9 @@ const mid = await page.evaluate((i) => {
     chair.update(lr.lift, r.x, r.y, r.z, r.heading, lr.cableY);
     s.lifts.update(10, { x: r.x, y: r.z, z: -r.y });
   };
+  const spawned0 = v.spray.spawned;
   for (let k = 0; k < 90; k++) frame(false);
+  const sprayed = v.spray.spawned - spawned0;
   const cabin = chair.group.children.find((o) => o.name === 'rider cabin');
   if (!cabin) return { cabin: false };
   // positions in the rider's cabin frame (origin at its grip), from this frame's matrices: the ride moves it every frame
@@ -107,7 +109,7 @@ const mid = await page.evaluate((i) => {
     cabin: true, grip: +(chair.group.position.y - lr.cableY).toFixed(3),
     hips, lFoot, rFoot,
     lowest: +lowest.toFixed(2), lowestName, rigBoard: v.rig.board.visible, racked: !!racked?.visible,
-    shellBody, glassFp,
+    shellBody, glassFp, sprayed,
     hidden, nearest: +nearest.toFixed(1), eyes, chase,
   };
 }, lift.i);
@@ -124,6 +126,7 @@ if (mid.cabin) {
   check('both boots rest on the floor', feetOk, `soles at ${(mid.lFoot[1] - ANKLE_H).toFixed(2)} / ${(mid.rFoot[1] - ANKLE_H).toFixed(2)}, floor ${FLOOR}`);
   check('no part of the rider is below the floor', mid.lowest - ANKLE_H > FLOOR - 0.02, `lowest ${mid.lowestName} at ${mid.lowest}`);
   check('the board is off the feet, in the rack outside the doors', !mid.rigBoard && mid.racked, `rig board ${mid.rigBoard ? 'shown' : 'hidden'}, racked ${mid.racked ? 'shown' : 'hidden'}`);
+  check('no snow spray off the rider while riding', mid.sprayed === 0, `${mid.sprayed} particles in 1.5 s`);
   check('first person draws the cabin with the body (glass once)', mid.shellBody && mid.glassFp);
   for (const [mode, list] of Object.entries(mid.eyes)) {
     const inside = list.every(([x, y, z]) => Math.abs(x) < HALF_W - 0.05 && Math.abs(z) < HALF_D - 0.05 && y > FLOOR + 0.9 && y < CEIL - 0.05);
