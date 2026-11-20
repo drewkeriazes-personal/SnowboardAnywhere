@@ -26,6 +26,7 @@ import { TouchControls } from '../ui/TouchControls';
 import { saveSettings, FALL_LINE, type Conditions, type Settings } from '../ui/Settings';
 import { saveMenuStill } from '../ui/MenuStill';
 import { PressMeter } from '../ui/PressMeter';
+import { InputView } from '../ui/InputView';
 import { listenHud } from '../ui/HudEvents';
 import { connectEventSources } from './eventSources';
 import { resetStart, spawnFromUrl, spawnKey } from '../spawn';
@@ -390,6 +391,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     pack.mask?.request(sx - 600, sy - 600, sx + 600, sy + 600);
     // FEAT-140: the press balance meter above the head (the toast when a press ends is in ui/HudEvents.ts)
     const pressMeter = new PressMeter();
+    const inputView = new InputView(); // FEAT-049: Settings > Controls > Input display
     if (params.cam === 'eye' && !headless) showToast('Eye camera: click, then mouse to look · WASD move · Q/E height · [ ] zoom · P save shot · ` free fly', 10000);
     // the menu may already have started a song before the session listened (BUG-033): announce it now
     if (audio.nowPlaying && !headless && params.cam !== 'eye') showToast(`♫ ${audio.nowPlaying}`);
@@ -409,7 +411,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     const draw = (): void => { veg.cull(cam.camera, renderer.shadowMap.enabled && env.sun.visible && !env.csm ? env.sun : null); sceneRender.render(cam.camera, cam.firstPerson); }; // FEAT-158: the near trees culled to this view
     const frame = new RideFrame({
       ...world, params, settings, pack, renderer, canvas, audio, events, rider, liftRide, prefetch, cam, controls, touch, goggles, lens, runStats, runCard, speedLines, replay,
-      modes, map, labels, sun, keyLabels, pressMeter, fps, sky, look, draw, showToast, saveShot, conditions,
+      modes, map, labels, sun, keyLabels, pressMeter, inputView, fps, sky, look, draw, showToast, saveShot, conditions,
     });
     if (settings.keysNote) { frame.boardNote = 'New default key layout available: Settings > Controls > Reset keys'; settings.keysNote = false; saveSettings(settings); }
     const restartRing = new RestartRing();
@@ -446,7 +448,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       trialWorld.dispose();
       modes.dispose();
       padFx.stop();
-      runCard.dispose(); speedLines.dispose(); pressMeter.dispose(); restartRing.dispose(); liftPicker.dispose(); eat.dispose(); puffs.dispose(); bigprints.dispose();
+      runCard.dispose(); speedLines.dispose(); pressMeter.dispose(); inputView.dispose(); restartRing.dispose(); liftPicker.dispose(); eat.dispose(); puffs.dispose(); bigprints.dispose();
       disconnectSources(); events.clear(); // FEAT-163
       frame.clear();
       goggles.destroy();
@@ -513,7 +515,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         : null,
       ready: () => {
         status.textContent = '';
-        installSimDebug({ env, events, ghosts, menu, shot, rider, riderView, controls, padFx, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
+        installSimDebug({ env, events, ghosts, menu, shot, rider, riderView, controls, padFx, inputView, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
           setWeather: (w: string | null) => { weatherOverride = parseWeather(w) ?? initialWeather; applySettings(settings, 'weather'); },
           /** shoot.mjs (FEAT-087): stream the scene round the camera until nothing is loading or building, without stepping the sim */
