@@ -14,7 +14,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { copyPack, getPack, localPacks, PACK_FORMAT, readCatalog } from './get_pack.mjs';
+import { copyPack, getPack, LocalPackError, localPacks, PACK_FORMAT, readCatalog } from './get_pack.mjs';
 import http from 'node:http';
 import { packDownloads, packFiles } from './pack_routes.mjs';
 
@@ -77,7 +77,11 @@ for (const [s, from, m] of [['js', () => path.join(mp, 'js'), '--from <the link 
 
 // getPack refuses a --from copy without --force
 const catalog = { resorts: [{ slug: 'vail', name: 'Vail', status: 'ok', pack: { formatVersion: F, version: 1, sha256: 'bad', url: path.join(t, 'nope.zip'), bytes: 1 } }] };
-try { await getPack('vail', { packsDir: packs, catalog }); ok(false, 'getPack refuses a copy'); } catch (e) { ok(/is a copy of/.test(e.message), 'getPack refuses a copy: ' + e.message); }
+try { await getPack('vail', { packsDir: packs, catalog }); ok(false, 'getPack refuses a copy'); } catch (e) {
+  ok(/is a copy of/.test(e.message) && e instanceof LocalPackError && e.local === 'copy', 'getPack refuses a copy (LocalPackError, local: copy): ' + e.message);
+  // BUG-140: the hint is the node form; PowerShell drops the -- of `npm run get <slug> -- --force` and with it --force
+  ok(/node tools\/get_pack\.mjs vail --force/.test(e.message) && !/-- --force/.test(e.message), 'the hint names node tools/get_pack.mjs <slug> --force, not npm run get -- --force');
+}
 ok(fs.existsSync(path.join(mp, 'vail', 'debug', 'species.png')), 'the source pack is untouched');
 
 // BUG-095: a rename Windows refuses for a while (EPERM / EBUSY / EACCES: a virus scan of the fresh tiles) is tried
@@ -222,6 +226,20 @@ ok(/fresh-v2\.zip/.test(j.error ?? ''), 'it uses the cached catalog');
 h = packDownloads(packs, { readCatalog: reader });
 const refused = await call(h, 'POST', '/__packs/get', { slug: 'fresh' });
 ok(refused.code === 400 && /offline/.test(refused.body.error) && (await call(h, 'GET', '/__packs/job?slug=fresh')).code === 404, 'no catalog at all: 400, and no job is left behind');
+{ // BUG-140: a pack built on this PC in the way: the job says so (local: built) and leaves it; replace: true goes past it
+  fs.mkdirSync(path.join(packs, 'mine'), { recursive: true }); fs.writeFileSync(path.join(packs, 'mine', 'meta.json'), `{"slug":"mine","formatVersion":${F}}`);
+  const mine = async () => ({ resorts: [{ slug: 'mine', name: 'Mine', status: 'ok', pack: { formatVersion: F, version: 3, sha256: 'x', url: path.join(t, 'mine-v3.zip'), bytes: 1 } }] });
+  const hm = packDownloads(packs, { readCatalog: mine });
+  ok((await call(hm, 'POST', '/__packs/get', { slug: 'mine' })).code === 202, 'a Download over a pack built here starts');
+  let jm = await settle(hm, 'mine');
+  ok(jm.phase === 'error' && jm.local === 'built' && /built on this PC/.test(jm.error) && fs.existsSync(path.join(packs, 'mine', 'meta.json')), `refused, the job says local: built, the pack is left: ${jm.error}`);
+  await call(hm, 'POST', '/__packs/get', { slug: 'mine', replace: 'yes' });
+  jm = await settle(hm, 'mine');
+  ok(jm.local === 'built', 'replace must be true, not just truthy');
+  await call(hm, 'POST', '/__packs/get', { slug: 'mine', replace: true });
+  jm = await settle(hm, 'mine');
+  ok(!jm.local && /mine-v3\.zip/.test(jm.error ?? ''), `replace: true goes past the guard to the download (${jm.error})`);
+}
 { // FEAT-248: GET /__packs/local is what is on disk, with no catalog read (the main menu's Preview badge)
   fs.writeFileSync(path.join(packs, 'rel', '.catalog.json'), JSON.stringify({ version: 1, sha256: 'old', status: 'preview' }));
   const before = reads; const loc = await call(h, 'GET', '/__packs/local');

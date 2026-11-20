@@ -32,8 +32,11 @@ export function packFiles(packsDir = PACKS) {
  * FEAT-222: the resort picker's Download button. The download runs here in Node (tools/get_pack.mjs): GitHub release
  * assets send no CORS headers, so the page can't fetch them.
  *   GET  /__packs/catalog      { formatVersion, catalog | null, error?, local: { slug: { formatVersion, build, version? } }, jobs }
- *   POST /__packs/get {slug}   starts the download; 202, or 400 with the reason
- *   GET  /__packs/job?slug=    { phase: 'download' | 'unzip' | 'done' | 'error', received, total, error? }
+ *   POST /__packs/get {slug, replace?}  starts the download; 202, or 400 with the reason. replace: true (BUG-140,
+ *                              the release toast's Replace) deletes a pack built on this PC or copied in with --from
+ *                              and installs the published one, as get_pack.mjs --force does
+ *   GET  /__packs/job?slug=    { phase: 'download' | 'unzip' | 'done' | 'error', received, total, error?, local? }
+ *                              local: 'built' | 'copy' when the error is a pack of this PC in the way (LocalPackError)
  *   GET  /__packs/local        { formatVersion, local }: what is on disk only, no catalog read (FEAT-248: the main
  *                              menu's Preview badge, from the catalog status get_pack.mjs keeps with each download)
  * The listing's catalog is cached for 5 minutes, so opening the picker again and again spends no more than 12 of the
@@ -72,8 +75,8 @@ export function packDownloads(packsDir = PACKS, { readCatalog = gp.readCatalog }
       if (!(req.headers['content-type'] ?? '').startsWith('application/json')) return send(res, 403, { error: 'same-origin JSON only' });
       const chunks = [];
       for await (const c of req) chunks.push(c);
-      let slug = '';
-      try { slug = String(JSON.parse(Buffer.concat(chunks).toString('utf8')).slug ?? ''); } catch { /* checked below */ }
+      let slug = '', replace = false;
+      try { const b = JSON.parse(Buffer.concat(chunks).toString('utf8')); slug = String(b.slug ?? ''); replace = b.replace === true; } catch { /* checked below */ }
       if (!gp.SLUG.test(slug)) return send(res, 400, { error: 'bad slug' });
       const running = jobs.get(slug);
       if (running && running.phase !== 'done' && running.phase !== 'error') return send(res, 202, running);
@@ -85,10 +88,15 @@ export function packDownloads(packsDir = PACKS, { readCatalog = gp.readCatalog }
         if (running) jobs.set(slug, running); else jobs.delete(slug);
         return send(res, 400, { error: String(e.message ?? e) });
       }
-      // a pack built on this PC (no catalog marker) is never replaced from the menu: getPack refuses without force
-      gp.getPack(slug, { packsDir, catalog: cat, onProgress: (p) => Object.assign(job, p) })
-        .then(() => { job.phase = 'done'; console.log(`[packs] ${slug} installed from the catalog`); })
-        .catch((e) => { job.phase = 'error'; job.error = String(e.message ?? e); console.warn(`[packs] ${slug}: ${job.error}`); });
+      // a pack built on this PC (no catalog marker) or copied in is replaced only when the player said Replace
+      // (BUG-140); otherwise getPack refuses and the job says which kind is in the way
+      gp.getPack(slug, { packsDir, catalog: cat, force: replace, onProgress: (p) => Object.assign(job, p) })
+        .then(() => { job.phase = 'done'; console.log(`[packs] ${slug} installed from the catalog${replace ? ' (replaced the pack built here)' : ''}`); })
+        .catch((e) => {
+          job.phase = 'error'; job.error = String(e.message ?? e);
+          if (e instanceof gp.LocalPackError) job.local = e.local;
+          console.warn(`[packs] ${slug}: ${job.error}`);
+        });
       return send(res, 202, job);
     }
     next();

@@ -443,5 +443,8 @@ body.peeking #settings, body.peeking #pause { opacity: 0; }
 #release-toasts .rt-link:hover { text-decoration: underline; }
 #release-toasts button { font-family: inherit; cursor: pointer; }
 #release-toasts .rt-go { flex: none; min-height: calc(36px * var(--ui-scale)); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-ink); font: 800 var(--fs-md) var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+#release-toasts .rt-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+#release-toasts .rt-alt { flex: none; min-height: calc(36px * var(--ui-scale)); padding: 0 var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: none; color: var(--text); font: 700 var(--fs-md) var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+#release-toasts .rt-alt:hover { background: var(--fill); }
 #release-toasts .rt-x { flex: none; align-self: flex-start; width: calc(28px * var(--ui-scale)); height: calc(28px * var(--ui-scale)); padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--dim); font: 400 var(--fs-lg) / 1 var(--font-body); }
 #release-toasts .rt-x:hover { color: var(--text); background: var(--fill); }

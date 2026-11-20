@@ -5,7 +5,10 @@
 // this game's, unzips it next to packs/<slug> and swaps it in, then rewrites packs/index.json.
 // The dev and host servers (vite.config.ts /__packs/*) call getPack() for the resort picker's Download button.
 // A pack this tool installed carries packs/<slug>/.catalog.json, so a newer release replaces it on its own; a pack
-// built here (no marker) is only replaced with --force. SA_CATALOG overrides the catalog URL (tests).
+// built here (no marker) is only replaced with --force. BUG-140: give --force to node, `node tools/get_pack.mjs <slug>
+// --force`: Windows PowerShell drops the `--` of `npm run get <slug> -- --force`, npm then takes --force as its own flag
+// and the get runs without it. The refusal is a LocalPackError, so the servers' routes can tell it from a failed
+// download (the release toast offers Replace, which is force). SA_CATALOG overrides the catalog URL (tests).
 // FEAT-241: the catalog's `test` list holds test packs the picker never shows (the synthetic pack CI runs on,
 // `npm run get synth`), one entry per pack format: findEntry picks the one this game reads. `--sha256` prints the
 // sha256 of the zip it would install, for CI's cache key. BUG-109: `--save-catalog <file>` writes the catalog it
@@ -32,6 +35,22 @@ export const SLUG = /^[a-z0-9][a-z0-9_-]*$/;
 const MARKER = '.catalog.json';
 const FROM_MARKER = '.from.json'; // FEAT-242: a pack copied in with --from: { from, build, copied }
 const STALL_MS = 60_000;
+
+/**
+ * BUG-140: getPack's refusal to replace a pack it did not install: `local` is 'built' (built on this PC, no marker)
+ * or 'copy' (copied in with --from). `code` is LOCAL_PACK, and pack_routes puts both on the job, so the page offers
+ * Replace instead of showing a failed download.
+ */
+export class LocalPackError extends Error {
+  constructor(slug, local, message) {
+    super(message);
+    this.code = 'LOCAL_PACK';
+    this.slug = slug;
+    this.local = local;
+  }
+}
+/** the command that replaces it: node, not `npm run get -- --force`, whose `--` PowerShell drops (BUG-140) */
+const forceCmd = (slug, extra = '') => `node tools/get_pack.mjs ${slug}${extra} --force`;
 
 /**
  * The pack format this checkout's client reads (PACK_FORMAT in src/pack/format.ts). The Windows launcher has no
@@ -180,8 +199,8 @@ export async function getPack(slug, { packsDir = PACKS, catalog, force = false, 
       return { slug, version: entry.pack.version, already: true };
     }
     const copied = readJson(path.join(dest, FROM_MARKER));
-    if (copied && !force) throw new Error(`packs/${slug} is a copy of ${copied.from} (get --from): --force replaces it with the published pack`);
-    if (!mark && !force) throw new Error(`packs/${slug} is a pack built on this PC, not one from the catalog: --force replaces it (it is deleted)`);
+    if (copied && !force) throw new LocalPackError(slug, 'copy', `packs/${slug} is a copy of ${copied.from} (get --from): ${forceCmd(slug)} replaces it with the published pack`);
+    if (!mark && !force) throw new LocalPackError(slug, 'built', `packs/${slug} is a pack built on this PC, not one from the catalog: ${forceCmd(slug)} replaces it (it is deleted)`);
   }
 
   fs.mkdirSync(packsDir, { recursive: true });
@@ -281,7 +300,7 @@ export async function copyPack(slug, from, { packsDir = PACKS, force = false, re
   const old = path.join(packsDir, `.${slug}.old`);
   const incoming = path.join(packsDir, `.${slug}.incoming`);
   if (!linked && fs.existsSync(dest) && !prior && !readJson(path.join(dest, MARKER)) && !force) {
-    throw new Error(`packs/${slug} is a pack built on this PC, not one from the catalog: --force replaces it with the copy (it is deleted)`);
+    throw new LocalPackError(slug, 'built', `packs/${slug} is a pack built on this PC, not one from the catalog: ${forceCmd(slug, ' --from <pack dir>')} replaces it with the copy (it is deleted)`);
   }
   fs.mkdirSync(packsDir, { recursive: true });
   for (const p of [incoming, old]) fs.rmSync(p, { recursive: true, force: true });
@@ -365,7 +384,7 @@ async function cli(args) {
   if (from) {
     const res = await copyPack(slug, from, { packsDir, force, onWait: (w) => console.log(`  ${w}`) });
     const rel = path.relative(process.cwd(), path.join(packsDir, res.slug)) || '.';
-    console.log(res.already ? `${rel} is already that build of ${res.from} (--force copies it again)`
+    console.log(res.already ? `${rel} is already that build of ${res.from} (add --force to copy it again: node tools/get_pack.mjs --from <pack dir> --force)`
       : `${res.from} copied to ${rel}: cd game && npm run dev, then open /?pack=${res.slug}`);
     return;
   }
@@ -376,7 +395,8 @@ async function cli(args) {
     return;
   }
   if (!slug && !list) {
-    console.log('usage: npm run get <slug> [-- --force]   (npm run get -- --list shows the published resorts;');
+    console.log('usage: npm run get <slug>   (npm run get -- --list shows the published resorts;');
+    console.log('       node tools/get_pack.mjs <slug> --force replaces a pack built or copied in here;');
     console.log('       npm run get [<slug>] -- --from <MapPacker pack dir> copies in a pack built there)');
     process.exit(2);
   }

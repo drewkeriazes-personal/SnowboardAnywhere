@@ -13,6 +13,11 @@ import { PREVIEW_BADGE, slugName } from './ResortPicker';
  * formatVersion is not this game's PACK_FORMAT is not installed: the toast says it needs a newer game or a rebuild,
  * and has no Ride. A `preview` pack (did not pass the DATA-022 gate) downloads and rides the same, with a Preview badge.
  *
+ * BUG-140: a pack built on this PC, or copied in from a MapPacker build (get --from), is not replaced on its own: the
+ * job's error carries `local` and the toast asks, Replace (POST __packs/get {slug, replace: true}, then ready with
+ * Ride, or the reload for Download and ride) or Keep mine (the pack is left and the run is not announced again). It
+ * is a choice, not a failed download, and it never names get_pack's --force.
+ *
  * One toast per build: a No change or Failed build gets one too (no Ride; Failed links its run or publish PR). The
  * run ids announced are kept in localStorage, so a reload does not say the same build again. A build that finished
  * before the page loaded (the tab was closed) is announced when it finished within the last hour and was never
@@ -36,7 +41,9 @@ export const CATALOG_RETRIES = 4;
 export const ANNOUNCED_KEY = 'releaseToasts';
 const ANNOUNCED_MAX = 50;
 
-export type ToastKind = 'downloading' | 'ready' | 'update' | 'blocked' | 'failed' | 'no-change';
+export type ToastKind = 'downloading' | 'ready' | 'update' | 'blocked' | 'failed' | 'no-change' | 'local';
+/** BUG-140: what is in the way of a download (pack_routes' job.local): a pack built on this PC, or a get --from copy */
+export type LocalKind = 'built' | 'copy';
 /** what one toast says. id: the build's run id, so a build has one toast that changes as it goes */
 export interface ToastModel {
   id: string;
@@ -46,6 +53,8 @@ export interface ToastModel {
   preview?: boolean;
   link?: { href: string; text: string };
   action?: { label: string; run: () => void };
+  /** a second, quieter choice beside the action (BUG-140: Keep mine); the toast goes either way */
+  alt?: { label: string; run: () => void };
 }
 export interface ToastView {
   /** show or update the toast with this id (a toast the player closed comes back only as another kind) */
@@ -61,9 +70,11 @@ export function packHref(slug: string, href: string): string {
   return u.toString();
 }
 
-interface CatalogEntry { slug: string; name: string; status: string; pack: { formatVersion: number } }
+interface CatalogEntry { slug: string; name: string; status: string; pack: { formatVersion: number; version?: number } }
 interface Listing { formatVersion: number; catalog: { resorts?: CatalogEntry[]; test?: CatalogEntry[] } | null; local: Record<string, { name: string; formatVersion: number; status?: string }> }
-interface Job { phase: 'download' | 'unzip' | 'done' | 'error'; received: number; total: number; error?: string }
+interface Job { phase: 'download' | 'unzip' | 'done' | 'error'; received: number; total: number; error?: string; local?: LocalKind }
+/** how a download ended: why '' when the pack is in; local when a pack of this PC is in the way */
+interface Fetched { why: string; local?: LocalKind }
 
 export interface ReleaseOpts {
   builds: Pick<BuildWatch, 'onChange'>;
@@ -166,12 +177,13 @@ export class ReleaseToasts {
     } catch { return null; }
   }
 
-  /** start the download and follow it: '' when the pack is in, else why not */
-  private async fetchPack(b: BuildInfo, progress: (detail: string) => void): Promise<string> {
+  /** start the download and follow it (replace: over a pack built or copied in here, BUG-140) */
+  private async fetchPack(b: BuildInfo, replace: boolean, progress: (detail: string) => void): Promise<Fetched> {
     for (let attempt = 0; ; attempt++) {
       let why = '';
       try {
-        const r = await this.o.fetch(this.api('get'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: b.slug }) });
+        const body = JSON.stringify(replace ? { slug: b.slug, replace: true } : { slug: b.slug });
+        const r = await this.o.fetch(this.api('get'), { method: 'POST', headers: { 'content-type': 'application/json' }, body });
         if (!r.ok) why = ((await r.json().catch(() => ({}))) as Job).error ?? `HTTP ${r.status}`;
         else {
           for (;;) {
@@ -179,32 +191,47 @@ export class ReleaseToasts {
             const jr = await this.o.fetch(this.api(`job?slug=${encodeURIComponent(b.slug)}`), { cache: 'no-store' });
             const j = await jr.json().catch(() => ({})) as Job;
             if (!jr.ok) { why = j.error ?? `HTTP ${jr.status}`; break; } // 404: the server restarted and lost the job
-            if (j.phase === 'error') { why = j.error ?? 'unknown error'; break; }
-            if (j.phase === 'done') return '';
+            if (j.phase === 'error') {
+              if (j.local === 'built' || j.local === 'copy') return { why: j.error ?? 'a local pack is in the way', local: j.local };
+              why = j.error ?? 'unknown error'; break;
+            }
+            if (j.phase === 'done') return { why: '' };
             progress(j.phase === 'unzip' ? 'Unpacking...' : j.total ? `Downloading ${Math.floor((j.received / j.total) * 100)}%` : 'Downloading...');
           }
         }
       } catch (e) { why = String((e as Error).message ?? e); }
       // the catalog does not list the release yet, or could not be read (offline, GitHub's limit): try again
       const retry = /not in the catalog|^catalog:|fetch failed|Failed to fetch/i.test(why);
-      if (!retry || attempt >= CATALOG_RETRIES) return why;
+      if (!retry || attempt >= CATALOG_RETRIES) return { why };
       progress('Waiting for the catalog...');
       await this.o.sleep(CATALOG_RETRY_MS);
     }
   }
 
-  private async download(b: BuildInfo, thenRide: boolean): Promise<void> {
+  private async download(b: BuildInfo, thenRide: boolean, replace = false): Promise<void> {
     const id = String(b.runId), link = buildLink(b);
     let name = slugName(b.slug);
     const busy = (detail: string) => this.o.view.put({ id, kind: 'downloading', title: thenRide ? `Getting the new ${name}` : `${name} is published`, detail, link });
     busy('Downloading...');
-    const why = await this.fetchPack(b, busy);
+    const { why, local: inTheWay } = await this.fetchPack(b, replace, busy);
     const listing = await this.listing();
     const entries = [...(listing?.catalog?.resorts ?? []), ...(listing?.catalog?.test ?? [])].filter((e) => e.slug === b.slug && e.pack);
     const local = listing?.local?.[b.slug];
     name = local?.name ?? entries[0]?.name ?? name;
     // the format the pack is in: what was installed, else what the catalog publishes
     const f = !why && local ? local.formatVersion : entries.some((e) => e.pack.formatVersion === PACK_FORMAT) ? PACK_FORMAT : entries[0]?.pack.formatVersion;
+    if (inTheWay) {
+      // BUG-140: not a failure; the player's pack stays unless they say Replace
+      const v = entries.find((e) => e.pack.formatVersion === PACK_FORMAT)?.pack.version;
+      const pub = v !== undefined ? `the published v${v}` : 'the published pack';
+      const detail = inTheWay === 'copy'
+        ? `You have a ${name} pack copied in from a MapPacker build. Replace it with ${pub}? The copy is deleted (the MapPacker build is not touched).`
+        : `You have a ${name} pack built on this PC. Replace it with ${pub}? Your local build is deleted.`;
+      this.say(b, { id, kind: 'local', title: `${name}${v !== undefined ? ` v${v}` : ''} is published`, detail, link,
+        action: { label: 'Replace', run: () => { void this.download(b, thenRide, true); } },
+        alt: { label: 'Keep mine', run: () => {} } });
+      return;
+    }
     if (f !== undefined && f !== PACK_FORMAT) {
       const newer = f > PACK_FORMAT;
       this.say(b, { id, kind: 'blocked', title: `${name} was published`, link,
@@ -243,13 +270,17 @@ export class ToastStack implements ToastView {
     let t = this.el.querySelector<HTMLElement>(`.rt[data-id="${CSS.escape(m.id)}"]`);
     if (!t) { t = document.createElement('div'); t.className = 'rt'; t.dataset.id = m.id; this.el.appendChild(t); }
     t.dataset.kind = m.kind;
+    const go = m.action ? `<button class="rt-go" tabindex="-1">${esc(m.action.label)}</button>` : '';
+    // two choices (BUG-140: Replace / Keep mine) go under the text, side by side; one sits beside it
+    const both = m.alt ? `<div class="rt-acts">${go}<button class="rt-alt" tabindex="-1">${esc(m.alt.label)}</button></div>` : '';
     t.innerHTML = `<div class="rt-text"><div class="rt-title">${esc(m.title)}${m.preview ? PREVIEW_BADGE : ''}</div>`
-      + `${m.detail ? `<div class="rt-detail">${esc(m.detail)}</div>` : ''}`
+      + `${m.detail ? `<div class="rt-detail">${esc(m.detail)}</div>` : ''}${both}`
       + `${m.link ? `<a class="rt-link" href="${esc(m.link.href)}" target="_blank" rel="noopener noreferrer" tabindex="-1">${esc(m.link.text)}</a>` : ''}</div>`
-      + `${m.action ? `<button class="rt-go" tabindex="-1">${esc(m.action.label)}</button>` : ''}`
+      + `${m.alt ? '' : go}`
       + '<button class="rt-x" tabindex="-1" aria-label="Close" title="Close">&times;</button>';
-    const action = m.action;
+    const action = m.action, alt = m.alt;
     if (action) t.querySelector('.rt-go')!.addEventListener('click', () => { this.drop(m.id); action.run(); });
+    if (alt) t.querySelector('.rt-alt')!.addEventListener('click', () => { this.closed.set(m.id, m.kind); this.drop(m.id); alt.run(); });
     t.querySelector('.rt-x')!.addEventListener('click', () => { this.closed.set(m.id, m.kind); this.drop(m.id); });
   }
 
