@@ -3,6 +3,7 @@ import type { Rider } from './Rider';
 import type { LiftRide } from './LiftRide';
 import { RIDE_SPEEDUP, FAST_FORWARD } from './LiftRide';
 import type { LiftLine, LiftNetwork, Vec3 } from './LiftLine';
+import { Rng } from './Rng';
 
 /**
  * Outrun mode (FEAT-097 to FEAT-101, research in docs/research/outrun-mode.md): a snow monster
@@ -114,7 +115,13 @@ export class Outrun {
   private secondDone = false;
   private liftUpLast = 0;
   private wasRiding = false;
-  private readonly rng = () => Math.random();
+  /**
+   * BUG-070: the seed each run starts from (the spawn distance, the monsters' gait phase). null, the default, draws a
+   * fresh one per run; the checks set a number so two runs of the same build chase the same way.
+   */
+  seed: number | null = null;
+  private readonly prng = new Rng();
+  private readonly rng = () => this.prng.next();
   /** false for the out of bounds yeti (FEAT-305): its runs keep no best score */
   keepBest = true;
 
@@ -129,6 +136,7 @@ export class Outrun {
   /** Start a run from where the rider is. */
   start(cfg: OutrunConfig, rider: Rider): void {
     this.cfg = { ...cfg };
+    this.prng.seed(this.seed ?? (Math.random() * 2 ** 32) >>> 0);
     this.phase = 'countdown'; this.t = 0; this.time = 0;
     this.closeCalls = 0; this.descended = 0; this.score = 0; this.isBest = false;
     this.monsters = []; this.dist = Infinity; this.nearest = null;

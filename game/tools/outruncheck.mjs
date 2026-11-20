@@ -50,7 +50,7 @@ async function step(frames, label) {
 }
 
 await step(30, '01_before');
-await page.evaluate(() => { window.__sim.settings.outrun = { difficulty: 'normal', escape: 'base', gentle: false }; window.__sim.startOutrun(); });
+await page.evaluate(() => { window.__sim.settings.outrun = { difficulty: 'normal', escape: 'base', gentle: false }; window.__sim.outrun.seed = 1; window.__sim.startOutrun(); });
 await step(1, '02_countdown');
 await step(200);            // countdown done
 await page.keyboard.down('ArrowUp');
