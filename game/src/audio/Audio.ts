@@ -40,6 +40,8 @@ interface Scrape { gain: GainNode; src: AudioBufferSourceNode }
 
 /** FEAT-103: reference rider weight (kg, about 180 lb) for the rock scrape level; a rider-weight setting can scale it later */
 const RIDER_KG = 82;
+/** BUG-143: file tracks failing in a row before the music falls back to the procedural jukebox */
+const FILE_FAILS_MAX = 3;
 
 export class GameAudio {
   private ctx: AudioContext | null = null;
@@ -82,6 +84,10 @@ export class GameAudio {
   /** a playlist name or SHUFFLE_ALL */
   playlist = 'Lofi hip-hop';
   private playlistLoaded = false;
+  /** BUG-143: file tracks that failed to load in a row; at FILE_FAILS_MAX the session falls back to the jukebox */
+  private fileFails = 0;
+  /** BUG-143: set after FILE_FAILS_MAX failures in a row (the server has gone, say); the queue skips files until the next startMusic */
+  private filesFailed = false;
   private loadedResolve!: () => void;
   /** resolves once playlist.json has been read (after the first start()) */
   readonly loaded = new Promise<void>((r) => { this.loadedResolve = r; });
@@ -206,7 +212,7 @@ export class GameAudio {
 
   /** Build the play queue for the current source and playlist. */
   private buildQueue(): void {
-    const files = this.source === 'files';
+    const files = this.source === 'files' && !this.filesFailed;
     const names = this.playlist === SHUFFLE_ALL ? this.playlistNames : [this.playlistNames.includes(this.playlist) ? this.playlist : PLAYLISTS[0].name];
     const q: QueueItem[] = [];
     for (const list of names) {
@@ -227,6 +233,8 @@ export class GameAudio {
     this.music?.pause();
     this.jukebox?.stop();
     if (this.source === 'off') return;
+    // a fresh start (a new source or playlist, the playlist loading) tries the files again
+    this.filesFailed = false; this.fileFails = 0;
     this.buildQueue();
     this.playItem();
   }
@@ -244,6 +252,8 @@ export class GameAudio {
       if (!this.music) {
         this.music = new Audio();
         this.music.addEventListener('ended', () => this.advance());
+        this.music.addEventListener('playing', () => { this.fileFails = 0; });
+        this.music.addEventListener('error', () => this.trackFailed());
       }
       const t = it.track;
       this.music.src = `${import.meta.env.BASE_URL}music/${t.file}`;
@@ -255,6 +265,23 @@ export class GameAudio {
       this.jukebox?.play(it.seed, it.style);
       this.announce(`${this.jukebox?.trackName ?? ''} (built-in) · ${it.list}`);
     }
+  }
+  /** BUG-143: a file track failed to load or stream (the launcher's server closed mid-session, a missing file).
+   *  Skip to the next item; after FILE_FAILS_MAX in a row, rebuild the queue without files (the jukebox). */
+  private trackFailed(): void {
+    const m = this.music, it = this.queue[this.qi];
+    // a track we paused ourselves (caught in Outrun, music stopped) waits for resumeMusic, which checks m.error
+    if (!m || m.paused || this.source === 'off' || !it || !('track' in it)) return;
+    this.skipFailed();
+  }
+  private skipFailed(): void {
+    if (++this.fileFails >= FILE_FAILS_MAX) {
+      console.warn(`[audio] ${this.fileFails} music tracks failed to load in a row, playing the built-in jukebox`);
+      this.filesFailed = true; this.fileFails = 0;
+      this.music?.pause();
+      this.buildQueue();
+      this.playItem();
+    } else this.advance();
   }
   private nowPlayingText: string | null = null;
   private announce(text: string): void { this.nowPlayingText = text; this.onTrack?.(text); }
@@ -312,7 +339,10 @@ export class GameAudio {
     if (this.music) this.music.playbackRate = 1;
     const it = this.queue[this.qi];
     if (this.source === 'off' || !this.ctx) return;
-    if (it && 'track' in it && this.music) { if (this.music.paused) void this.music.play().catch(() => undefined); }
+    if (it && 'track' in it && this.music) {
+      if (this.music.error) this.skipFailed(); // it failed while paused (BUG-143)
+      else if (this.music.paused) void this.music.play().catch(() => undefined);
+    }
     else if (!this.jukebox?.playing) this.startMusic();
   }
   /** The Outrun chase sounds (FEAT-098), built on the first call once the context exists. */
