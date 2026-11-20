@@ -85,6 +85,8 @@ export interface Settings {
   padDead: number; padTrigDead: number; lookSens: number; invertLookY: boolean;
   /** FEAT-137 DualSense extras (WebHID): adaptive triggers, the lightbar, gyro look and its rate */
   padTriggers: boolean; padLightbar: boolean; padGyro: boolean; gyroSens: number;
+  /** FEAT-049: the on-screen input display (sticks, triggers, buttons and the rider's steer), off by default */
+  inputView: boolean;
   outfit: Outfit;
   discipline: 'board' | 'ski';
   /** FEAT-139: the snowboarder's normal stance, left foot forward (regular) or right (goofy) */
@@ -180,7 +182,7 @@ const DEFAULTS: Settings = {
   v: 1, strapKeyDefault: 2, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'high', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 1, forestDensity: 1, pixelRatio: Math.min(2, window.devicePixelRatio || 1),
   fov: 68, targetFps: 60, speedFov: true, camShake: true, speedLines: true, invertSteer: false, camera: 'chase', seeThroughTrees: true, fpVignette: true, goggleStrength: 0.6, goggleLens: 'rose', lensStrength: 1, fpShake: 0.3, showMarkers: true, showLabels: true, roadsOnSnow: false, liftLines: true, timeTrials: false, pressBalance: 'on', outfit: { ...OUTFIT_PRESETS['Classic red'] }, discipline: 'board', stance: 'regular', fallLine: 'real', jumpMode: 'real', timeOfDay: 'pack', month: 2, units: 'imperial', keys: migrateKeys(undefined).keys,
   outrun: { difficulty: 'normal', escape: 'base', gentle: false },
-  padKeys: migratePadKeys(undefined), rumble: true, vibration: 0.8, padDead: 0.18, padTrigDead: 0.3, lookSens: 1, invertLookY: false,
+  padKeys: migratePadKeys(undefined), inputView: false, rumble: true, vibration: 0.8, padDead: 0.18, padTrigDead: 0.3, lookSens: 1, invertLookY: false,
   padTriggers: false, padLightbar: true, padGyro: false, gyroSens: 1,
   reduceMotion: false, uiScale: 1,
 };

@@ -126,7 +126,7 @@ on the main menu, which works through the host too.
 | Shift | squat on the snow (hold while steering: hard carve), grab in the air, sprint on foot |
 | Q / Z | nose / tail press (hold); W / S balance it |
 | X | skate on the flat (hold): the rider unclips the back foot and pushes with it, and clips back in on letting go (or at about 20 km/h, or on a slope over 20 degrees). One-footed the steer is weak and jump, tuck, brake, squat and presses are off |
-| E | ride a lift (anywhere inside the gold ring round the base, about 28 m, or in its lift line; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding; strap in or out when stopped away from lifts |
+| E | ride a lift (anywhere inside the gold ring round the base, about 28 m, or in its lift line; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding (in a gondola you sit on the bench with your board in the rack outside the door, and strap back in when you step out at the top); strap in or out when stopped away from lifts |
 | B | strap in or out, anywhere (by a lift too: it never boards) |
 | G (hold) | look behind, in every camera |
 | Alt (hold) or right mouse button | look around |
@@ -216,6 +216,12 @@ In menus the D-pad or left stick moves, ✕ picks, ○ goes back (resumes from t
 the settings categories, and left / right change a setting. Settings > Controls > Controller has
 vibration on / off and its strength, the stick and trigger dead zones, the look speed, invert look Y, and two
 slots per action to rebind the buttons (click a slot or press ✕ on it, then press the button).
+
+**Input display:** Settings > Controls > Input display (off by default) shows your input low in the middle of
+the view while riding: both sticks (the dashed ring is the stick dead zone), how far each trigger is pressed
+(the tick is the trigger dead zone), the buttons, and the steer the rider gets with the actions held. The
+steer is analog on the stick (how far you push is how hard the edge goes in) and all or nothing on A / D, and
+the display shows the difference. With no controller it shows the keys: steer and W / S as the left stick.
 
 Rumble: crashes, landings (harder the harder you land), time trial checkpoints, and the Outrun
 monster's footsteps as it closes in; under that, a light background rumble while riding over bumps,

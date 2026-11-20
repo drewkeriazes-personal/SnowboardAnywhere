@@ -122,6 +122,8 @@ export function buildWorld(ctx: GameContext) {
   const riderView = new RiderView();
   add('rider', riderView.group);
   add('rider spray', riderView.sprayObject);
+  riderChair.setBoardMaterial(riderView.mats.board); // BUG-058: the board in the gondola's rack
+  env.registerMaterial(riderChair.glassMaterial);
   const treeBrush = new TreeBrush(veg, riderView.spray); // FEAT-217: snow off the boughs of a tree the rider brushes, through the spray ring
   // cascaded shadows: every lit material gets the CSM hook
   env.registerMaterial(terrain.material);

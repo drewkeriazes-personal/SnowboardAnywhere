@@ -3,7 +3,8 @@
 //   1. outside every building footprint near the top station (the open station roofs of FEAT-323 included),
 //   2. outside the drawn terminal (world/LiftModels: 14 x 7 m chair, 20 x 9 m gondola, on the station node),
 //   3. not under the cable coming up to the station (3 m or more to its side),
-//   4. moving 2 to 3 m/s, away from the station node;
+//   4. off a chair, moving 2 to 3 m/s, away from the station node; out of a gondola (BUG-058), standing on foot,
+//      strapping in, facing away from the station node;
 // and no console errors. The geometry here is worked out again from the pack, not from LiftRide's own keep-out.
 // node tools/liftunloadcheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
 import { launchBrowser } from './browser.mjs';
@@ -68,12 +69,13 @@ for (const lift of lifts) {
     const [tl, tw] = l.kind === 'gondola' ? [20, 9] : [14, 7];
     const inTerminal = Math.abs(a) < tl / 2 && c < tw / 2;
     const underCable = a < 0 && a > -(d + 16) && c < 3;
-    const sp = Math.hypot(r.vx, r.vy), away = r.vx * (r.x - nx) + r.vy * (r.y - ny);
-    return { riding: lr.riding, x: r.x, y: r.y, a: +a.toFixed(1), c: +c.toFixed(1), roofs: roofs.length, roofD: Number.isFinite(roofD) ? +roofD.toFixed(1) : null, inTerminal, underCable, speed: +sp.toFixed(2), away: away > 0, fromNode: +Math.hypot(r.x - nx, r.y - ny).toFixed(1) };
+    const sp = Math.hypot(r.vx, r.vy), away = l.kind === 'gondola' ? Math.sin(r.heading) * (r.x - nx) + Math.cos(r.heading) * (r.y - ny) : r.vx * (r.x - nx) + r.vy * (r.y - ny);
+    return { riding: lr.riding, x: r.x, y: r.y, a: +a.toFixed(1), c: +c.toFixed(1), roofs: roofs.length, roofD: Number.isFinite(roofD) ? +roofD.toFixed(1) : null, inTerminal, underCable, speed: +sp.toFixed(2), away: away > 0, strapping: r.onFoot && r.strapState === 'on', fromNode: +Math.hypot(r.x - nx, r.y - ny).toFixed(1) };
   }, lift.i);
-  const ok = !r.riding && (r.roofD === null || r.roofD > 0.5) && !r.inTerminal && !r.underCable && r.speed >= 2 && r.speed <= 3 && r.away;
-  check(`${lift.name} (${lift.kind}) unloads clear of the station and the cable, pushing off`, ok,
-    `${r.fromNode} m from the station node (along ${r.a}, across ${r.c}), roof ${r.roofD === null ? 'none near' : `${r.roofD} m`} (${r.roofs} near), ${r.speed} m/s ${r.away ? 'away' : 'TOWARD the station'}${r.inTerminal ? ', IN THE TERMINAL' : ''}${r.underCable ? ', UNDER THE CABLE' : ''}`);
+  const moving = lift.kind === 'gondola' ? r.strapping && r.speed < 0.1 : r.speed >= 2 && r.speed <= 3;
+  const ok = !r.riding && (r.roofD === null || r.roofD > 0.5) && !r.inTerminal && !r.underCable && moving && r.away;
+  check(`${lift.name} (${lift.kind}) unloads clear of the station and the cable, ${lift.kind === 'gondola' ? 'strapping in' : 'pushing off'}`, ok,
+    `${r.fromNode} m from the station node (along ${r.a}, across ${r.c}), roof ${r.roofD === null ? 'none near' : `${r.roofD} m`} (${r.roofs} near), ${r.speed} m/s${lift.kind === 'gondola' ? (r.strapping ? ', strapping in' : ', NOT STRAPPING IN') : ''} ${r.away ? 'away' : 'TOWARD the station'}${r.inTerminal ? ', IN THE TERMINAL' : ''}${r.underCable ? ', UNDER THE CABLE' : ''}`);
 }
 
 check('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '));

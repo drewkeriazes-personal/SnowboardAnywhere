@@ -27,6 +27,7 @@ import type { ResortMap } from '../ui/ResortMap';
 import type { Labels } from '../ui/Labels';
 import type { KeyLabels } from '../ui/KeyLabels';
 import type { PressMeter } from '../ui/PressMeter';
+import type { InputView } from '../ui/InputView';
 import type { TouchControls } from '../ui/TouchControls';
 import type { GameAudio } from '../audio/Audio';
 import type { Pack } from '../pack/Pack';
@@ -91,7 +92,7 @@ export interface RideParts extends World {
   goggles: GoggleView; lens: GoggleLens; runStats: RunStats; runCard: RunCard; speedLines: SpeedLines; replay: Replay;
   /** FEAT-164: Free ride, Time trial, Outrun */
   modes: Modes; map: ResortMap; labels: Labels; sun: SunClock;
-  keyLabels: KeyLabels; pressMeter: PressMeter; fps: FpsMeter; sky: SkyState;
+  keyLabels: KeyLabels; pressMeter: PressMeter; inputView: InputView; fps: FpsMeter; sky: SkyState;
   /** FEAT-177: the conditions drawn (the main menu shot's while it holds them, else the settings) */
   conditions(): Conditions;
   /** mouse movement to hand to the cameras this frame (px); the right stick and the gyro add to it */
@@ -236,6 +237,8 @@ export class RideFrame {
     // visuals draw the pose interpolated between the last two 120 Hz physics steps; gameplay
     // (trials, lifts, audio) keeps reading the sim pose
     riderView.setFirstPerson(cam.firstPerson);
+    this.p.riderChair.setFirstPerson(cam.firstPerson);
+    riderView.boardStowed = onLift && liftRide.lift?.kind === 'gondola'; // BUG-058: the board rides in the cabin's rack
     rider.applyRenderPose();
     if (runs.pose) riderView.update(rider, dt, input.tuck, input.grab, onLift && liftRide.airborneRide);
     // FEAT-217: brushing a tree shakes the snow off its boughs (after the spray's update, into the same ring)
@@ -282,6 +285,8 @@ export class RideFrame {
       }
       pressMeter.update(on && px > -999, rider.pressBalance, rider.pressDir, px, py);
     }
+    // FEAT-049: the input display, while riding (not behind the main menu, over the map, in a replay, free fly, the eye camera or the eat)
+    this.p.inputView.update(settings.inputView && plan.drive !== 'menu' && !plan.fullMap && !plan.replay && !detached && !eyeMode && !eat.active, controls);
   }
 
   /** 10. Sky and effects from the camera: shadows, clouds, snowfall, particle light, tree fade, the deformation stamp */

@@ -10,7 +10,8 @@
 //     D-pad right one map press, Options pause), the stick dead zone, a rebound jump, a muted held button,
 //     the corner hints in PlayStation glyphs (keys again after a key press), rumble effects on a landing and a crash,
 //     and on a scripted rider: a press's hum and its warning beat on the heavy (slam) or light (flat) motor, bumps at
-//     speed (none on a smooth slope or groomed snow, softer at a crawl).
+//     speed (none on a smooth slope or groomed snow, softer at a crawl), and the input display (FEAT-049: off by default,
+//     the sticks, trigger travel and steer from the controller, the keys without one).
 // node tools/padcheck.mjs [pack] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
 import { launchBrowser } from './browser.mjs';
 import http from 'node:http';
@@ -256,6 +257,35 @@ console.log('---- session');
   check('bumps at speed: a light background rumble, under a crash', pb.bumps.strong > 0.1 && pb.bumps.strong < 0.3, f2(pb.bumps));
   check('the same bumps at a crawl, softer', pb.bumpsSlow.strong < pb.bumps.strong * 0.4, `${f2(pb.bumpsSlow)} vs ${pb.bumps.strong.toFixed(2)}`);
   check('groomed snow: no bump rumble', pb.bumpsGroomed.strong < 0.02 && pb.bumpsGroomed.weak < 0.02, f2(pb.bumpsGroomed));
+  // FEAT-049: the input display (Settings > Controls > Input display): off by default, then the sticks, the
+  // triggers' travel, the buttons and the rider's steer from the controller, and the keys when it is gone
+  const iv = await page.evaluate(() => {
+    const s = window.__sim, p = window.__pad, v = s.inputView, el = document.querySelector('.input-view');
+    const shown = () => !!el && getComputedStyle(el).display !== 'none';
+    window.__step(2);
+    const out = { byDefault: s.settings.inputView, hiddenByDefault: !shown() };
+    s.settings.inputView = true;
+    p.axes[0] = 0.6; p.axes[1] = -0.2; p.axes[2] = -0.5; p.buttons[7] = 0.8; p.buttons[3] = 1;
+    window.__step(2);
+    const cv = el?.querySelector('canvas'), px = cv?.getContext('2d')?.getImageData(0, 0, cv.width, cv.height).data;
+    let lit = 0; if (px) for (let i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+    out.pad = { shown: shown(), ...v.last, lit };
+    p.axes[0] = 0; p.axes[1] = 0; p.axes[2] = 0; p.buttons[7] = 0; p.buttons[3] = 0;
+    window.__step(2);
+    return out;
+  });
+  check('input display off by default', iv.byDefault === false && iv.hiddenByDefault, JSON.stringify(iv).slice(0, 80));
+  const ip = iv.pad;
+  check('input display shows the controller', ip.shown && ip.pad && ip.lit > 1000, `shown ${ip.shown} pad ${ip.pad} drawn px ${ip.lit}`);
+  check('input display: sticks and trigger travel', Math.abs(ip.lx - 0.6) < 1e-6 && Math.abs(ip.ly + 0.2) < 1e-6 && Math.abs(ip.rx + 0.5) < 1e-6 && Math.abs(ip.rt - 0.8) < 1e-6 && ip.lt === 0, `L ${ip.lx},${ip.ly} R ${ip.rx} LT ${ip.lt} RT ${ip.rt}`);
+  check('input display: the analog steer past the dead zone, tuck held', ip.steer > 0.4 && ip.steer < 0.6 && ip.held.includes('TUCK'), `steer ${ip.steer.toFixed(3)} held "${ip.held}"`);
+  await page.evaluate(() => { window.__pad.on = false; });
+  await page.keyboard.down('KeyD'); await page.keyboard.down('KeyW');
+  const ik = await page.evaluate(() => { window.__step(2); return { ...window.__sim.inputView.last }; });
+  await page.keyboard.up('KeyD'); await page.keyboard.up('KeyW');
+  check('input display on the keyboard: the keys as the left stick', ik.shown && !ik.pad && ik.lx === 1 && ik.ly === -1 && ik.steer === 1 && ik.held.includes('TUCK'), JSON.stringify(ik));
+  const ioff = await page.evaluate(() => { const s = window.__sim; window.__pad.on = true; s.settings.inputView = false; window.__step(2); return getComputedStyle(document.querySelector('.input-view')).display; });
+  check('input display turned off hides it', ioff === 'none', ioff);
   // the hints follow the hands: a key press brings the keys back, the controller its buttons
   await page.keyboard.press('KeyN');
   const kbHelp = await page.evaluate(() => { window.__step(16); return document.getElementById('help')?.innerHTML ?? ''; });
