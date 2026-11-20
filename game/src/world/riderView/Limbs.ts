@@ -153,8 +153,9 @@ function pressLegs(v: RiderView, r: Rider): void {
  * back off after them.
  */
 export function settleBody(v: RiderView, r: Rider, dt: number, tuck: boolean, seated: boolean, free: boolean, fl: number, pv: number): void {
-  // idle breathing and balance wobble so a standing rider is not frozen
-  const now = performance.now() / 1000;
+  // idle breathing and balance wobble so a standing rider is not frozen. BUG-147: on the view's own clock, not
+  // the wall clock, so a still tool's frame draws the same breath every run
+  const now = v.breathT += dt;
   const p = v.pose;
   const hy = p.hipsY, tx = p.torso[0];
   const arms = v.armKeep;
