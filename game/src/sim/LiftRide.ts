@@ -8,7 +8,8 @@ import { polyDist } from '../world/Buildings';
 /**
  * Riding a lift back up. In a bottom terminal's boarding zone and slow, pressing E puts the rider
  * on a chair (FEAT-323: with two or more lifts in range, on the one picked from a list); the rider then follows the cable at chair speed. Pressing the key again skips to
- * the top; lifts run at RIDE_SPEEDUP x real speed and holding the tuck key multiplies that by FAST_FORWARD. At the top the rider steps off beside the station, clear of its roof and the cable, pushing off downhill at UNLOAD_PUSH (BUG-151).
+ * the top; lifts run at RIDE_SPEEDUP x real speed and holding the tuck key multiplies that by FAST_FORWARD. At the top the rider steps off beside the station, clear of its roof and the cable, pushing off downhill at UNLOAD_PUSH (BUG-151);
+ * out of a gondola they step out on foot with the board from the cabin's rack and strap in there (BUG-058).
  */
 export const PROMPT_RANGE = 60; // m: show the boarding card
 /**
@@ -168,6 +169,12 @@ export class LiftRide<L extends LiftLine = LiftLine> {
     this.lift = null;
     const spot = this.unloadSpot(l);
     rider.reset(spot[0], spot[1], spot[2]);
+    if (l.kind === 'gondola') {
+      // BUG-058: out of the cabin on foot with the board from the rack, and strapping in where you stand
+      rider.onFoot = true; rider.strapState = 'on'; rider.strapT = 0;
+      rider.vx = rider.vy = rider.vz = 0; rider.speed = 0;
+      return;
+    }
     // BUG-151: push off the chair, moving away from the station
     rider.vx = Math.sin(spot[2]) * UNLOAD_PUSH; rider.vy = Math.cos(spot[2]) * UNLOAD_PUSH; rider.speed = UNLOAD_PUSH;
   }

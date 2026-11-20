@@ -237,6 +237,8 @@ export class RideFrame {
     // visuals draw the pose interpolated between the last two 120 Hz physics steps; gameplay
     // (trials, lifts, audio) keeps reading the sim pose
     riderView.setFirstPerson(cam.firstPerson);
+    this.p.riderChair.setFirstPerson(cam.firstPerson);
+    riderView.boardStowed = onLift && liftRide.lift?.kind === 'gondola'; // BUG-058: the board rides in the cabin's rack
     rider.applyRenderPose();
     if (runs.pose) riderView.update(rider, dt, input.tuck, input.grab, onLift && liftRide.airborneRide);
     // FEAT-217: brushing a tree shakes the snow off its boughs (after the spray's update, into the same ring)
