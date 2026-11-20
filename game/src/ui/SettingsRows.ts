@@ -138,6 +138,9 @@ export const SECTIONS: Section[] = [
     { kind: 'custom', id: 'padkeys', mount: 'padkeys', label: 'Buttons', desc: 'Two controller buttons per action. Select a slot, then press the button (Esc or 6 s cancels, Delete clears).' },
     { kind: 'action', id: 'pad-reset', label: 'Reset buttons', button: 'Reset controller buttons', action: 'pad-reset', desc: 'Puts every controller button back to the default layout.' },
   ] },
+  { cat: 'controls', title: 'Input display', rows: [
+    toggle('inputView', 'Input display', 'Shows your input low in the middle of the view while riding: the sticks (the dashed ring is the dead zone), the triggers (the tick is the trigger dead zone), the buttons, and the steer the rider gets. On the keyboard the left stick shows the steer and W / S keys, so you can compare the two.'),
+  ] },
   { cat: 'controls', title: 'DualSense extras', rows: [
     { kind: 'info', id: 'hid-none', label: 'DualSense extras', hidden: () => DualSenseHID.supported, desc: 'The DualSense extras (lightbar, adaptive triggers, gyro look) need Chrome or Edge on https or localhost (WebHID).' },
     { kind: 'action', id: 'hid', label: 'DualSense extras', button: 'Connect', action: 'hid', hidden: () => !DualSenseHID.supported, desc: 'Lightbar, adaptive triggers, gyro look and touchpad swipes, over WebHID (Chrome or Edge, USB or Bluetooth). Click with the mouse and pick the controller: the browser only opens its picker on a click.' },

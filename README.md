@@ -217,6 +217,12 @@ the settings categories, and left / right change a setting. Settings > Controls 
 vibration on / off and its strength, the stick and trigger dead zones, the look speed, invert look Y, and two
 slots per action to rebind the buttons (click a slot or press ✕ on it, then press the button).
 
+**Input display:** Settings > Controls > Input display (off by default) shows your input low in the middle of
+the view while riding: both sticks (the dashed ring is the stick dead zone), how far each trigger is pressed
+(the tick is the trigger dead zone), the buttons, and the steer the rider gets with the actions held. The
+steer is analog on the stick (how far you push is how hard the edge goes in) and all or nothing on A / D, and
+the display shows the difference. With no controller it shows the keys: steer and W / S as the left stick.
+
 Rumble: crashes, landings (harder the harder you land), time trial checkpoints, and the Outrun
 monster's footsteps as it closes in; under that, a light background rumble while riding over bumps,
 chop and rock at speed off the groomers (none on groomed snow, softer at a crawl). Holding a nose or tail press hums, then beats faster and harder as the
