@@ -173,14 +173,14 @@ export class SlowSigns {
   }
   // ---- end of BUG-082 workaround ----
 
-  /** Each frame: place, seat and give posts to the signs near the rider (pack metres). */
-  maintain(rx: number, ry: number): void {
+  /** Each frame: place and seat the signs near the streaming focus (fx, fy) and give posts to those near the rider (pack metres). */
+  maintain(fx: number, fy: number, rx = fx, ry = fy): void {
     if (!this.mesh || !this.shown) return;
     let moved = false;
     for (let i = 0; i < this.signs.length; i++) {
       const s = this.signs[i];
+      if (Math.hypot(fx - s.x, fy - s.y) > NEAR) continue;
       const d = Math.hypot(rx - s.x, ry - s.y);
-      if (d > NEAR) continue;
       if (!s.edged && this.edge(s)) {
         s.edged = true; moved = this.seat(i, true) || moved;
         this.dropPost(s); // re-added where it stands now, below

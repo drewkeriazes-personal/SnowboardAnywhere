@@ -371,12 +371,14 @@ export class RideFrame {
     const carried = onLift && liftRide.airborneRide ? liftRide.lift : null;
     riderChair.update(carried, rider.x, rider.y, rider.z, rider.heading, liftRide.cableY);
     lifts.update(this.elapsed, carried ? this.chairPos.set(rider.x, rider.z, -rider.y) : null, carried, liftRide.up); // BUG-058: its carriers keep step with the rider
-    lifts.maintain(dt, rider.x, rider.y);
-    bridges.maintain(dt, rider.x, rider.y);
-    liftLines.maintain(rider.x, rider.y);
+    // BUG-077: what is built or re-seated as the fine tiles arrive follows the streaming focus (the camera when
+    // detached, as on the menu after a map drop-in), not the rider; the rider's own events and posts stay on the rider
+    lifts.maintain(dt, fx, fy);
+    bridges.maintain(dt, fx, fy);
+    liftLines.maintain(fx, fy);
     const passed = landmarks.maintain(rider.x, rider.y);
     if (passed) this.p.events.emit({ type: 'landmark', name: passed.name });
-    slowSigns.maintain(rider.x, rider.y);
+    slowSigns.maintain(fx, fy, rider.x, rider.y);
     people.maintain(fx, fy); // FEAT-307
     sun.update(dt, this.p.conditions());
     lifts.updateMarkers(this.elapsed, rider.x, rider.y, liftRide.canBoard ? liftRide.nearby : null);
