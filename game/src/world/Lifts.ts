@@ -5,7 +5,7 @@ import type { Ground } from '../terrain/Terrain';
 import { LOAD_OFFSET, rideLength, type LiftKind, type LiftLine, type LiftNetwork, type Vec3 } from '../sim/LiftLine';
 import { BOARD_RANGE } from '../sim/LiftRide';
 import { hash01 } from './slowSignSites';
-import { towerGeometry, towerHeadGeometry, footingGeometry, chairGeometry, gondolaGeometry, surfaceHangerGeometry, terminalGeometry, carpetGeometry } from './LiftModels';
+import { towerGeometry, towerHeadGeometry, footingGeometry, chairGeometry, gondolaGeometry, surfaceHangerGeometry, terminalGeometry, carpetGeometry, GONDOLA_RIDER_DROP } from './LiftModels';
 
 /**
  * Lifts: towers, cables with catenary sag, terminals and moving carriers, from OSM aerialways.
@@ -266,7 +266,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     carriers.boundingSphere = new THREE.Box3().setFromPoints(pts).getBoundingSphere(new THREE.Sphere());
     carriers.boundingSphere.radius += lateralOff + carrierGeo.boundingSphere!.radius + carrierGeo.boundingSphere!.center.length();
     group.add(carriers);
-    const riderDrop = kind === 'gondola' ? 3.3 : kind === 'surface' ? 0 : SEAT_DROP;
+    const riderDrop = kind === 'gondola' ? GONDOLA_RIDER_DROP : kind === 'surface' ? 0 : SEAT_DROP;
     const towerUp = towers.map((t) => Math.hypot(t[0] - lo[0], t[1] - lo[1])).sort((p, q) => p - q);
     const rt: LiftRuntime = { feature: lift, kind, speed: SPEEDS[kind], riderDrop, curve: pts, cum, length, carriers, nCarriers, spacing, offset: liftPhase(lift) * spacing, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp };
     (rt as any).lateralOff = lateralOff;

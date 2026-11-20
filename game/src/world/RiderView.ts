@@ -235,6 +235,7 @@ export class RiderView {
     this.wasSeated = false;
     this.footActive = false; this.gaitLive = false;
     this.setFirstPerson(this.fp);
+    this.stowShown = false; // the new rig's board is shown; update hides it again if stowed
   }
 
   /** Apply outfit colours (hex strings) to the material slots. */
@@ -290,7 +291,12 @@ export class RiderView {
     return out.set(0, 0.1, -0.02).applyMatrix4(this.rig.bones.Head.matrixWorld);
   }
 
+  /** BUG-058: the board is off the feet, in the gondola's rack (RiderChair draws it there): the rig hides its own */
+  boardStowed = false;
+  private stowShown = false;
+
   update(r: Rider, dt: number, tuck: boolean, grab = false, seated = false): void {
+    if (this.boardStowed !== this.stowShown) { this.stowShown = this.boardStowed; this.rig.board.visible = !this.boardStowed; }
     this.setStance(!!r.goofy); // FEAT-139: the ghost and a replay carry their own stance
     // FEAT-139: riding switch or goofy (not both) the rig is drawn turned round; seated and on foot never
     const fl = this.fl = this.discipline === 'board' && !seated && !!r.switch !== !!r.goofy ? -1 : 1;

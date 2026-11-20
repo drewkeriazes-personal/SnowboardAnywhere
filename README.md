@@ -126,7 +126,7 @@ on the main menu, which works through the host too.
 | Shift | squat on the snow (hold while steering: hard carve), grab in the air, sprint on foot |
 | Q / Z | nose / tail press (hold); W / S balance it |
 | X | skate on the flat (hold): the rider unclips the back foot and pushes with it, and clips back in on letting go (or at about 20 km/h, or on a slope over 20 degrees). One-footed the steer is weak and jump, tuck, brake, squat and presses are off |
-| E | ride a lift (anywhere inside the gold ring round the base, about 28 m, or in its lift line; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding; strap in or out when stopped away from lifts |
+| E | ride a lift (anywhere inside the gold ring round the base, about 28 m, or in its lift line; with two or more lifts in reach it opens a list to pick one: up / down, then E or Enter); skip to the top while riding (in a gondola you sit on the bench with your board in the rack outside the door, and strap back in when you step out at the top); strap in or out when stopped away from lifts |
 | B | strap in or out, anywhere (by a lift too: it never boards) |
 | G (hold) | look behind, in every camera |
 | Alt (hold) or right mouse button | look around |
