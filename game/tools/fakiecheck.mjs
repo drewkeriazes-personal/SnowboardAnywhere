@@ -3,7 +3,7 @@
 // board drawn turned round (tail leading) with no jump, and stays switch; steering right turns right;
 // a switch 360 stays switch; a 180 goes back. Carving up the hill until the board slides back puts the
 // rider in switch still facing the same way. Unstrapping and strapping in keep the rider where they face.
-// Trick names (Backside 180, Switch frontside 360, Switch backflip).
+// Trick names (Backside 180, Switch frontside 360, Switch backflip, BUG-060: Front flip 180, Rodeo 540).
 // node tools/fakiecheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -113,5 +113,15 @@ for (const goofy of [false, true]) {
 console.log('---- names');
 check('spinName', spinName(-Math.PI, 1) === 'Frontside 180' && spinName(Math.PI * 2, 1) === 'Backside 360' && spinName(Math.PI * 2, -1) === 'Frontside 360' && spinName(1, 1) === '', '');
 check('switchName', switchName(trickName(-6.4, 0, 1), true) === 'Switch backflip' && switchName('Rodeo 540', true) === 'Switch rodeo 540' && switchName('Backside 180', false) === 'Backside 180', switchName(trickName(-6.4, 0, 1), true));
+// BUG-060: a flip names its spin from a half turn up; a backflip with 360 or more is a rodeo
+const F = Math.PI * 2, H = Math.PI;
+for (const [flip, spin, rot, want] of [
+  [F, 0, 1, 'Front flip'], [-F, 0, 1, 'Backflip'], [2 * F, 0, 2, 'Double front flip'], [-2 * F, 0, 2, 'Double backflip'],
+  [F, H, 1, 'Front flip 180'], [F, -H, 1, 'Front flip 180'], [-F, H, 1, 'Backflip 180'], [2 * F, H, 2, 'Double front flip 180'], [-2 * F, -H, 2, 'Double backflip 180'],
+  [F, 2 * H, 1, 'Front flip 360'], [-F, 2 * H, 1, 'Rodeo 360'], [2 * F, 2 * H, 2, 'Double front flip 360'], [-2 * F, 2 * H, 2, 'Double rodeo 360'],
+  [F, 3 * H, 1, 'Front flip 540'], [-F, -3 * H, 1, 'Rodeo 540'], [2 * F, 3 * H, 2, 'Double front flip 540'], [-2 * F, 3 * H, 2, 'Double rodeo 540'],
+  [6.35, 3.09, 1, 'Front flip 180'], [F, 1.4, 1, 'Front flip'], // the issue's 364 + 177 deg; short of a quarter turn rounds to none
+]) check(`trickName ${deg(flip)} / ${deg(spin)}`, trickName(flip, spin, rot) === want, `${trickName(flip, spin, rot)} (want ${want})`);
+check('switch flip 180', switchName(trickName(F, H, 1), true) === 'Switch front flip 180', switchName(trickName(F, H, 1), true));
 console.log(fails ? `${fails} failed` : 'all passed');
 process.exit(fails ? 1 : 0);

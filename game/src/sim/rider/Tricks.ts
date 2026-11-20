@@ -5,12 +5,15 @@ import { FLIP_CLEAN, FLIP_CRASH } from './tuning';
 import { groundNormalAt, rockBumpAt } from './Collision';
 
 const COUNT = ['', '', 'Double ', 'Triple ', 'Quad '];
-/** "Backflip", "Double front flip", "Rodeo 540" (a backflip with a spin), "Front flip 360" */
+/**
+ * "Backflip", "Double front flip", "Front flip 180", "Backflip 180", "Rodeo 540" (a backflip with a
+ * spin of 360 or more), "Double front flip 360". BUG-060: the spin is named from a half turn up.
+ */
 export function trickName(flip: number, spin: number, rotations: number): string {
   const n = COUNT[Math.min(rotations, 4)] ?? `${rotations}x `;
   const turns = Math.round(Math.abs(spin) / Math.PI) * 180;
-  if (turns >= 360) return flip < 0 ? `${n}Rodeo ${turns}` : `${n}Front flip ${turns}`;
-  return `${n}${flip > 0 ? 'front flip' : 'backflip'}`.replace(/^./, (c) => c.toUpperCase());
+  const base = flip < 0 ? (turns >= 360 ? 'rodeo' : 'backflip') : 'front flip';
+  return `${n}${base}${turns >= 180 ? ` ${turns}` : ''}`.replace(/^./, (c) => c.toUpperCase());
 }
 /**
  * FEAT-139: a spin with no flip ("Frontside 180", "Backside 360"), or '' under a half turn. `toe` is
