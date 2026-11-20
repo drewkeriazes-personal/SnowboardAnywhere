@@ -1,7 +1,8 @@
 // Gondola ride check (BUG-058): the synthetic mountain's lift rebuilt as a gondola, ridden render-free (the
 // lift, the rider view, the rider's cabin and the cameras are stepped inside page.evaluate). Mid-ride:
 //   1. the rider's cabin is the one built to be seen from inside (shell, glass, the board in the rack), its
-//      grip on the cable, and no cabin on the line overlapping it;
+//      grip on the cable; the cabins on the line keep step with it at the ride's speed (the same one hidden, none
+//      other comes near);
 //   2. the rider sits on the back bench: the backside on the seat, both feet on the floor (no bone below it),
 //      and the board off the feet (the rig's board hidden, the racked one shown);
 //   3. the first person and helmet cam eyes are inside the cabin, at seated head height above the floor,
@@ -62,17 +63,25 @@ const mid = await page.evaluate((i) => {
   const s = window.__sim, r = s.rider, lr = s.liftRide, v = s.riderView, cam = s.cam, chair = s.riderChair, l = s.lifts.all[i];
   lr.cancel(); lr.lift = l; lr.up = s.lifts.rideLength(l) * 0.5;
   r.strapInNow();
+  let t = 10;
   const frame = (fp) => {
     lr.update(r, 1 / 60, false);
     v.setFirstPerson(fp); chair.setFirstPerson(fp);
     v.boardStowed = lr.lift?.kind === 'gondola';
     v.update(r, 1 / 60, false, false, lr.airborneRide);
     chair.update(lr.lift, r.x, r.y, r.z, r.heading, lr.cableY);
-    s.lifts.update(10, { x: r.x, y: r.z, z: -r.y });
+    s.lifts.update(t += 1 / 60, { x: r.x, y: r.z, z: -r.y }, lr.lift, lr.up);
   };
   const spawned0 = v.spray.spawned;
   for (let k = 0; k < 90; k++) frame(false);
   const sprayed = v.spray.spawned - spawned0;
+  // BUG-058: 6 s more at the ride's speed: the same carrier stays hidden (the rider's), none other comes near
+  const hiddenSet = new Set(); let closest = Infinity;
+  { const m = new v.group.matrix.constructor(), q = v.group.position.clone();
+    for (let f = 0; f < 360; f++) {
+      frame(false);
+      for (let k = 0; k < l.carriers.count; k++) { l.carriers.getMatrixAt(k, m); const e = m.elements; if (Math.abs(e[0]) + Math.abs(e[5]) + Math.abs(e[10]) < 1e-6) hiddenSet.add(k); else { q.setFromMatrixPosition(m); closest = Math.min(closest, Math.hypot(q.x - r.x, q.z + r.y)); } }
+    } }
   const cabin = chair.group.children.find((o) => o.name === 'rider cabin');
   if (!cabin) return { cabin: false };
   // positions in the rider's cabin frame (origin at its grip), from this frame's matrices: the ride moves it every frame
@@ -109,7 +118,7 @@ const mid = await page.evaluate((i) => {
     cabin: true, grip: +(chair.group.position.y - lr.cableY).toFixed(3),
     hips, lFoot, rFoot,
     lowest: +lowest.toFixed(2), lowestName, rigBoard: v.rig.board.visible, racked: !!racked?.visible,
-    shellBody, glassFp, sprayed,
+    shellBody, glassFp, sprayed, hiddenSet: [...hiddenSet], closest: +closest.toFixed(1),
     hidden, nearest: +nearest.toFixed(1), eyes, chase,
   };
 }, lift.i);
@@ -120,7 +129,8 @@ const FLOOR = -3.7, SEAT = FLOOR + 0.48, ANKLE_H = 0.1, HALF_W = 1.1, HALF_D = 1
 check('the rider rides in the cabin built to be seen from inside', mid.cabin);
 if (mid.cabin) {
   check('its grip is on the cable', Math.abs(mid.grip) < 0.05, `${mid.grip} m`);
-  check('no cabin on the line overlaps the rider cabin', mid.nearest > 3, `${mid.hidden} hidden, nearest shown ${mid.nearest} m`);
+  check('the cabins on the line keep step with the rider (one hidden, the same one, all ride)', mid.hiddenSet.length === 1 && mid.hidden === 1, `hidden carriers over 6 s: ${mid.hiddenSet.join(', ') || 'none'}`);
+  check('no other cabin comes near the rider', mid.closest > 3 && mid.nearest > 3, `closest ${mid.closest} m while riding, ${mid.nearest} m at the end`);
   check('the rider sits on the back bench', mid.hips[2] < -HALF_D + 0.5 && Math.abs(mid.hips[1] - SEAT - 0.1) < 0.2, `hips at ${mid.hips} (seat top ${SEAT})`);
   const feetOk = [mid.lFoot, mid.rFoot].every((f) => f[1] - ANKLE_H > FLOOR - 0.02 && f[1] - ANKLE_H < FLOOR + 0.06);
   check('both boots rest on the floor', feetOk, `soles at ${(mid.lFoot[1] - ANKLE_H).toFixed(2)} / ${(mid.rFoot[1] - ANKLE_H).toFixed(2)}, floor ${FLOOR}`);

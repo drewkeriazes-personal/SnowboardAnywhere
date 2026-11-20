@@ -29,6 +29,8 @@ export interface LiftRuntime extends LiftLine {
   nCarriers: number;
   spacing: number;
   offset: number;
+  /** BUG-058: metres the carriers have been moved along the loop to keep the rider's own carrier in its slot (kept over rebuilds) */
+  shift: number;
   yaw: number;
 }
 
@@ -157,7 +159,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
       }
       const cum = [0];
       for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]));
-      return { group, rt: { feature: lift, kind, speed: SPEEDS.carpet, riderDrop: 0, curve: pts, cum, length: cum[cum.length - 1], carriers: null, nCarriers: 0, spacing: 0, offset: 0, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp: [] } };
+      return { group, rt: { feature: lift, kind, speed: SPEEDS.carpet, riderDrop: 0, curve: pts, cum, length: cum[cum.length - 1], carriers: null, nCarriers: 0, spacing: 0, offset: 0, shift: 0, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp: [] } };
     }
 
     const towerH = kind === 'surface' ? 4.5 : kind === 'gondola' ? 14 : 11;
@@ -268,7 +270,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     group.add(carriers);
     const riderDrop = kind === 'gondola' ? GONDOLA_RIDER_DROP : kind === 'surface' ? 0 : SEAT_DROP;
     const towerUp = towers.map((t) => Math.hypot(t[0] - lo[0], t[1] - lo[1])).sort((p, q) => p - q);
-    const rt: LiftRuntime = { feature: lift, kind, speed: SPEEDS[kind], riderDrop, curve: pts, cum, length, carriers, nCarriers, spacing, offset: liftPhase(lift) * spacing, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp };
+    const rt: LiftRuntime = { feature: lift, kind, speed: SPEEDS[kind], riderDrop, curve: pts, cum, length, carriers, nCarriers, spacing, offset: liftPhase(lift) * spacing, shift: 0, lateral: [lx, ly], yaw, upFromA, bottom, top, towerUp };
     (rt as any).lateralOff = lateralOff;
     return { rt, group };
   }
@@ -282,9 +284,9 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
       else if ((o as THREE.Line).isLine) (o as THREE.Line).geometry.dispose();
     });
     const rt = this.lifts[i];
-    const offset = rt.offset;
+    const offset = rt.offset, shift = rt.shift;
     const { rt: fresh, group } = this.build(rt.feature);
-    Object.assign(rt, fresh, { offset });
+    Object.assign(rt, fresh, { offset, shift });
     this.liftGroups[i] = group;
     this.level[i] = level;
     group.visible = this.shown[i];
@@ -425,12 +427,33 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     return out.copy(l.curve[lo]).lerp(l.curve[hi], t);
   }
 
-  /** Move the carriers. `hide`: the rider's own chair position; the line's carrier nearest it is hidden. */
-  update(time: number, hide: THREE.Vector3 | null = null): void {
+  /**
+   * Move the carriers. `hide`: the rider's own chair position; the line's carrier nearest it is hidden.
+   * BUG-058: `carried` is the lift the rider rides and `up` how far up it they are. The ride runs at
+   * RIDE_SPEEDUP (more fast-forwarding), so the rider caught up with the carrier ahead every few seconds; instead
+   * that lift's carriers keep step with the rider: the carrier nearest the rider is held in the rider's place
+   * (the whole line moves with it), and after the ride they carry on at their own speed from there.
+   */
+  update(time: number, hide: THREE.Vector3 | null = null, carried: LiftRuntime | null = null, up = 0): void {
     if (this.carrierTime !== null) time = this.carrierTime;
     this.time = time;
     this.reveal();
+    if (carried?.carriers && carried.spacing > 0) this.keepStep(carried, time, up);
     for (const l of this.lifts) this.placeCarriers(l, time, hide);
+  }
+
+  /** BUG-058: shift lift `l`'s carriers so the one nearest the rider (`up` m from the loading point) is exactly at the rider */
+  private keepStep(l: LiftRuntime, time: number, up: number): void {
+    const loop = 2 * l.length;
+    // the rider's place on the carriers' loop: 0..length up from station a on side +1, back down on side -1
+    const u = l.upFromA ? up + LOAD_OFFSET : 2 * l.length - (l.length - up - LOAD_OFFSET);
+    let best = Infinity;
+    for (let i = 0; i < l.nCarriers; i++) {
+      const d = i * l.spacing + time * l.speed + l.offset + l.shift;
+      const e = ((((u - d) % loop) + loop * 1.5) % loop) - loop / 2; // u - d, wrapped to -loop/2 .. loop/2
+      if (Math.abs(e) < Math.abs(best)) best = e;
+    }
+    l.shift = (l.shift + best) % loop;
   }
 
   /** BUG-088: show each lift still hidden once the terrain under its whole line is real (its cable's box, pack metres) */
@@ -457,7 +480,7 @@ export class Lifts implements LiftNetwork<LiftRuntime> {
     this.q.setFromAxisAngle(this.tmp2.set(0, 1, 0), -l.yaw);
     const loop = 2 * l.length;
     for (let i = 0; i < l.nCarriers; i++) {
-      let d = (i * l.spacing + time * l.speed + l.offset) % loop;
+      let d = (((i * l.spacing + time * l.speed + l.offset + l.shift) % loop) + loop) % loop;
       let side = 1;
       if (d > l.length) { d = loop - d; side = -1; } // returning side
       this.pointAt(l, d, this.tmp);

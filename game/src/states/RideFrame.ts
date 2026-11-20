@@ -370,7 +370,7 @@ export class RideFrame {
     boundaryRope.update(dt, fx, fy); // FEAT-305
     const carried = onLift && liftRide.airborneRide ? liftRide.lift : null;
     riderChair.update(carried, rider.x, rider.y, rider.z, rider.heading, liftRide.cableY);
-    lifts.update(this.elapsed, carried ? this.chairPos.set(rider.x, rider.z, -rider.y) : null);
+    lifts.update(this.elapsed, carried ? this.chairPos.set(rider.x, rider.z, -rider.y) : null, carried, liftRide.up); // BUG-058: its carriers keep step with the rider
     lifts.maintain(dt, rider.x, rider.y);
     bridges.maintain(dt, rider.x, rider.y);
     liftLines.maintain(rider.x, rider.y);
