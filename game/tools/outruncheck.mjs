@@ -41,8 +41,16 @@ const state = () => page.evaluate(() => {
     monster: m ? { mode: m.mode, x: +m.x.toFixed(0), y: +m.y.toFixed(0), z: +m.z.toFixed(0), speed: +m.speed.toFixed(1), sight: m.sight, along: +m.along.toFixed(0) } : null,
     n: o.monsters.length, views: s.monsters.views.size, jaw: +([...s.monsters.views.values()][0]?.bones.Jaw.scale.y ?? 0).toFixed(2), base: o.base ? o.base.map((v) => +v.toFixed(0)) : null, card: document.getElementById('outrun-card')?.style.display, hud: document.getElementById('outrun')?.textContent?.slice(0, 80) };
 });
+// BUG-070: after each batch, wait for the height and mask tiles and the tree, shrub and rock cells it asked for, so
+// the next batch reads the same terrain and colliders on every run (the monster's ground and the rider's physics read
+// whatever has landed); and the tree cells build with no time budget, so the frame a cell's trunks appear in doesn't
+// depend on how fast this machine is
+const tilesIdle = () => page.waitForFunction(() => {
+  const s = window.__sim, p = s.pack;
+  return [p.fine, p.mid, p.far, p.mask, p.ao, p.dir, p.moguls].every((t) => !t?.inFlight) && !s.veg.loading && !s.shrubs?.loading && !s.rocks?.pending;
+}, null, { timeout: 20000, polling: 20 });
 async function step(frames, label) {
-  for (let i = 0; i < Math.max(1, Math.ceil(frames / 30)); i++) { await page.evaluate((n) => window.__step(n, 1 / 60), Math.min(30, frames)); await page.waitForTimeout(80); }
+  for (let i = 0; i < Math.max(1, Math.ceil(frames / 30)); i++) { await page.evaluate((n) => { window.__sim.veg.budgetMs = 0; window.__step(n, 1 / 60); }, Math.min(30, frames)); await tilesIdle(); }
   const st = await state();
   if (label) { const d = await page.evaluate(() => window.__shot()); fs.writeFileSync(path.join(outDir, `${label}.png`), Buffer.from(d.split(',')[1], 'base64')); }
   console.log(label ?? '-', JSON.stringify(st));

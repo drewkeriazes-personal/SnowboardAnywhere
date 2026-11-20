@@ -277,6 +277,8 @@ export class Vegetation {
   budgetMs = 0;
   /** BUG-063: cells in range still downloading or waiting for their meshes after the last update */
   pending = 0;
+  /** BUG-070: cells in range still downloading (the checks wait for none before the next batch of steps) */
+  get loading(): number { let n = 0; for (const c of this.cells.values()) if (c.loading) n++; return n; }
   private readonly near: NearSet[] = [newNear(0), newNear(1)];
   private impostorsOn = true;
   private readonly cam = new THREE.Vector3(NaN, 0, 0);

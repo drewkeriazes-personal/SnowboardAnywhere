@@ -83,6 +83,8 @@ export class RiderView {
   pressRoll = 0; holdT = 0; corr = 0; corrV = 0; flailAmp = 0;
   bump = 0; prevVz = 0; prevLean = 0; popT = 0; load = 0; wasGround = true; clock = 0;
   readonly headQ = new THREE.Quaternion();
+  /** BUG-070: the on-foot hips sway's clock (s, advanced by dt), so a scripted walk poses the same on every run */
+  footSwayT = 0;
   /** the smoothed pose's arm angles, kept while the balance layer is drawn on top of them */
   readonly armKeep = new Float64Array(6);
   wasSeated = false;

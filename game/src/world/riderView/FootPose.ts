@@ -167,7 +167,7 @@ export function updateFoot(v: RiderView, r: Rider, dt: number, u: number): void 
   const p = v.pose, save = clonePose(p);
   const a = smooth(0.85, 1, u) * Math.min(1, gait.speed / 1.2);
   const ph = gait.phase * Math.PI * 2;
-  p.hipsY += -(0.018 + 0.012 * Math.min(4, gait.speed)) * Math.cos(2 * ph) * a + Math.sin(performance.now() / 1000 * 2.1) * 0.004;
+  p.hipsY += -(0.018 + 0.012 * Math.min(4, gait.speed)) * Math.cos(2 * ph) * a + Math.sin((v.footSwayT += dt) * 2.1) * 0.004;
   p.hipsRot = [p.hipsRot[0], p.hipsRot[1] - 0.1 * Math.cos(ph) * a, p.hipsRot[2] + 0.04 * Math.sin(ph) * a];
   p.torso = [p.torso[0], p.torso[1] + 0.12 * Math.cos(ph) * a, p.torso[2]];
   const swing = (0.3 + 0.5 * sprint) * a;
