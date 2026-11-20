@@ -238,7 +238,15 @@ export class Pack {
     }
     tl.finish();
     await coverReady;
-    tl.setCanopy(this.forestGate());
+    const gate = this.forestGate();
+    if (!gate) {
+      // BUG-159: no cover level to gate them by (a pack from before FEAT-153, or its levels failed to load). The 1 m mask's
+      // canopy reads 0 until its tile loads, so a trench gated by it dropped in under the rider (BUG-158): no lines instead
+      this.treeLines = null;
+      console.warn('tree lines: off, the pack has no cover levels loaded to gate them by (the forest share)');
+      return;
+    }
+    tl.setCanopy(gate);
     this.treeLines = tl;
     const fails = failed ? `, ${failed} of ${cells} tree cells failed to load (their trunks were not avoided)` : '';
     if (tl.baked) console.info(`tree lines: ${(tl.length / 1000).toFixed(0)} km baked in the pack (${tl.count} segments), ${(performance.now() - t0).toFixed(0)} ms`);
@@ -249,14 +257,12 @@ export class Pack {
   /**
    * FEAT-333: the forest the tree lines dig in, 0..1. From the pack's cover levels (forest share), which are loaded before
    * the lines count and never change, so the trench, its moguls and the physics are the same from the first frame (BUG-158:
-   * the 1 m mask's canopy reads 0 until its tile loads, then the ground dropped a metre under a rider in a line). Packs
-   * without cover levels fall back to the mask's canopy.
+   * the 1 m mask's canopy reads 0 until its tile loads, then the ground dropped a metre under a rider in a line). Null when
+   * no cover level loaded: there is no gate that is fixed from load, so `setTreeLines` leaves the lines off (BUG-159).
    */
   private forestGate(): ((x: number, y: number) => number) | null {
     const cover = this.cover, tmp = [0, 0, 0, 0];
-    if (cover && cover.levels.some((l) => l.loaded)) return (x, y) => (cover.sample(x, y, tmp) > 0 ? tmp[0] : 0);
-    const mask = this.mask;
-    return mask ? (x, y) => mask.sampleBilinear(x, y, tmp)[3] : null;
+    return cover && cover.levels.some((l) => l.loaded) ? (x, y) => (cover.sample(x, y, tmp) > 0 ? tmp[0] : 0) : null;
   }
 
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and
