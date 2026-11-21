@@ -20,6 +20,9 @@
 #                     the tools/ helpers' Python tests (tools/test_*.py, BUG-122)
 #   public-guards     no Spotify code, no .env files, images <= 1 MB in the right    always
 #                     folders, gitleaks on the PR's commits
+#   dispatched-result the run's result as the commit status `Checks (dispatched)`,  manual runs with
+#                     and deletes the bot push's empty action_required runs         a PR number
+#                     (BUG-139)
 #
 # Check tools that stay local (they need Vail / Breckenridge or a real GPU, or are too slow on software
 # rendering for a runner; run them on Drew's PC and say so in the PR):
@@ -30,7 +33,7 @@
 #
 # Rerun: the PR's Checks tab > Re-run jobs, or Actions > Checks > Run workflow (give the PR number to get the
 # PR comment; tick stills for the before / after stills). pr-feedback.yml dispatches this workflow after it pushes, since its GITHUB_TOKEN push does
-# not start a pull_request run.
+# not start a pull_request run. A run with a PR number posts its result on the commit as `Checks (dispatched)` (BUG-139: dispatched-result).
 
 name: Checks
 
@@ -459,6 +462,48 @@ jobs:
           if grep -qF "passed locally at $LOCAL_SHA" body.md; then echo "already noted"; exit 0; fi
           printf '\n%s\n' "$line" >> body.md
           gh api -X PATCH "repos/$REPO/issues/comments/$ID" -F "body=@body.md" > /dev/null || echo "::warning::could not add the line to comment $ID"
+
+  # BUG-139: a workflow_dispatch run is not tied to the PR, so its jobs never reach the PR's checks. When the run
+  # names a PR (pr-feedback.yml and readme-update.yml start it after their GITHUB_TOKEN push, or Drew by hand),
+  # post its result as the commit status `Checks (dispatched)` on the commit it ran on, so the PR shows it. The
+  # bot's push also leaves `pull_request` runs of Checks and Claude PR review on that commit that wait for an
+  # approval nobody gives (action_required, no jobs) and turn the PR UNSTABLE: this run replaces them, so delete
+  # the ones github-actions[bot] started.
+  dispatched-result:
+    needs: [changes, typecheck-build, physics-checks, synth-pack, browser-checks, render-budgets, render-budgets-comment, repo-rules, public-guards]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+      actions: write # delete the empty action_required runs
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: Post the result on the commit
+        run: |
+          state=success; desc="all jobs passed or were skipped"
+          case " $RESULTS " in
+            *" failure "*) state=failure; desc="a job failed" ;;
+            *" cancelled "*) state=error; desc="a job was cancelled" ;;
+          esac
+          echo "jobs: $RESULTS -> $state"
+          gh api "repos/$REPO/statuses/$SHA" -f state="$state" -f context="Checks (dispatched)" \
+            -f description="$desc (manual run for PR #$PR_NUMBER)" -f target_url="$RUN_URL" > /dev/null
+      - name: Delete the bot push's empty pull_request runs
+        if: always()
+        run: |
+          ids=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&event=pull_request&per_page=100" --jq \
+            '.workflow_runs[] | select(.conclusion == "action_required" and .triggering_actor.login == "github-actions[bot]") | .id') || ids=""
+          [ -n "$ids" ] || { echo "no action_required runs from github-actions[bot] on $SHA"; exit 0; }
+          for id in $ids; do
+            if gh api -X DELETE "repos/$REPO/actions/runs/$id" > /dev/null; then echo "deleted run $id"
+            else echo "::warning::could not delete run $id: it stays on the PR as action_required"; fi
+          done
 
   repo-rules:
     if: github.event_name != 'push'
