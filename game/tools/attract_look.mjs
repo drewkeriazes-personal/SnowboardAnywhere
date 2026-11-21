@@ -42,6 +42,11 @@ export function lookCode(slug) {
   return h.digest('hex').slice(0, 16);
 }
 
+/** BUG-085: the shot a still is rendered from, kept in its look (`shot`): the menu shows the still on any build of the pack while the shot keeps this pose and these conditions */
+export function stillShot(s) {
+  return { x: s.x, y: s.y, h: s.h, pitch: s.pitch, fov: s.fov, eye: s.eye, conditions: s.conditions };
+}
+
 /** a file the PR changed is a LOOK file */
 const isLook = (f) => LOOK.some((l) => f === l || f.startsWith(l + '/')) || /^game\/public\/attract\/[^/]+\/shots\.json$/.test(f);
 

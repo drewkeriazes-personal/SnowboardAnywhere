@@ -99,8 +99,8 @@ export class Game {
     const shot = attractShot(pack, pack.meta.start, shots);
     const attractFiles = headless ? {} : manifest;
     // FEAT-177: the still is the frame this browser kept at its last crossfade (same build, pack and quality), else
-    // the shipped one when it was rendered from this build of the pack, else none (the menu over the loading bar)
-    const still = headless || skipMenu ? '' : (await cachedMenuStill(pack, shot, settings)) || shippedStill(import.meta.env.BASE_URL, attractFiles, pack, shot.id);
+    // the shipped one when it was rendered from this shot (BUG-085: any build of the pack), else none (the menu over the loading bar)
+    const still = headless || skipMenu ? '' : (await cachedMenuStill(pack, shot, settings)) || shippedStill(import.meta.env.BASE_URL, attractFiles, pack, shot);
     // dev build only: the account as the page sees it and as the dev server verifies it (Drew's setup check)
     if (import.meta.env.DEV) (window as any).__account = { state: () => account.state(), server: () => serverAccount(account) };
     const menu = headless ? null : new MainMenu({

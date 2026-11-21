@@ -3,12 +3,13 @@
 // picture while the session loads behind it and the crossfade to the live view doesn't jump.
 // node tools/shoot_attract.mjs [pack ...] [--gpu | --headed] [--compare] [--threshold N]   (after `npx vite build`; on Drew's GPU)
 // Writes game/public/attract/<pack>/<shot id>.jpg at 1920 x 1080 and, in index.json, the still's look key (the
-// code hash from tools/attract_look.mjs and the pack's meta.build). CI warns when a PR changes the look without it.
+// code hash from tools/attract_look.mjs, the pack's meta.build and, BUG-085, the shot's pose and conditions, which
+// let the menu show it on later builds of the pack). CI warns when a PR changes the look without it.
 //   --compare  then opens the real menu (no headless), grabs the live frame at the crossfade (?menuframe) and diffs
 //              it with the still: mean difference per channel (0..255, at 960 x 540) and the share of pixels off by
 //              more than 24. Fails over --threshold (mean, default 4). Saves still, live and diff to game/shots/attract-compare/.
 import { launchBrowser } from './browser.mjs';
-import { lookCode } from './attract_look.mjs';
+import { lookCode, stillShot } from './attract_look.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,7 +88,7 @@ async function shoot(pack) {
   e.stills = [...new Set([...(e.stills ?? []), shot.id])];
   e.ghosts ??= [];
   const code = lookCode(pack);
-  e.looks = { ...(e.looks ?? {}), [shot.id]: { code, pack: build } };
+  e.looks = { ...(e.looks ?? {}), [shot.id]: { code, pack: build, shot: stillShot(shot) } };
   fs.writeFileSync(manFile, JSON.stringify(man, null, 2) + '\n');
   console.log(`${pack}/${shot.id}`, JSON.stringify({ x: shot.x, y: shot.y, h: shot.h, pitch: shot.pitch, fov: shot.fov, eye: shot.eye }), JSON.stringify(shot.conditions), '->', path.relative(REPO, out).split(path.sep).join('/'), `look ${code} pack ${build || 'none'}`, errors.length ? `errors: ${errors.join(' | ')}` : '');
   if (errors.length) failed++;
