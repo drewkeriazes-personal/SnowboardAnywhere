@@ -43,8 +43,8 @@ export async function launchBrowser(args = process.argv.slice(2), extraArgs = []
 /** Give every new context (browser.newPage makes one too) an init script that hides real gamepads. It goes on
  *  Navigator.prototype, writable and configurable, so a tool's own stub (an assignment on navigator or a
  *  defineProperty on the prototype) still replaces it; context scripts run before a page's own.
- *  For a tool that launches Chromium itself (trailcheck). Does nothing with SHOT_REAL_PAD=1. */
-export function hidePads(browser) {
+ *  Does nothing with SHOT_REAL_PAD=1. */
+function hidePads(browser) {
   if (process.env.SHOT_REAL_PAD === '1') return browser;
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (options) => {

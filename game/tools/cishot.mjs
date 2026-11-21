@@ -47,8 +47,9 @@ page.on('pageerror', (e) => pageErrors.push(`pageerror: ${e.message}`));
 await page.goto(`http://localhost:${server.address().port}/index.html?pack=${pack}&headless&lowgfx&weather=clear&time=12${process.env.SHOT_QUERY ?? ''}`);
 await page.waitForFunction(() => window.__step, null, { timeout: 120000 });
 page.setDefaultTimeout(600000);
-// BUG-078: the chairs move with the sim time, which depends on how many settle frames ran: hold them at 0
-await page.evaluate(() => { if (window.__sim.lifts) window.__sim.lifts.carrierTime = 0; });
+// BUG-078: the chairs move with the sim time, which depends on how many settle frames ran: hold them at 0.
+// BUG-147: the trees' sway runs on the wall clock: hold it at 0 too (builds before BUG-147 ignore windTime)
+await page.evaluate(() => { const s = window.__sim; if (s.lifts) s.lifts.carrierTime = 0; s.veg.windTime = 0; });
 const spawn = await page.evaluate(() => { const r = window.__sim.rider; return { x: r.x, y: r.y, heading: r.heading }; });
 
 /**
@@ -82,7 +83,7 @@ async function settle(ms = SETTLE_MS) {
         // BUG-075: the frame loop rebuilds lifts on better terrain once per 0.5 s of sim time, so whether a
         // still had the rebuilt lift depended on how many frames ran; rebuild every lift the tiles allow now.
         // Builds before BUG-075 return nothing and stop at 2 a call (fine: the synthetic pack has one lift).
-        const lifts = s.lifts?.maintain(1, s.rider.x, s.rider.y, Infinity) || 0;
+        const lifts = s.lifts?.maintain(1, fx, fy, Infinity) || 0; // BUG-077: round the same focus as the frame
         const tiles = [p.fine, p.mid, p.far, p.mask, p.ao, p.dir, p.moguls].reduce((n, x) => n + (x?.inFlight ?? 0), 0);
         return tiles + (t.pending ?? 0) + (v.pending ?? 0) + lifts;
       });
@@ -123,6 +124,7 @@ async function place(kind) {
   await page.evaluate(({ kind, spawn }) => {
     const s = window.__sim, r = s.rider, c = s.cam;
     r.reset(spawn.x, spawn.y, spawn.heading);
+    s.riderView.restart?.(); // BUG-147: the pose and its follows as a new view's, not what the settle frames left
     s.tracks?.clear?.(); s.bootprints?.clear?.(); // the settle frames' tracks would differ run to run
     const look = (cx, cy, cz, tx, ty, tz) => {
       c.mode = 'free'; c.freePos.set(cx, cy, cz);
