@@ -118,6 +118,7 @@ export class Spray {
     this.points = new THREE.Points(this.geo, this.mat);
     this.points.frustumCulled = false;
     this.points.name = 'snow spray';
+    this.points.onBeforeRender = () => { this.uploadAll = false; }; // the attributes went up before this
   }
 
   /** How many particles the ring holds (quality). */
@@ -288,11 +289,23 @@ export class Spray {
     for (const a of this.attrs) {
       const w = a.itemSize;
       a.clearUpdateRanges();
+      if (this.uploadAll) { a.needsUpdate = true; continue; } // clear() still waits to go up whole
       if (!wrapped) a.addUpdateRange(this.start * w, this.written * w);
       else { a.addUpdateRange(this.start * w, (this.n - this.start) * w); a.addUpdateRange(0, (end - this.n) * w); }
       a.needsUpdate = true;
     }
   }
+
+  /** BUG-147: every particle gone and the clock back to 0 (RiderView.restart); uploads the whole ring on the next draw */
+  clear(): void {
+    this.t.fill(0);
+    this.head = 0; this.time = 0; this.acc = 0; this.deepAcc = 0; this.prevGround = true;
+    this.mat.uniforms.uTime.value = 0;
+    for (const a of this.attrs) { a.clearUpdateRanges(); a.needsUpdate = true; }
+    this.uploadAll = true;
+  }
+  /** BUG-147: clear() zeroed the ring and it has not been drawn since: flush keeps the upload whole */
+  private uploadAll = false;
 
   dispose(): void { this.geo.dispose(); this.mat.dispose(); }
 }

@@ -82,6 +82,8 @@ export class RiderView {
    *  down to 0), how loaded the board was on the last ground frame, and a clock for the wobble */
   pressRoll = 0; holdT = 0; corr = 0; corrV = 0; flailAmp = 0;
   bump = 0; prevVz = 0; prevLean = 0; popT = 0; load = 0; wasGround = true; clock = 0;
+  /** BUG-147: the idle breathing's clock (s of frames drawn) */
+  breathT = 0;
   readonly headQ = new THREE.Quaternion();
   /** BUG-070: the on-foot hips sway's clock (s, advanced by dt), so a scripted walk poses the same on every run */
   footSwayT = 0;
@@ -296,6 +298,32 @@ export class RiderView {
   /** BUG-058: the board is off the feet, in the gondola's rack (RiderChair draws it there): the rig hides its own */
   boardStowed = false;
   private stowShown = false;
+  /** BUG-147: restart() ran; the next frame puts the board on the ground normal at once */
+  private restarted = false;
+
+  /**
+   * BUG-147: drop what the view carries over from earlier frames (the follows, the pose and its balance,
+   * board flex, bump absorb, the crash blend, the on-foot state, the bury, the spray in the air), so
+   * the next frame draws the rider as a new view would, steadied on the ground. The still tools
+   * (cishot.mjs) call it after resetting the rider, so a still does not depend on how many frames
+   * ran before it.
+   */
+  restart(): void {
+    for (const f of [this.rollF, this.yawF, this.leanF, this.yawLeadF, this.edgeUpperF, this.edgeHipsF, this.hipZF, this.balF, this.tipF]) f.x = f.v = 0;
+    this.rollPhys = 0; this.prevGround = true; this.visLive = false; this.restarted = true;
+    this.flex = 0; this.flexV = 0; this.flexDir = -1; this.twist = 0;
+    this.pressRoll = 0; this.holdT = 0; this.corr = 0; this.corrV = 0; this.flailAmp = 0;
+    this.bump = 0; this.prevVz = 0; this.prevLean = 0; this.popT = 0; this.load = 0; this.wasGround = true; this.clock = 0; this.breathT = 0; this.footSwayT = 0;
+    this.headQ.identity(); this.baseQ.identity();
+    Object.assign(this.pose, clonePose(this.poses.neutral));
+    this.wasSeated = false; this.footGap = 0;
+    this.absorb.reset();
+    this.ragdoll?.stop(); this.recoverT = 0;
+    this.footActive = false; this.gaitLive = false; this.prevStep[0] = this.prevStep[1] = 0; this.skatePh = -1;
+    this.crawl = 0; this.shoulder = 0; this.slip = 0;
+    this.bury = 0; this.shape.sink = this.shape.pitch = this.shape.tail = this.shape.nose = 0; this.buryPitch = 0; this.footCover = 0;
+    this.spray.clear();
+  }
 
   update(r: Rider, dt: number, tuck: boolean, grab = false, seated = false): void {
     if (this.boardStowed !== this.stowShown) { this.stowShown = this.boardStowed; this.rig.board.visible = !this.boardStowed; }
@@ -330,7 +358,8 @@ export class RiderView {
     const right = this.tmpR.crossVectors(f, n).normalize();
     this.rot.makeBasis(right, n, this.v1.copy(f).negate());
     this.q.setFromRotationMatrix(this.rot);
-    this.baseQ.slerp(this.q, Math.min(1, dt * 30)); // only smooths the ground normal now; the yaw lag is the follow above
+    if (this.restarted) { this.baseQ.copy(this.q); this.restarted = false; } // BUG-147
+    else this.baseQ.slerp(this.q, Math.min(1, dt * 30)); // only smooths the ground normal now; the yaw lag is the follow above
     this.group.quaternion.copy(this.baseQ);
     setDown(this, r, dt, seated, fl, n, f);
     // FEAT-110: the flip pitches the rider and board about the board's own side axis, through a point

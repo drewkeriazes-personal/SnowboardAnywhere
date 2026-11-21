@@ -4,7 +4,8 @@
 //     GLSL error or warning the console gets (a broken onBeforeCompile patch, the kind behind BUG-009);
 //  2. for each fixed view, waits until no tile, terrain chunk or tree cell is pending, resets the rider
 //     to the spawn and saves a still, with that frame's renderer.info (draw calls, triangles, geometries,
-//     textures, programs) and the objects drawn (`drawn`, for tools/cishot_diff.mjs); the JS heap after a gc() at the end.
+//     textures, programs) and the objects drawn (`drawn`, for tools/cishot_diff.mjs); the JS heap at the end
+//     (the lowest of a few gc() and reads, BUG-162).
 // Writes <outDir>/<view>.png and <outDir>/stats.json. tools/ci/render_report.py compares two of these
 // (main and the PR) and posts the before / after comment. Exit code 1 on a shader message or page error.
 // node tools/cishot.mjs [pack] [outDir] [--gpu | --cpu | --headed]   (run after `npx vite build`; SHOT_DIST serves another build)
@@ -46,8 +47,9 @@ page.on('pageerror', (e) => pageErrors.push(`pageerror: ${e.message}`));
 await page.goto(`http://localhost:${server.address().port}/index.html?pack=${pack}&headless&lowgfx&weather=clear&time=12${process.env.SHOT_QUERY ?? ''}`);
 await page.waitForFunction(() => window.__step, null, { timeout: 120000 });
 page.setDefaultTimeout(600000);
-// BUG-078: the chairs move with the sim time, which depends on how many settle frames ran: hold them at 0
-await page.evaluate(() => { if (window.__sim.lifts) window.__sim.lifts.carrierTime = 0; });
+// BUG-078: the chairs move with the sim time, which depends on how many settle frames ran: hold them at 0.
+// BUG-147: the trees' sway runs on the wall clock: hold it at 0 too (builds before BUG-147 ignore windTime)
+await page.evaluate(() => { const s = window.__sim; if (s.lifts) s.lifts.carrierTime = 0; s.veg.windTime = 0; });
 const spawn = await page.evaluate(() => { const r = window.__sim.rider; return { x: r.x, y: r.y, heading: r.heading }; });
 
 /**
@@ -122,6 +124,7 @@ async function place(kind) {
   await page.evaluate(({ kind, spawn }) => {
     const s = window.__sim, r = s.rider, c = s.cam;
     r.reset(spawn.x, spawn.y, spawn.heading);
+    s.riderView.restart?.(); // BUG-147: the pose and its follows as a new view's, not what the settle frames left
     s.tracks?.clear?.(); s.bootprints?.clear?.(); // the settle frames' tracks would differ run to run
     const look = (cx, cy, cz, tx, ty, tz) => {
       c.mode = 'free'; c.freePos.set(cx, cy, cz);
@@ -170,12 +173,20 @@ for (const v of views) {
   const { drawn, ...brief } = st;
   console.log(v.name, settled ? '' : '(still streaming)', `${secs} s`, JSON.stringify(brief));
 }
-const heapMB = await page.evaluate(() => { window.gc?.(); return +((performance.memory?.usedJSHeapSize ?? 0) / 1048576).toFixed(1); });
+// BUG-162: a gc() in the task right after the last still leaves 10 to 40 MB a later one frees (on synth 226 to 260 MB,
+// then 215.3 every time), enough to fail the 10 % heap budget on noise. So gc() and read in separate tasks, a short
+// wait apart, and keep the lowest; the samples go in stats.json.
+const heapSamples = [];
+for (let i = 0; i < 5; i++) {
+  await page.waitForTimeout(200);
+  heapSamples.push(await page.evaluate(() => { window.gc?.(); return +((performance.memory?.usedJSHeapSize ?? 0) / 1048576).toFixed(1); }));
+}
+const heapMB = Math.min(...heapSamples);
 const gpu = await page.evaluate(() => { const gl = document.createElement('canvas').getContext('webgl2'); const e = gl?.getExtension('WEBGL_debug_renderer_info'); return e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : 'unknown'; });
 
-const result = { pack, gpu, seconds: Math.round((Date.now() - t0) / 1000), warmSettled: warm, compile, views: stats, heapMB, shaderMessages: shaderMsgs, pageErrors, consoleIssues: consoleIssues.slice(0, 30) };
+const result = { pack, gpu, seconds: Math.round((Date.now() - t0) / 1000), warmSettled: warm, compile, views: stats, heapMB, heapSamples, shaderMessages: shaderMsgs, pageErrors, consoleIssues: consoleIssues.slice(0, 30) };
 fs.writeFileSync(path.join(outDir, 'stats.json'), JSON.stringify(result, null, 2));
-console.log(`compile ${JSON.stringify(compile)}, heap ${heapMB} MB, ${result.seconds} s`);
+console.log(`compile ${JSON.stringify(compile)}, heap ${heapMB} MB (of ${heapSamples.join(', ')}), ${result.seconds} s`);
 console.log(`shader messages: ${shaderMsgs.length}, page errors: ${pageErrors.length}, other console issues: ${consoleIssues.length}`);
 for (const m of [...shaderMsgs, ...pageErrors].slice(0, 10)) console.log('  ', m.slice(0, 600));
 await browser.close();

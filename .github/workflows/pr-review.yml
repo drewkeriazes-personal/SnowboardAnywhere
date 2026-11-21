@@ -127,8 +127,9 @@ jobs:
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           sha=${SHA:-$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefOid --jq .headRefOid)}
+          # BUG-139: skip action_required runs; a bot's push leaves one with no jobs next to the dispatched run
           latest() { gh api "repos/$REPO/actions/workflows/checks.yml/runs?head_sha=$sha&per_page=20" \
-            --jq '.workflow_runs | sort_by(.created_at) | last | select(. != null) | "\(.id) \(.status) \(.conclusion)"' 2>/dev/null || true; }
+            --jq '[.workflow_runs[] | select(.conclusion != "action_required")] | sort_by(.created_at) | last | select(. != null) | "\(.id) \(.status) \(.conclusion)"' 2>/dev/null || true; }
           start=$SECONDS; run=""
           while [ $((SECONDS - start)) -lt 2400 ]; do
             run=$(latest)

@@ -126,6 +126,7 @@ export class ChaseCamera {
     this.look.set(r.x, r.z + 1.2, -r.y);
     this.camera.position.copy(this.pos);
     this.camera.lookAt(this.look);
+    this.rumbleT = 0; // BUG-147: the rumble starts over too, so a still after a snap (cishot.mjs) is the same every run
   }
 
   cycle(): void {

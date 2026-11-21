@@ -3,6 +3,9 @@
 //   --headed (or SHOT_HEADED=1): visible window on the real GPU
 //   --gpu: force the real GPU headless; exits if Chromium falls back to software
 //   --cpu (or SHOT_CPU=1): force SwiftShader
+//   SHOT_REAL_PAD=1: let pages see the controllers plugged into this PC (BUG-137); by default every context
+//     gets navigator.getGamepads() returning [], so a press, stick drift or a virtual pad can't move a check's
+//     menus. A tool that fakes a pad (padcheck, menucheck) installs its own stub afterwards, which wins.
 // Prints the renderer it got. On software it appends &lowgfx to SHOT_QUERY so big packs don't crawl.
 // Local: game/node_modules (npm i). Cloud sandbox: preinstalled copy under /opt/npm-tools.
 const { chromium } = await import('playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.js').then((m) => m.default));
@@ -24,6 +27,7 @@ export async function launchBrowser(args = process.argv.slice(2), extraArgs = []
     : mode === 'gpu' ? await chromium.launch({ args: [...GPU_ARGS, ...extraArgs] })
     : await chromium.launch({ args: [...CPU_ARGS, ...extraArgs] });
 
+  hidePads(browser);
   const renderer = await rendererName(browser);
   const software = /swiftshader|llvmpipe|software/i.test(renderer);
   console.log(`GPU: ${renderer}${software ? ' (software)' : ''} [${mode}]`);
@@ -33,6 +37,23 @@ export async function launchBrowser(args = process.argv.slice(2), extraArgs = []
   }
   if (software && mode !== 'cpu') console.warn('warning: no hardware GPU, falling back to software rendering');
   if (software && !(process.env.SHOT_QUERY ?? '').includes('lowgfx')) process.env.SHOT_QUERY = `${process.env.SHOT_QUERY ?? ''}&lowgfx`;
+  return browser;
+}
+
+/** Give every new context (browser.newPage makes one too) an init script that hides real gamepads. It goes on
+ *  Navigator.prototype, writable and configurable, so a tool's own stub (an assignment on navigator or a
+ *  defineProperty on the prototype) still replaces it; context scripts run before a page's own.
+ *  For a tool that launches Chromium itself (trailcheck). Does nothing with SHOT_REAL_PAD=1. */
+export function hidePads(browser) {
+  if (process.env.SHOT_REAL_PAD === '1') return browser;
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const context = await newContext(options);
+    await context.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'getGamepads', { configurable: true, writable: true, value: () => [] });
+    });
+    return context;
+  };
   return browser;
 }
 
