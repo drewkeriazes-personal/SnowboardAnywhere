@@ -14,7 +14,7 @@
 // docs/developer-guide.md > Generated resort content.
 import { launchBrowser } from './browser.mjs';
 import { DIST, PACKS, REPO } from './paths.mjs';
-import { lookCode } from './attract_look.mjs';
+import { lookCode, stillShot } from './attract_look.mjs';
 import * as P from './ghost_lines/page.mjs';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -112,7 +112,7 @@ if (!flag('no-stills')) {
     if (i === 0) {
       writeData(path.join(ATT, `${s.id}.jpg`), jpg);
       index.stills = [s.id];
-      index.looks = { [s.id]: { code, pack: info.build } };
+      index.looks = { [s.id]: { code, pack: info.build, shot: stillShot(s) } };
       writeJson(path.join(ATT, 'index.json'), index);
     }
     console.log(`${i + 1}. ${s.id} (${s.place}): x ${s.x}, y ${s.y}, heading ${s.h}, pitch ${s.pitch}, ${s.eye} m up -> ${rel(path.join(work, `${i + 1}-${s.id}.jpg`))}${i === 0 ? ` and the menu still ${rel(path.join(ATT, `${s.id}.jpg`))} (build ${info.build || 'none'})` : ''}${errors.length ? `; page errors: ${errors.slice(0, 3).join(' | ')}` : ''}`);

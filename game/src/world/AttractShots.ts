@@ -58,12 +58,14 @@ export async function loadAttractShots(base: string, slug: string, man: AttractM
 /**
  * `game/public/attract/index.json`: per resort, the shot ids with a rendered still, the ghost take files, and
  * (FEAT-177) each still's look key from `tools/shoot_attract.mjs`: `code`, a hash of the source files that
- * change the picture and of the resort's `shots.json` (`tools/attract_look.mjs`, checked in CI), and `pack`, the
- * pack's `meta.build` it was rendered from (checked here: a still from another build of the pack is never shown).
+ * change the picture and of the resort's `shots.json` (`tools/attract_look.mjs`, checked in CI), `pack`, the
+ * pack's `meta.build` it was rendered from, and (BUG-085) `shot`, the pose and conditions it was rendered with.
  * FEAT-181: `shots` says the resort has `shots.json`; `shotGhosts` lists, per shot, the takes `tools/ghost_lines.mjs` made for it (also in `ghosts`): a new
  * shot replaces the old one and its generated takes with it; recorded `take-*` files are never in it.
  */
-export interface StillLook { code: string; pack: string }
+export interface StillLook { code: string; pack: string; shot?: StillShot }
+/** BUG-085: what a still was rendered from that the menu must match: the shot's pose and its conditions */
+export type StillShot = Pick<AttractShot, 'x' | 'y' | 'h' | 'pitch' | 'fov' | 'eye' | 'conditions'>;
 /**
  * One resort's entry. FEAT-175: `generated` marks the pack's own (gen_content.py), and `dir`, set by
  * `loadAttractManifest` (never in a file), is the URL folder of its files when they are not `attract/<slug>/`.
@@ -76,13 +78,26 @@ export function attractDir(base: string, slug: string, man: AttractManifest): st
   return man[slug]?.dir ?? `${base}attract/${slug}/`;
 }
 
-/** The shipped still for a shot, or '' when there is none or it was rendered from another build of the pack. */
-export function shippedStill(base: string, man: AttractManifest, pack: Pack, shotId: string): string {
+/**
+ * The shipped still for a shot, or '' when there is none or it does not show this shot. BUG-085: a still that
+ * records its `shot` is shown on any build of the pack while that pose and those conditions are the shot's, so a
+ * republished pack (a new `meta.build` every time) keeps its menu still; it may differ a little from the live view,
+ * which crossfades in over it once settled. A still without `shot` (written before BUG-085) needs the same build.
+ */
+export function shippedStill(base: string, man: AttractManifest, pack: Pack, shot: AttractShot): string {
   const mine = man[pack.meta.slug];
-  if (!mine?.stills?.includes(shotId)) return '';
-  const look = mine.looks?.[shotId];
-  if (!look || look.pack !== (pack.meta.build ?? '')) return '';
-  return `${attractDir(base, pack.meta.slug, man)}${shotId}.jpg`;
+  if (!mine?.stills?.includes(shot.id)) return '';
+  const look = mine.looks?.[shot.id];
+  if (!look) return '';
+  if (look.shot ? !sameShot(look.shot, shot) : look.pack !== (pack.meta.build ?? '')) return '';
+  return `${attractDir(base, pack.meta.slug, man)}${shot.id}.jpg`;
+}
+/** BUG-085: the still's pose and conditions are the shot's (positions to the centimetre, angles to a hundredth) */
+function sameShot(a: StillShot, b: AttractShot): boolean {
+  const near = (u: unknown, v: number) => typeof u === 'number' && Math.abs(u - v) < 0.01;
+  if (!(['x', 'y', 'h', 'pitch', 'fov', 'eye'] as const).every((k) => near(a[k], b[k]))) return false;
+  const ca = a.conditions ?? {} as Partial<ShotConditions>, cb = b.conditions;
+  return (Object.keys(cb) as (keyof ShotConditions)[]).every((k) => ca[k] === cb[k]);
 }
 /**
  * The manifest ({} when missing, so nothing else is requested and nothing 404s). FEAT-175: with `pack`, a resort the

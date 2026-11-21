@@ -61,7 +61,24 @@
     "looks": {
       "back-bowls": {
         "code": "dc500e77fc8fab66",
-        "pack": "20261117T212451Z-9047f7"
+        "pack": "20261117T212451Z-9047f7",
+        "shot": {
+          "x": -727,
+          "y": 524,
+          "h": 150,
+          "pitch": -12,
+          "fov": 50,
+          "eye": 9,
+          "conditions": {
+            "clouds": "off",
+            "timeOfDay": 11,
+            "month": 2,
+            "newSnow": "none",
+            "snowDay": "mid",
+            "valleyFog": false,
+            "cloudTime": 0
+          }
+        }
       }
     },
     "shotGhosts": {
@@ -147,7 +164,24 @@
     "looks": {
       "top-of-imperial-bowl": {
         "code": "1559967f1062260c",
-        "pack": "20261114T151850Z-9cb882"
+        "pack": "20261114T151850Z-9cb882",
+        "shot": {
+          "x": -1710.9,
+          "y": -222,
+          "h": 145.4,
+          "pitch": -27.5,
+          "fov": 75,
+          "eye": 13.71,
+          "conditions": {
+            "clouds": "scattered",
+            "timeOfDay": "pack",
+            "month": 2,
+            "newSnow": "none",
+            "snowDay": "mid",
+            "valleyFog": false,
+            "cloudTime": 0
+          }
+        }
       }
     },
     "shotGhosts": {
