@@ -3,16 +3,15 @@
 // (`*_nodeform.png`), and checks that the deformation texture holds a depression under the track,
 // that the terrain chunk count does not change with it (no extra split), that the spray spawned
 // particles in the turns, and that the console stayed clean.
-// node tools/trailcheck.mjs [pack] [outDir] [--headed]   (run after `npx vite build`; exit 1 on a failed check)
-const { chromium } = await import('playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.js').then((m) => m.default));
+// node tools/trailcheck.mjs [pack] [outDir] [--headed|--gpu|--cpu]   (run after `npx vite build`; exit 1 on a failed check;
+// the shared launcher, browser.mjs, picks the GPU)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DIST, PACKS } from './paths.mjs';
-import { hidePads } from './browser.mjs';
+import { launchBrowser } from './browser.mjs';
 
 const args = process.argv.slice(2);
-const headed = args.includes('--headed') || process.env.SHOT_HEADED === '1';
 const positional = args.filter((a) => !a.startsWith('--'));
 const pack = positional[0] ?? 'synth';
 const outDir = positional[1] ?? 'shots-trail';
@@ -27,9 +26,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 });
 await new Promise((r) => server.listen(0, r));
-const browser = hidePads(headed
-  ? await chromium.launch({ headless: false })
-  : await chromium.launch({ args: ['--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }));
+const browser = await launchBrowser(args);
 const page = await browser.newPage({ viewport: { width: 960, height: 720 }, deviceScaleFactor: 1 });
 const errors = [];
 const missing = [];
@@ -130,8 +127,18 @@ await page.keyboard.up('ArrowDown');
 await shot('05_stop', 4, 2, 1.5);
 const chunksOn = (await state()).chunks;
 const stop = await probe(2);
-// standing still with nothing new stamped, the capture runs only on the fill-in ticks (2 a second)
-const idle = await page.evaluate(() => { const d = window.__sim.deform, r0 = d.renders; for (let i = 0; i < 120; i++) window.__step(1, 1 / 60); return d.renders - r0; });
+// standing still with nothing new stamped, the capture runs only on the fill-in ticks (2 a second). The brake stays
+// held: let go, the rider creeps off down the fall line and the window moves with it (BUG-165: on the GPU the page's
+// own frames run while the shots above are taken, so the rider is already sliding by now)
+await page.keyboard.down('ArrowDown');
+await ride(60);
+const idle = await page.evaluate(() => {
+  const s = window.__sim, d = s.deform, r0 = d.renders;
+  let maxSpeed = 0;
+  for (let i = 0; i < 120; i++) { window.__step(1, 1 / 60); maxSpeed = Math.max(maxSpeed, Math.hypot(s.rider.vx, s.rider.vy)); }
+  return { renders: d.renders - r0, maxSpeed: +maxSpeed.toFixed(2) };
+});
+await page.keyboard.up('ArrowDown');
 console.log('texture behind the board, after the stop:', JSON.stringify(stop));
 // the same views without the deformation (the ribbon alone)
 await page.evaluate(() => { const s = window.__sim; s.settings.snowDeform = false; s.applySettings('snowDeform'); });
@@ -145,7 +152,7 @@ check('deformation texture holds the trench behind the board', !!carve && carve.
 check('a powder trench is deeper than a groomer groove', !!carve && carve.maxDepCm >= 8, carve ? `max ${carve.maxDepCm} cm, ${carve.filled} texels stamped` : '');
 check('the stop leaves a pushed-up ridge', !!stop && stop.maxLipCm >= 1, stop ? `max lip ${stop.maxLipCm} cm` : '');
 check('no extra terrain chunks for the deformation', Math.abs(chunksOn - chunksOff) <= 20, `${chunksOn} on, ${chunksOff} off`);
-check('the capture is skipped while nothing changes', idle <= 8, `${idle} captures in 2 s standing still`);
+check('the capture is skipped while nothing changes', idle.maxSpeed < 0.05 && idle.renders <= 8, `${idle.renders} captures in 2 s standing still (top speed ${idle.maxSpeed} m/s)`);
 check('spray spawned in the carves', spawned > 50, `${spawned} particles`);
 check('spray sheet in the stop', stopSpawned > 50, `${stopSpawned} particles`);
 check('no console errors', errors.length === 0, errors.slice(0, 3).map((e) => e.slice(0, 200)).join(' | ') || (missing.length ? `${missing.length} missing resource(s) ignored` : ''));
