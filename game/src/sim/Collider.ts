@@ -66,11 +66,13 @@ export class Collider {
    *  `into`: BUG-090, a CYLINDER-float view the entry is written to and kept as, so an owner of many (a tree
    *  cell's trunks) holds them in one buffer: a lone small Float32Array costs about 245 bytes of heap, a view 110. */
   add(x: number, y: number, radius: number, zBase: number, zTop: number, kind = 0, ground = NaN, into?: Float32Array): Float32Array {
-    const k = this.key(Math.floor(x / CELL), Math.floor(y / CELL));
-    let arr = this.cells.get(k);
-    if (!arr) { arr = []; this.cells.set(k, arr); }
     const e = into ?? new Float32Array(CYLINDER);
     e[0] = x; e[1] = y; e[2] = radius; e[3] = zBase; e[4] = zTop; e[5] = kind; e[6] = ground;
+    // BUG-154: the cell comes from the stored (float32) x and y, as remove and removeAll find it: a point just
+    // short of a cell edge (x = 2551.99999) rounds onto it (2552.0) and would be filed in a cell they never look in
+    const k = this.key(Math.floor(e[0] / CELL), Math.floor(e[1] / CELL));
+    let arr = this.cells.get(k);
+    if (!arr) { arr = []; this.cells.set(k, arr); }
     arr.push(e);
     return e;
   }
@@ -119,10 +121,10 @@ export class Collider {
    */
   private readonly brush = new Map<string, Float32Array[]>();
   addBrush(x: number, y: number, radius: number, zTop: number, drag: number): Float32Array {
-    const k = this.key(Math.floor(x / CELL), Math.floor(y / CELL));
+    const e = new Float32Array([x, y, radius, zTop, drag]);
+    const k = this.key(Math.floor(e[0] / CELL), Math.floor(e[1] / CELL)); // BUG-154: as removeBrush finds it
     let arr = this.brush.get(k);
     if (!arr) { arr = []; this.brush.set(k, arr); }
-    const e = new Float32Array([x, y, radius, zTop, drag]);
     arr.push(e);
     return e;
   }
