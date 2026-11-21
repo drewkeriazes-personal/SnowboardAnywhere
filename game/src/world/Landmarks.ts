@@ -10,8 +10,10 @@ import type { Collider } from '../sim/Collider';
  * top beam with spacer blocks between them, a black board standing on the top beam between the
  * posts with white small-caps lettering, and snow piled as in the photos. Lettering is our own (a
  * serif face and a plain mountain mark), no resort logos. The posts are collider trunks; the posts
- * and footings re-seat on the ground once the 1 m terrain under them has loaded.
+ * and footings re-seat on the finest ground loaded under them, wherever the rider or camera is (BUG-077).
  */
+interface Seat { obj: THREE.Object3D; posts: [number, number][]; trunks: Float32Array[]; res: number }
+
 export interface Landmark {
   id: string;
   kind: 'gateway';
@@ -205,8 +207,8 @@ export class Landmarks {
   private readonly board = new THREE.MeshStandardMaterial({ color: 0x121418, roughness: 0.7 });
   // a little emissive, like the lettering, so the snow stays white when the arch faces away from the sun (FEAT-143)
   private readonly snow = new THREE.MeshStandardMaterial({ color: 0xf6f8fb, emissive: 0x5a5e62, roughness: 0.85 });
-  /** per landmark: its root, the two post bases (pack x, y) and the resolution its ground was sampled at */
-  private readonly seats: { obj: THREE.Object3D; posts: [number, number][]; res: number }[] = [];
+  /** per landmark: its root, the two post bases (pack x, y), their collider trunks and the resolution its ground was sampled at */
+  private readonly seats: Seat[] = [];
   private readonly seen = new Set<string>();
 
   constructor(private readonly pack: Pack, collider: Collider | null) {
@@ -287,21 +289,20 @@ export class Landmarks {
     const h = l.heading * Math.PI / 180;
     const ax = Math.cos(h), ay = -Math.sin(h); // local +x in pack x/y: 90 deg clockwise from the heading
     const posts: [number, number][] = [[l.x - ax * half, l.y - ay * half], [l.x + ax * half, l.y + ay * half]];
-    const seat = { obj: root, posts, res: Infinity };
+    const trunks = collider ? posts.map(([px, py]) => collider.add(px, py, FOOT / 2 + 0.05, 0, 0, 0)) : [];
+    const seat: Seat = { obj: root, posts, trunks, res: Infinity };
     this.seats.push(seat);
     this.seat(seat, l);
-    if (collider) for (const [px, py] of posts) {
-      const z = this.pack.terrainHeight(px, py);
-      collider.add(px, py, FOOT / 2 + 0.05, z - 10, z + 10, 0);
-    }
     this.group.add(root);
   }
 
   /** Stand the arch on the lower of the two post grounds, at the finest terrain loaded there. */
-  private seat(s: { obj: THREE.Object3D; posts: [number, number][]; res: number }, l: Landmark): void {
+  private seat(s: Seat, l: Landmark): void {
     const zs = s.posts.map(([x, y]) => this.pack.terrainHeight(x, y)).filter(Number.isFinite);
     if (!zs.length) return;
     s.res = Math.max(...s.posts.map(([x, y]) => this.pack.finestRes(x, y)));
+    // the post trunks follow the ground they stand on (BUG-077: they stayed at the load-time height)
+    s.trunks.forEach((e, i) => { const z = zs.length === s.posts.length ? zs[i] : Math.min(...zs); e[3] = z - 10; e[4] = z + 10; });
     const base = Math.min(...zs);
     s.obj.position.set(l.x, base, -l.y);
     // the snow bank is centred on the left post's own ground so its footing stays buried on a cross-slope
@@ -310,14 +311,18 @@ export class Landmarks {
     if (bank) bank.position.y = left - base;
   }
 
-  /** Re-seat once finer terrain arrives; returns a landmark the rider just passed through (once per session). */
+  /**
+   * Each frame: re-seat on the finest terrain loaded under the posts until that is the 1 m set, wherever the
+   * rider is (BUG-077: gated on the rider, a sign seen from the menu's camera after a map drop-in elsewhere stayed
+   * at the load-time height, before any tile had streamed in, far under the snow). Returns a landmark the
+   * rider (rx, ry) just passed through (once per session).
+   */
   maintain(rx: number, ry: number): Landmark | null {
     let passed: Landmark | null = null;
     for (let i = 0; i < this.list.length; i++) {
       const l = this.list[i], s = this.seats[i];
-      const d = Math.hypot(rx - l.x, ry - l.y);
-      if (d < 600 && s.res > 1) this.seat(s, l); // the 1 m tiles stream in near the rider
-      if (d < l.span && !this.seen.has(l.id)) { this.seen.add(l.id); passed = l; }
+      if (s.res > 1) this.seat(s, l); // two height samples a landmark: cheap enough to run until the 1 m tiles are in
+      if (Math.hypot(rx - l.x, ry - l.y) < l.span && !this.seen.has(l.id)) { this.seen.add(l.id); passed = l; }
     }
     return passed;
   }

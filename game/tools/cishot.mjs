@@ -83,7 +83,7 @@ async function settle(ms = SETTLE_MS) {
         // BUG-075: the frame loop rebuilds lifts on better terrain once per 0.5 s of sim time, so whether a
         // still had the rebuilt lift depended on how many frames ran; rebuild every lift the tiles allow now.
         // Builds before BUG-075 return nothing and stop at 2 a call (fine: the synthetic pack has one lift).
-        const lifts = s.lifts?.maintain(1, s.rider.x, s.rider.y, Infinity) || 0;
+        const lifts = s.lifts?.maintain(1, fx, fy, Infinity) || 0; // BUG-077: round the same focus as the frame
         const tiles = [p.fine, p.mid, p.far, p.mask, p.ao, p.dir, p.moguls].reduce((n, x) => n + (x?.inFlight ?? 0), 0);
         return tiles + (t.pending ?? 0) + (v.pending ?? 0) + lifts;
       });
