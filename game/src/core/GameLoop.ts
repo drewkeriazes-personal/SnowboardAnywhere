@@ -6,7 +6,7 @@
 export interface LoopHooks {
   /** every display frame, before the cap decides whether this one is drawn */
   everyFrame(): void;
-  /** one drawn frame; `stepped` is true under window.__step (an exact dt from a test tool) */
+  /** one drawn frame; `stepped` is true under window.__step and __shot (an exact dt from a test tool) */
   tick(dt: number, stepped: boolean): void;
   /** the frame cap in frames per second; 0 draws at the display's rate */
   targetFps(): number;
@@ -20,7 +20,7 @@ export class GameLoop {
   private last = performance.now();
   /** with the cap on, the next frame's deadline (ms); otherwise the last frame's time */
   private lastDraw = 0;
-  /** headless only: exact frame dt for __step, so scripted runs replay step for step */
+  /** headless only: exact frame dt for __step and __shot, so scripted runs and stills replay step for step */
   private fixedDt: number | null = null;
 
   constructor(private readonly headless: boolean, private readonly hooks: LoopHooks) {}
@@ -31,7 +31,9 @@ export class GameLoop {
     this.last = performance.now();
     if (this.headless) {
       (window as any).__step = (n: number, dtOverride = 1 / 60) => { this.fixedDt = dtOverride; for (let i = 0; i < n; i++) this.frame(); this.fixedDt = null; this.last = performance.now(); };
-      (window as any).__shot = () => { this.last = performance.now() - 1000 / 60; this.frame(); return canvas.toDataURL('image/png'); };
+      // BUG-155: the shot frame steps exactly 1/60 s like __step, so its dt never includes everyFrame's time (tile decodes,
+      // a garbage collection) and the chase camera lands where the build puts it, not where the load timing does
+      (window as any).__shot = () => { this.fixedDt = 1 / 60; this.frame(); this.fixedDt = null; this.last = performance.now(); return canvas.toDataURL('image/png'); };
       this.frame();
     } else {
       requestAnimationFrame(this.frame);
