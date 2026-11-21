@@ -3,6 +3,8 @@
  * (the middle stays clear), fading in from LINES_FROM to LINES_FULL m/s (about 40 to 60 mph). A 2D
  * canvas over the game, drawn only while visible.
  */
+import { Rng } from '../sim/Rng';
+
 const LINES_FROM = 18, LINES_FULL = 27, N = 48;
 const EDGE = 'rgb(40,52,70)', CORE = '#fff';
 
@@ -11,17 +13,25 @@ export class SpeedLines {
   private readonly ctx: CanvasRenderingContext2D | null;
   private readonly lines = Array.from({ length: N }, () => ({ a: 0, r: 0, len: 0, v: 0 }));
   private shown = false;
+  /** BUG-070: where the streaks spawn; `seed()` restarts them from a fixed seed so two check runs draw the same lines */
+  private readonly rng = new Rng((Math.random() * 2 ** 32) >>> 0);
   enabled = true;
 
   constructor(parent: HTMLElement) {
     this.canvas.className = 'speed-lines'; // hud.css
     parent.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
-    for (const l of this.lines) this.spawn(l, Math.random());
+    this.respawn();
   }
 
+  /** Start the streaks over from `seed` (the checks; play keeps the random seed from construction). */
+  seed(seed: number): void { this.rng.seed(seed); this.respawn(); }
+
+  private respawn(): void { for (const l of this.lines) this.spawn(l, this.rng.next()); }
+
   private spawn(l: { a: number; r: number; len: number; v: number }, r = 0): void {
-    l.a = Math.random() * Math.PI * 2; l.r = 0.42 + r * 0.5; l.len = 0.05 + Math.random() * 0.1; l.v = 0.9 + Math.random() * 0.8;
+    const q = this.rng;
+    l.a = q.next() * Math.PI * 2; l.r = 0.42 + r * 0.5; l.len = 0.05 + q.next() * 0.1; l.v = 0.9 + q.next() * 0.8;
   }
 
   /** `speed` in m/s; `active` false hides it (menus, free fly, on a lift). */

@@ -277,6 +277,8 @@ export class Vegetation {
   budgetMs = 0;
   /** BUG-063: cells in range still downloading or waiting for their meshes after the last update */
   pending = 0;
+  /** BUG-070: cells in range still downloading (the checks wait for none before the next batch of steps) */
+  get loading(): number { let n = 0; for (const c of this.cells.values()) if (c.loading) n++; return n; }
   /** BUG-147: the still tools (cishot.mjs) set this so the LOD0 sway sits at that time whatever the clock; null: the clock (s) */
   windTime: number | null = null;
   private readonly near: NearSet[] = [newNear(0), newNear(1)];

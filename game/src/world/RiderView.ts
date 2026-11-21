@@ -85,6 +85,8 @@ export class RiderView {
   /** BUG-147: the idle breathing's clock (s of frames drawn) */
   breathT = 0;
   readonly headQ = new THREE.Quaternion();
+  /** BUG-070: the on-foot hips sway's clock (s, advanced by dt), so a scripted walk poses the same on every run */
+  footSwayT = 0;
   /** the smoothed pose's arm angles, kept while the balance layer is drawn on top of them */
   readonly armKeep = new Float64Array(6);
   wasSeated = false;
@@ -311,7 +313,7 @@ export class RiderView {
     this.rollPhys = 0; this.prevGround = true; this.visLive = false; this.restarted = true;
     this.flex = 0; this.flexV = 0; this.flexDir = -1; this.twist = 0;
     this.pressRoll = 0; this.holdT = 0; this.corr = 0; this.corrV = 0; this.flailAmp = 0;
-    this.bump = 0; this.prevVz = 0; this.prevLean = 0; this.popT = 0; this.load = 0; this.wasGround = true; this.clock = 0; this.breathT = 0;
+    this.bump = 0; this.prevVz = 0; this.prevLean = 0; this.popT = 0; this.load = 0; this.wasGround = true; this.clock = 0; this.breathT = 0; this.footSwayT = 0;
     this.headQ.identity(); this.baseQ.identity();
     Object.assign(this.pose, clonePose(this.poses.neutral));
     this.wasSeated = false; this.footGap = 0;

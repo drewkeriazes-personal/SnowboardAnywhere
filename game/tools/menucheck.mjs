@@ -318,7 +318,7 @@ const ghost = await page.evaluate(async () => {
   const b = view()?.position.x ?? null;
   return { count: s.ghosts.count, a, b };
 });
-check('a ghost take rides behind the menu', ghost.count >= 1 && ghost.a !== null && ghost.b !== null && ghost.b !== ghost.a, JSON.stringify(ghost));
+check('a ghost take rides behind the menu', ghost.count >= 1 && ghost.a !== null && ghost.b !== null && ghost.b !== ghost.a, `${ghost.count} take(s), moving: ${ghost.a !== ghost.b}`); // BUG-070: not the x values, which move with the wall clock
 // Outrun with "or drop in from the map": the map can drop you in, and the chase starts once it closes
 await page.evaluate(() => { document.querySelector('#menu .card[data-mode="outrun"]').click(); document.querySelector('#menu .pop [data-ok]').click(); document.querySelector('#menu button[data-a="map"]').click(); });
 await until(() => window.__sim.map.fullOpen);

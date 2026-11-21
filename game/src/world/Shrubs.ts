@@ -31,6 +31,8 @@ import { vegetationNearRadius } from './Vegetation';
 const REACH = 300;
 /** regather after the camera has moved this far (m) */
 const MARGIN = 25;
+/** BUG-070: regather this many updates (about 0.5 s) after a gather left shrubs waiting for their fine tile */
+const RETRY_FRAMES = 30;
 /** cells are loaded within the reach plus this (m), and dropped past twice it */
 const LOAD_PAD = 200;
 /** draw a shrub only when this much of it (m) shows above the snow */
@@ -80,6 +82,8 @@ export class Shrubs {
   readonly stats = { cells: 0, instances: 0, drawn: 0, buried: 0, gathers: 0 };
   /** cells in range still downloading */
   pending = 0;
+  /** BUG-070: cells in range still downloading (the checks wait for none before the next batch of steps) */
+  get loading(): number { let n = 0; for (const c of this.cells.values()) if (c.loading) n++; return n; }
   private readonly pack: Pack;
   private readonly collider: Collider | null;
   private readonly cells = new Map<string, Cell>();
@@ -89,7 +93,8 @@ export class Shrubs {
   private reach = REACH;
   private readonly at = { x: NaN, y: NaN };
   private dirty = true;
-  /** while some shrubs in reach wait for their fine height tile: regather at this time (ms) */
+  /** updates left before gathering again for shrubs whose fine tile was not in (BUG-070: counted in frames, not wall
+   *  clock ms, so a scripted run gets the shrub colliders on the same frame every time) */
   private retry = Infinity;
   private snow: SnowpackState = snowpackState(2, 'mid', 0);
   private readonly aspect: [number, number] = [0, 0];
@@ -179,7 +184,7 @@ export class Shrubs {
       this.cells.delete(key);
       this.dirty = true;
     }
-    if (this.dirty || Math.hypot(cpx - this.at.x, cpy - this.at.y) > MARGIN || performance.now() > this.retry) this.gather(cpx, cpy);
+    if (this.dirty || Math.hypot(cpx - this.at.x, cpy - this.at.y) > MARGIN || --this.retry <= 0) this.gather(cpx, cpy);
     this.pending = pending;
     let n = 0;
     for (const c of this.cells.values()) if (c.data) n += c.data.length / 6;
@@ -317,7 +322,7 @@ export class Shrubs {
     this.stats.drawn = drawn;
     this.stats.buried = buried;
     // shrubs inside the fine set whose tile is not in yet (on the pack's z, without colliders): try again shortly
-    this.retry = unresolved > 0 ? performance.now() + 500 : Infinity;
+    this.retry = unresolved > 0 ? RETRY_FRAMES : Infinity;
   }
 
   /** a mesh for combo c with room for `cap` instances: the kit geometry's attributes shared, its own per-instance snow line */

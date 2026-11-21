@@ -35,11 +35,14 @@ await page.goto(`http://localhost:${server.address().port}/index.html?pack=${pac
 await page.waitForFunction(() => window.__step, null, { timeout: 60000 });
 page.setDefaultTimeout(240000);
 
-const ride = (n) => page.evaluate((n) => {
+// BUG-070: each ride waits for the height and mask tiles it asked for, so the next one reads the same terrain on
+// every run (the physics reads the finest set loaded, and when a tile lands otherwise depends on the wall clock)
+const tilesIdle = () => page.waitForFunction(() => { const p = window.__sim.pack; return [p.fine, p.mid, p.far, p.mask, p.ao, p.dir, p.moguls].every((t) => !t?.inFlight); }, null, { timeout: 20000, polling: 20 });
+const ride = async (n) => { await page.evaluate((n) => {
   let gap = 0;
   for (let i = 0; i < n; i++) { window.__step(1, 1 / 60); gap = Math.max(gap, window.__sim.riderView.footGap); }
   window.__maxGap = Math.max(window.__maxGap ?? 0, gap);
-}, n);
+}, n); await tilesIdle(); };
 const state = () => page.evaluate(() => {
   const s = window.__sim, r = s.rider;
   return { onFoot: r.onFoot, strap: r.strapState, speed: +r.speed.toFixed(2), stamina: +r.stamina.toFixed(2), tired: r.tired, sink: +r.sink.toFixed(3), slope: +r.slopeDeg.toFixed(0), prints: s.bootprints.stats.prints, maxFootGap: +(window.__maxGap ?? 0).toFixed(4) };
@@ -92,7 +95,8 @@ await ride(15); await shot('02_unstrap_step', 0.5, 3.5, 0.8, 0.6);
 await ride(30); await shot('03_carry_front', -3.2, 0.6, 0.3, 1.0);
 await shot('04_carry_side', 0.3, 3.2, 0.3, 1.0);
 await shot('05_carry_back', 3, 0.8, 0.8, 1.0);
-console.log('step-off prints', JSON.stringify(await plants()));
+// BUG-070: to 0.1 mm, so the last bits of a double (the shot frame's dt until BUG-155, the standing breathing clock until BUG-147) don't show
+console.log('step-off prints', JSON.stringify(await plants(), (k, v) => (typeof v === 'number' ? +v.toFixed(4) : v)));
 // walk uphill-ish: turn to face up the slope first
 await page.evaluate(() => { const r = window.__sim.rider; const n = r.normal; if (Math.hypot(n[0], n[1]) > 0.02) r.heading = Math.atan2(-n[0], -n[1]) + 0.6; });
 await ride(30);
