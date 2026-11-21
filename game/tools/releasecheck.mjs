@@ -42,12 +42,13 @@ function store(throws = false) {
  * GET /__packs/catalog lists once the download is over.
  */
 function routes({ jobs = [[{ phase: 'download', received: 50, total: 100 }, { phase: 'unzip', received: 100, total: 100 }, { phase: 'done', received: 100, total: 100 }]], post = [], local = {}, catalog = { resorts: [] } } = {}) {
-  const asked = [];
+  const asked = [], bodies = [];
   let posts = 0, job = [];
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   const fetchFn = async (url, init = {}) => {
     asked.push(`${init.method ?? 'GET'} ${url}`);
     if (url === '/__packs/get' && init.method === 'POST') {
+      bodies.push(JSON.parse(init.body ?? '{}'));
       const p = post[posts] ?? { status: 202 };
       job = (jobs[Math.min(posts, jobs.length - 1)] ?? []).slice();
       posts++;
@@ -57,7 +58,7 @@ function routes({ jobs = [[{ phase: 'download', received: 50, total: 100 }, { ph
     if (url === '/__packs/catalog') return json({ formatVersion: F, catalog, local });
     return new Response('not found', { status: 404 });
   };
-  return { fetchFn, asked, posts: () => posts };
+  return { fetchFn, asked, bodies, posts: () => posts };
 }
 
 /** a page: the toasts over a fake watcher (emit sends one onChange) */
@@ -173,15 +174,64 @@ for (const [fv, want] of [[F + 1, /needs a newer game/], [F - 1, /needs rebuild/
   const p = page(r);
   await p.emit([{ build: done('lag', 40, 'published'), prev: info('lag', 40, 'publishing') }]);
   ok(r.posts() === 2 && p.sleeps.includes(U.CATALOG_RETRY_MS) && p.final()[0]?.kind === 'ready' && p.puts.some((m) => m.detail === 'Waiting for the catalog...'), 'not in the catalog yet: asks again 30 s later, then ready');
-  const r2 = routes({ jobs: [[{ phase: 'error', received: 0, total: 0, error: 'packs/bad is a pack built on this PC, not one from the catalog: --force replaces it (it is deleted)' }]], catalog: { resorts: [{ slug: 'bad', name: 'Bad', status: 'playable', pack: { formatVersion: F } }] } });
+  const r2 = routes({ jobs: [[{ phase: 'error', received: 0, total: 0, error: 'download: sha256 abc does not match the catalog\'s def' }]], catalog: { resorts: [{ slug: 'bad', name: 'Bad', status: 'playable', pack: { formatVersion: F } }] } });
   const q = page(r2);
   await q.emit([{ build: done('bad', 41, 'published'), prev: info('bad', 41, 'publishing') }]);
   const f = q.final();
-  ok(r2.posts() === 1 && f[0]?.kind === 'failed' && /built on this PC/.test(f[0].detail) && !f[0].action, `a download that fails: says why, no Ride (${f[0]?.title})`);
+  ok(r2.posts() === 1 && f[0]?.kind === 'failed' && f[0].title === 'Bad: the download failed' && /sha256/.test(f[0].detail) && !f[0].action, `a download that fails: says why, no Ride (${f[0]?.title})`);
   const r3 = routes({ post: Array(9).fill({ status: 400, body: { error: 'catalog: HTTP 403 from https://api.github.com/x' } }) });
   const w = page(r3);
   await w.emit([{ build: done('gone', 42, 'published'), prev: info('gone', 42, 'publishing') }]);
   ok(r3.posts() === U.CATALOG_RETRIES + 1 && w.final()[0]?.kind === 'failed', `a catalog that can't be read: ${U.CATALOG_RETRIES} more tries, then failed`);
+}
+
+// ---------------------------------------------------------------- BUG-140: a pack of this PC in the way: Replace or Keep mine
+{
+  const inWay = (local) => ({ phase: 'error', received: 0, total: 0, local, error: `packs/bigsky is a pack built on this PC, not one from the catalog: node tools/get_pack.mjs bigsky --force replaces it (it is deleted)` });
+  const cat = { resorts: [{ slug: 'bigsky', name: 'Big Sky', status: 'playable', pack: { formatVersion: F, version: 3 } }] };
+  const r = routes({ jobs: [[inWay('built')], [{ phase: 'download', received: 5, total: 10 }, { phase: 'done', received: 10, total: 10 }]], catalog: cat, local: { bigsky: { name: 'Big Sky', formatVersion: F } } });
+  const s = store();
+  const p = page(r, { storage: s });
+  await p.emit([{ build: done('bigsky', 70, 'published', 0, { prUrl: 'https://github.com/x/pull/137' }), prev: info('bigsky', 70, 'publishing') }]);
+  let f = p.final();
+  const t = f[0];
+  ok(r.posts() === 1 && f.length === 1 && t.kind === 'local' && t.title === 'Big Sky v3 is published', `local build in the way: a choice, not "download failed" (${t?.kind}: ${t?.title})`);
+  ok(t?.detail === 'You have a Big Sky pack built on this PC. Replace it with the published v3? Your local build is deleted.', `local build: the detail asks (${t?.detail})`);
+  ok(t?.action?.label === 'Replace' && t?.alt?.label === 'Keep mine' && t.link?.href === 'https://github.com/x/pull/137', 'local build: Replace and Keep mine, the PR as a link only');
+  ok(!p.puts.some((m) => /--force|failed/i.test(`${m.title} ${m.detail ?? ''}`)), 'no toast text names --force or says failed');
+  ok(JSON.parse(s.m.get(U.ANNOUNCED_KEY)).includes(70), 'the choice is announced once (not again after a reload)');
+  t.action.run(); await settle();
+  f = p.final();
+  ok(r.posts() === 2 && r.bodies[0].replace === undefined && r.bodies[1].slug === 'bigsky' && r.bodies[1].replace === true, `Replace: downloads again with replace: true (${JSON.stringify(r.bodies)})`);
+  ok(f.length === 2 && f[1].kind === 'ready' && f[1].title === 'Big Sky is ready' && f[1].action?.label === 'Ride' && f[1].id === '70', `Replace: ends at ready with Ride (${f[1]?.title})`);
+  ok(p.installed.join() === 'bigsky', 'Replace: the picker hears the pack is in');
+
+  // Keep mine: nothing more is asked or downloaded, and the run is not announced again
+  const r2 = routes({ jobs: [[inWay('built')]], catalog: cat });
+  const s2 = store();
+  const q = page(r2, { storage: s2 });
+  await q.emit([{ build: done('bigsky', 71, 'published'), prev: info('bigsky', 71, 'publishing') }]);
+  q.final()[0].alt.run(); await settle();
+  await q.emit([{ build: done('bigsky', 71, 'published', 0), prev: info('bigsky', 71, 'publishing') }]);
+  const again = page(r2, { storage: s2 });
+  await again.emit([{ build: done('bigsky', 71, 'published', 1) }]);
+  ok(r2.posts() === 1 && q.final().length === 1 && again.puts.length === 0 && q.installed.length === 0, 'Keep mine: no download over the pack, no repeat toast for this run (in the page or after a reload)');
+
+  // a --from copy in the way says so
+  const r3 = routes({ jobs: [[inWay('copy')]], catalog: cat });
+  const c = page(r3);
+  await c.emit([{ build: done('bigsky', 72, 'published'), prev: info('bigsky', 72, 'publishing') }]);
+  ok(c.final()[0]?.kind === 'local' && /copied in from a MapPacker build/.test(c.final()[0].detail), `a get --from copy in the way: the same choice (${c.final()[0]?.detail})`);
+
+  // the resort being ridden: Download and ride, a local build in the way, Replace, then the reload
+  const r4 = routes({ jobs: [[inWay('built')], [{ phase: 'done', received: 1, total: 1 }]], catalog: cat, local: { bigsky: { name: 'Big Sky', formatVersion: F } } });
+  const d = page(r4, { current: 'bigsky' });
+  await d.emit([{ build: done('bigsky', 73, 'published'), prev: info('bigsky', 73, 'publishing') }]);
+  d.final()[0].action.run(); await settle();
+  ok(d.final()[1]?.kind === 'local' && d.navs.length === 0, 'Download and ride over a local build: asks first, no reload');
+  d.final()[1].action.run(); await settle();
+  ok(r4.bodies[1]?.replace === true && d.navs[0] === 'http://localhost:5173/?pack=bigsky&account=maintainer', `Download and ride, then Replace: reloads into it (${d.navs[0]})`);
+  p.off(); q.off(); again.off(); c.off(); d.off();
 }
 
 // ---------------------------------------------------------------- blocked storage: still one toast per build in the page
@@ -268,6 +318,34 @@ if (!process.argv.includes('--no-page')) {
   ok(closed.gone && closed.stays && closed.back === 'ready', 'page: closed while downloading, it stays closed until it is ready');
   await pg.keyboard.press('Space');
   ok(await pg.evaluate(() => window.ran.join()) === 'ride,menu', 'page: Space after a toast click goes to what had the focus');
+  // BUG-140: the local-build toast has Replace and Keep mine side by side under the text, both clickable over the menu
+  const pick = async (sel, id = '9') => {
+    await pg.evaluate((id) => {
+      window.ran = [];
+      window.stack.put({ id, kind: 'local', title: 'Big Sky v3 is published', detail: 'You have a Big Sky pack built on this PC. Replace it with the published v3? Your local build is deleted.',
+        link: { href: 'https://github.com/x/pull/137', text: 'The publish PR on GitHub' },
+        action: { label: 'Replace', run: () => window.ran.push('replace') }, alt: { label: 'Keep mine', run: () => window.ran.push('keep') } });
+    }, id);
+    return pg.evaluate(([s, id]) => {
+      const b = document.querySelector(`#release-toasts .rt[data-id="${id}"] ${s}`), r = b.getBoundingClientRect();
+      const go = document.querySelector(`#release-toasts .rt[data-id="${id}"] .rt-go`).getBoundingClientRect();
+      const alt = document.querySelector(`#release-toasts .rt[data-id="${id}"] .rt-alt`).getBoundingClientRect();
+      return { top: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b, row: Math.abs(go.top - alt.top) < 2 && go.right <= alt.left,
+        inside: alt.right <= document.querySelector(`#release-toasts .rt[data-id="${id}"]`).getBoundingClientRect().right, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, [sel, id]);
+  };
+  let lb = await pick('.rt-alt');
+  ok(lb.top && lb.row && lb.inside, `page: Replace and Keep mine in a row inside the toast, over the menu (${JSON.stringify(lb)})`);
+  await pg.mouse.click(lb.x, lb.y);
+  const kept = await pg.evaluate(() => {
+    const r = { ran: window.ran.join(), gone: !document.querySelector('#release-toasts .rt[data-id="9"]') };
+    window.stack.put({ id: '9', kind: 'local', title: 'again' });
+    return { ...r, stays: !document.querySelector('#release-toasts .rt[data-id="9"]'), focus: document.activeElement?.dataset.a };
+  });
+  ok(kept.ran === 'keep' && kept.gone && kept.stays && kept.focus === 'ride', `page: Keep mine runs, the toast goes and stays closed, the focus stays (${JSON.stringify(kept)})`);
+  lb = await pick('.rt-go', '10');
+  await pg.mouse.click(lb.x, lb.y);
+  ok(await pg.evaluate(() => window.ran.join()) === 'replace', 'page: Replace runs');
   ok(errors.length === 0, `page: no errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   await browser.close();
 }

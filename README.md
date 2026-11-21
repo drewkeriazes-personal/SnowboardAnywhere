@@ -61,8 +61,8 @@ when `packs/` is empty, and under the error when `?pack=` names a pack that isn'
 server can't download (a plain static host, or offline) the list is empty and the screen says to run
 `npm run get vail`. A resort you downloaded shows "Update (size)" when a newer
 release is out, also when yours is an older format than the game reads. An older-format pack with no current
-release, or one you built or copied in yourself, shows "needs rebuild". `npm run get` won't replace a pack you built yourself unless you add `-- --force` (it
-deletes the old one). The star at the end of a row makes that resort a favorite: favorites list first, under
+release, or one you built or copied in yourself, shows "needs rebuild". `npm run get` won't replace a pack you built yourself; `node tools/get_pack.mjs <slug> --force` does (it
+deletes the old one; in PowerShell, `npm run get <slug> -- --force` loses the `--force`). The star at the end of a row makes that resort a favorite: favorites list first, under
 Favorites, and stay starred after a reload (in this browser). With the keyboard or a controller, press right
 on a row to reach its star and Enter or A to star or unstar it. The **Find a resort** box at the top of the list filters it by name. Signed in as a
 maintainer on `npm run dev`, typing three or more letters also lists ski areas from OpenSkiData that are not
@@ -77,7 +77,8 @@ takes the keys or the controller; click it with the mouse). Ride reloads the pag
 Change resort does; the resort is a Ride row in the picker from then on. A pack in another format says "needs a newer
 game" or "needs rebuild" instead, with no Ride, and a build with no change or a failed one gets a toast too (the
 failed one links its run). A new release of the resort you are riding is not swapped in under you: its toast offers
-**Download and ride**. A preview pack (it did not pass the resort quality gate) carries a Preview badge on the toast,
+**Download and ride**. If you have that resort built on this PC or copied in from MapPacker, the toast asks instead:
+**Replace** deletes yours and installs the published pack, **Keep mine** leaves it. A preview pack (it did not pass the resort quality gate) carries a Preview badge on the toast,
 its picker row and the menu's resort card. Each build is announced once, also across reloads. Anything already built or published shows Ride or Download there instead. A guest, or the game
 served by `npm run host` or the launcher, gets the filter only. To ride a pack you built in MapPacker before it is published, copy it in:
 
@@ -85,7 +86,7 @@ served by `npm run host` or the launcher, gets the filter only. To ride a pack y
 npm run get -- --from ../../MapPacker-SnowboardAnywhere/packs/vail   # copies that build into packs/vail
 ```
 
-Run it again after a rebuild there. `npm run get vail -- --force` swaps the copy back for the published
+Run it again after a rebuild there. `node tools/get_pack.mjs vail --force` swaps the copy back for the published
 pack. How packs are built: "How a resort gets built" below.
 
 ### Play on another computer
