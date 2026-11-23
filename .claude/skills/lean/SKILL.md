@@ -15,13 +15,13 @@ One pass over the branch diff, by you, inline. No subagents unless the diff is o
 ## 2. The ladder (for every new function, class, file, option or branch)
 Take the first rung that holds and flag the code if a higher rung was available:
 1. Does it need to exist? (Not asked for by the card, no caller, "for later".)
-2. Is it already in this repo? Grep for the name and for the idea (a lerp, a clamp, a tile lookup, a dispose loop). Link the existing one.
+2. Is it already in this repo? This rung saves the most: grep for the name and for the idea (a lerp, a clamp, a tile lookup, a dispose loop). Link the existing one.
 3. Does three.js, the DOM or the TS standard library already do it?
 4. Does an installed dependency do it? (`game/package.json` only; never add one for this.)
 5. Can it be a few lines instead of a module?
 
 ## 3. Structure checks
-- **File size:** a file that crosses 1,000 lines in this diff is a finding. Already over today: `world/Vegetation.ts`, `world/trees/clumps.ts`. Adding to them needs a split or a reason in the PR.
+- **File size:** a file that crosses 1,000 lines in this diff is a finding. A file already over it (`world/Vegetation.ts`, `world/trees/clumps.ts` today) may grow only by wiring, about 20 lines, with the logic in a new module; past that, split first. Either way, search the board for a split card and file one if none exists (BOARD.md rule 3), so a reason in the PR is never the end of it.
 - **Code judo:** a restructure that keeps behavior and removes code (merge two near-copies, replace a flag-driven branch with data, delete a wrapper that only forwards).
 - **Spaghetti:** one-off `if` checks for a special case dropped into shared code; a feature's logic leaking into `terrain/`, `pack/` or `sim/` modules that do not own it.
 - **Magic:** clever indirection, string-keyed dispatch, or hidden state where a direct call would read plainly.
