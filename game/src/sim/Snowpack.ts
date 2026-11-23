@@ -97,9 +97,9 @@ export function snowpackUniform(st: SnowpackState, out: [number, number, number,
   return out;
 }
 
-/** whether two states would bury the shrubs differently enough to redo them (about 2 cm) */
-export function snowpackChanged(a: SnowpackState, b: SnowpackState): boolean {
+/** whether two states would bury the shrubs differently enough to redo them (about 2 cm, times `k`) */
+export function snowpackChanged(a: SnowpackState, b: SnowpackState, k = 1): boolean {
   if ((a.override === null) !== (b.override === null)) return true;
-  if (a.override !== null && b.override !== null) return Math.abs(a.override - b.override) > 0.005;
-  return Math.abs(a.base - b.base) > 0.015 || Math.abs(a.fresh - b.fresh) > 0.02 || a.sun !== b.sun;
+  if (a.override !== null && b.override !== null) return Math.abs(a.override - b.override) > 0.005 * k;
+  return Math.abs(a.base - b.base) > 0.015 * k || Math.abs(a.fresh - b.fresh) > 0.02 * k || a.sun !== b.sun;
 }

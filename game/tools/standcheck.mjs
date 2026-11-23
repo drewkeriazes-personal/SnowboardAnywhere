@@ -12,6 +12,10 @@
 //     factor without a draw; a cell with no factor byte reads 1; the stems themselves are the same as without widths
 //   - FEAT-337: a closed stand keeps its exact count and clumps by moving its stems; on a glade-density stand the stems clump (variance over mean of counts in 12 m squares), their spacing is in
 //     the gladed 3 to 10 m band, and free paths down the fall line are longer than the even scatter's and than across
+//   - FEAT-336, the snowpack buries the small trees (trees/burial.ts): a tree shorter than the depth plus 0.5 m is left
+//     out, one up to 1.5 m taller is sunk by the depth, the sink eases off over 1.5 m more, taller trees and a snowless day
+//     leave the records as they are; the generated stems thin out on a deeper day; a few centimetres of new snow keep the
+//     epoch, 10 cm moves it, and a cell whose lowest tree the snow cannot reach is brought up to date without burying
 // node tools/standcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -24,6 +28,9 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standcheck-'));
 const out = path.join(dir, 'stands.mjs');
 await build({ entryPoints: [path.join(GAME, 'src', 'world', 'trees', 'stands.ts')], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
 const { generateStems } = await import(pathToFileURL(out).href);
+const outB = path.join(dir, 'burial.mjs');
+await build({ entryPoints: [path.join(GAME, 'src', 'world', 'trees', 'burial.ts')], bundle: true, format: 'esm', platform: 'node', outfile: outB, logLevel: 'error' });
+const { buryTrees, buryReach, TreeBurial } = await import(pathToFileURL(outB).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
@@ -156,6 +163,33 @@ const wv = quadratVMR(wC), wvE = quadratVMR(wE);
 const westN = (a) => { let k = 0; for (let i = 0; i < a.length; i += 6) if (a[i] < minX + 460) k++; return k; };
 const wnC = westN(full), wnE = westN(generateStems(g, 1, null, null, false));
 check('a closed stand keeps its count and clumps by moving its stems', wnC === wnE && wv > wvE * 1.5, `${wnC} stems clumped, ${wnE} even; variance / mean ${wv.toFixed(2)} clumped, ${wvE.toFixed(2)} even`);
+
+// FEAT-336: burial by the snowpack. Trees 0.25 to 8 m tall in 0.25 m steps at z 100, a flat 2 m of snow
+const recs = new Float32Array(32 * 6);
+for (let i = 0; i < 32; i++) recs.set([i, 0, 100, 0.25 * (i + 1), 1, 0], i * 6);
+const flat = (d) => () => d;
+const b2 = buryTrees(recs, flat(2), 2 + 3);
+const hs = []; for (let i = 0; i < b2.length; i += 6) hs.push([b2[i + 3], 100 - b2[i + 2]]);
+const sinkOf = (h) => hs.find((e) => e[0] === h)?.[1];
+check('trees under the snow are left out (FEAT-336)', hs.length === 32 - 9 && hs[0][0] === 2.5, `${hs.length} of 32 kept at 2 m of snow, lowest ${hs[0]?.[0]} m`);
+check('half-buried trees sink by the depth, then ease off', sinkOf(2.5) === 2 && sinkOf(3.5) === 2 && Math.abs(sinkOf(4.25) - 1) < 1e-6 && sinkOf(5) === 0 && sinkOf(8) === 0, `sinks at 2.5 / 3.5 / 4.25 / 5 / 8 m: ${[2.5, 3.5, 4.25, 5, 8].map(sinkOf).join(' / ')}`);
+check('a snowless day leaves the records as they are', buryTrees(recs, flat(0), buryReach({ base: 0, fresh: 0, sun: 0.4, override: null })) === recs && buryTrees(recs, flat(0), 1e9) === recs, 'the same array back');
+const tallOnly = recs.slice(24 * 6); // 6.25 m and up
+check('trees taller than the reach are not looked at', buryTrees(tallOnly, () => { throw new Error('looked'); }, 6) === tallOnly, 'the same array back, no depth asked');
+// the generated stems (the west half 11.25 to 15 m, the east 16.5 to 22 m) on a thin and a deep day
+const thin = buryTrees(full, flat(1.2), 1.2 + 3).length / 6, deep = buryTrees(full, flat(13), 13 + 3).length / 6;
+const short = (() => { let k = 0; for (let i = 3; i < full.length; i += 6) if (full[i] < 13.5) k++; return k; })();
+check('the stems thin out on a deeper day', thin === n && deep === n - short && short > 0, `${n} stems, ${thin} kept under 1.2 m of snow, ${deep} under 13 m (${short} shorter than 13.5 m)`);
+const tb = new TreeBurial(() => [0, 0, 1]);
+const e0 = tb.epoch;
+tb.set({ ...tb.snow, fresh: tb.snow.fresh + 0.03 });
+const e1 = tb.epoch;
+tb.set({ ...tb.snow, fresh: tb.snow.fresh + 0.1 });
+const u = tb.unburied(tallOnly.slice(), null);
+tb.buryCell(u); tb.set({ ...tb.snow, override: 1 });
+const staleTall = tb.stale(u), upToDate = u.epoch === tb.epoch;
+const uLow = tb.unburied(recs, null); tb.buryCell(uLow); tb.set({ ...tb.snow, override: 2 });
+check('the snowpack epoch moves on about 5 cm, and only cells it can touch bury again', e1 === e0 && tb.epoch > e1 && !staleTall && upToDate && tb.stale(uLow), `epochs ${e0} / ${e1} / ${tb.epoch}, a tall cell stale ${staleTall}, a low one ${tb.stale(uLow)}`);
 
 if (fails) { console.log(`${fails} check(s) failed`); process.exit(1); }
 console.log('all stand checks passed');

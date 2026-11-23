@@ -363,6 +363,7 @@ export class RideFrame {
       // BUG-081: and the open ground far off shows through where that snowpack is thin
       const sp = snowpackState(d.getUTCMonth() + 1, cond.snowDay ?? 'mid', snowCover, params.snowdepth);
       shrubs.setSnowpack(sp);
+      veg.burial.set(sp); // FEAT-336: and the small trees
       terrain.setSnowpack(sp);
     }
     rocks.setSnow(Math.min(1, snowCover * 3), snow.wind.x, snow.wind.y); // boulder tops fill three times faster than the slopes

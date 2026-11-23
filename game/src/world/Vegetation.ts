@@ -9,6 +9,7 @@ import { TreeShade } from './TreeShade';
 import { crownOverlap, type CrownHit } from './TreeBrush';
 import { ClumpCanopy } from './trees/clumps';
 import { standGate, treeTrim, trimReach } from './trees/trim';
+import { TreeBurial, type UnburiedTrees } from './trees/burial';
 import type { Ground } from '../terrain/Terrain';
 
 /**
@@ -183,6 +184,8 @@ interface Cell {
   /** the records drawn: the pack's (`base`), then the generated stems (FEAT-074) */
   data: Float32Array | null;
   base: Float32Array | null;
+  /** FEAT-336: the pack's records before the snowpack buried the small trees (trees/burial.ts) */
+  raw: UnburiedTrees | null;
   /** FEAT-074: the decoded stand image; 0 not asked, 1 loading, 2 ready, 3 none */
   stand: StandGrid | null;
   standState: number;
@@ -313,10 +316,13 @@ export class Vegetation {
   /** FEAT-292: the far forest past the drawn trees as clump impostors (trees/clumps.ts); null when off or the pack has no cover levels */
   clumps: ClumpCanopy | null = null;
   private clumpFarMin = CLUMP_FAR_MIN;
+  /** FEAT-336: the day's snowpack for burying the small trees (RideFrame sets it with the shrubs') */
+  readonly burial: TreeBurial;
 
   constructor(pack: Pack, collider: Collider | null) {
     this.pack = pack;
     this.collider = collider;
+    this.burial = new TreeBurial((x, y, o) => pack.groundNormal(x, y, o));
     this.kit = new TreeKit();
     this.mat = this.kit.mat;
     CLUMP_BAND = null; // FEAT-292: module state, as the radii: this pack's own once its clumps draw
@@ -429,12 +435,17 @@ export class Vegetation {
         keep.add(key);
         let cell = this.cells.get(key);
         if (!cell) {
-          cell = { key, cx, cy, data: null, base: null, stand: null, standState: 0, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, trimArea: null, trimmed: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
+          cell = { key, cx, cy, data: null, base: null, raw: null, stand: null, standState: 0, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, trimArea: null, trimmed: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
           this.cells.set(key, cell);
         }
         if (!cell.data && !cell.loading && !cell.missing) this.load(cell);
         if (cell.loading) pending++;
         if (!cell.data) continue;
+        // FEAT-336: the snowpack has changed enough to bury this cell's small trees again
+        if (cell.raw && this.burial.stale(cell.raw)) {
+          if (this.budgetMs <= 0 || built === 0 || performance.now() - t0 < this.budgetMs) { this.bury(cell); this.regenerate(cell, cell.gen); built++; }
+          else pending++;
+        }
         // BUG-088: the trees stand at their real heights; until the terrain under the cell is real they would float
         if (!cell.grounded && (!this.ground || this.ground.groundReady(inst.minX + cx * cs, inst.minY + cy * cs, inst.minX + (cx + 1) * cs, inst.minY + (cy + 1) * cs))) {
           cell.grounded = true;
@@ -570,7 +581,7 @@ export class Vegetation {
     const ins = this.pack.meta.instances;
     const listed = ins?.treeCells;
     // a cell with no detected crowns may still have a stand (FEAT-074): it loads empty and generates its stems
-    const empty = (): void => { if (this.standCells.has(cell.key)) { cell.base = cell.data = new Float32Array(0); this.prepare(cell); } else cell.missing = true; };
+    const empty = (): void => { if (this.standCells.has(cell.key)) { cell.raw = this.burial.unburied(null, null); this.bury(cell); this.prepare(cell); } else cell.missing = true; };
     // BUG-081: the crowns outside the pack bounds, in the ring and the grid's edge cells
     const farListed = ins?.farTreeCells?.includes(cell.key) ?? false;
     const inGrid = !!ins && cell.cx >= 0 && cell.cy >= 0 && cell.cx < ins.cellsX && cell.cy < ins.cellsY;
@@ -585,24 +596,31 @@ export class Vegetation {
       const [own, far] = await Promise.all([get('trees', ownListed), get('farTrees', farListed)]);
       if (cell.dropped) return; // BUG-082: the rider left before it arrived; a later visit loads a new cell
       if (!own && !far) { empty(); return; }
-      let data = own ?? far!;
-      if (own && far) { data = new Float32Array(own.length + far.length); data.set(own); data.set(far, own.length); }
-      cell.base = cell.data = data;
+      cell.raw = this.burial.unburied(own, far);
+      this.bury(cell);
       this.prepare(cell);
-      if (this.collider && own) {
-        // the far crowns stand outside the pack, where nobody rides
-        // BUG-090: the entries share one buffer per cell
-        const d = own, col: Float32Array[] = cell.own = new Array(d.length / 6), buf = new Float32Array(col.length * CYLINDER);
-        for (let i = 0, k = 0; i < d.length; i += 6, k++) {
-          const h = d[i + 3];
-          col[k] = this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h, 0, NaN, buf.subarray(k * CYLINDER, (k + 1) * CYLINDER));
-        }
-      }
       for (const n of this.near) n.dirty = true;
     } catch {
       cell.missing = true;
     } finally {
       cell.loading = false;
+    }
+  }
+
+  /** FEAT-336: the cell's records with the trees the snowpack buries left out or sunk (`cell.raw` as loaded), and its own trunks */
+  private bury(cell: Cell): void {
+    const { data, own } = this.burial.buryCell(cell.raw!);
+    cell.base = cell.data = data;
+    if (cell.own && this.collider) this.collider.removeAll(cell.own);
+    cell.own = null;
+    if (this.collider && own) {
+      // the far crowns stand outside the pack, where nobody rides
+      // BUG-090: the entries share one buffer per cell
+      const d = own, col: Float32Array[] = cell.own = new Array(d.length / 6), buf = new Float32Array(col.length * CYLINDER);
+      for (let i = 0, k = 0; i < d.length; i += 6, k++) {
+        const h = d[i + 3];
+        col[k] = this.collider.add(d[i], d[i + 1], Math.max(0.15, h * 0.02), d[i + 2] - 1, d[i + 2] + h, 0, NaN, buf.subarray(k * CYLINDER, (k + 1) * CYLINDER));
+      }
     }
   }
 
@@ -629,7 +647,8 @@ export class Vegetation {
     const solid = cell.col !== null;
     if (solid) this.setSolid(cell, false);
     const tl = this.pack.treeLines;
-    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null, STEM_CLUMPS) : null;
+    const base = cell.base!, gen = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null, STEM_CLUMPS) : null;
+    const stems = gen && this.burial.buryStems(cell.raw, gen); // FEAT-336
     if (stems && stems.length) { const d = new Float32Array(base.length + stems.length); d.set(base); d.set(stems, base.length); cell.data = d; }
     else cell.data = base;
     cell.gen = k;
