@@ -290,6 +290,9 @@ burst when you land. Brush a snow-loaded spruce or fir and the snow drops off it
 until the snow builds back over a few minutes; a tree you just shook has less to drop. Slam into the
 trunk and the whole tree shakes off every bit of its snow. Settings > Graphics > Snow dents turns the sag off (the Low preset turns it off
 too).
+In deep snow the spruce and fir sit in tree wells: the snow dips round the trunk, up to a metre
+deep in midwinter, where the low boughs kept it off. Ride close and the board drops in. There are
+none on the groomers, and they are shallow in spring.
 
 Crash at speed and you keep it: the body tumbles and slides on down the hill, a long way on a steep
 pitch, sooner to a stop on a gentle one or on the flat, further on ice and less in powder or slush. A

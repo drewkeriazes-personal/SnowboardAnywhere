@@ -740,6 +740,29 @@ export class Vegetation {
     }
     return best < Infinity;
   }
+  /** FEAT-216: every drawn tree in the rectangle (pack metres) with its base, height, crown radius and species (TreeWells) */
+  forEachTree(x0: number, y0: number, x1: number, y1: number, fn: (x: number, y: number, z: number, h: number, cr: number, species: number) => void): void {
+    const inst = this.pack.meta.instances;
+    if (!inst) return;
+    const cs = inst.cellSize, ts = cs / TILES;
+    const cx0 = Math.floor((x0 - inst.minX) / cs), cx1 = Math.floor((x1 - inst.minX) / cs);
+    const cy0 = Math.floor((y0 - inst.minY) / cs), cy1 = Math.floor((y1 - inst.minY) / cs);
+    const keys = this.nearKeys(cx0, cx1, cy0, cy1);
+    for (let cy = cy0, k = 0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++, k++) {
+      const cell = this.cells.get(keys[k]);
+      if (!cell || !cell.order) continue;
+      const d = cell.data!, minX = inst.minX + cx * cs, minY = inst.minY + cy * cs;
+      const tx0 = Math.max(0, Math.floor((x0 - minX) / ts)), tx1 = Math.min(TILES - 1, Math.floor((x1 - minX) / ts));
+      const ty0 = Math.max(0, Math.floor((y0 - minY) / ts)), ty1 = Math.min(TILES - 1, Math.floor((y1 - minY) / ts));
+      for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+        const t = ty * TILES + tx;
+        for (let j = cell.tileStart![t]; j < cell.tileStart![t + 1]; j++) {
+          const i = cell.order![j], o = i * 6;
+          if (d[o] >= x0 && d[o] <= x1 && d[o + 1] >= y0 && d[o + 1] <= y1) fn(d[o], d[o + 1], d[o + 2], d[o + 3], cell.cr![i], cell.sp![i]);
+        }
+      }
+    }
+  }
   private readonly contact: CrownHit = { x: 0, y: 0, z: 0, h: 0, cr: 0, species: 0, overlap: 0, at: 0, r: 0 };
   private readonly trimTmp = [0, 0];
 

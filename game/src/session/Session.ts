@@ -81,7 +81,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
   const quit = new Promise<void>((resolveQuit) => {
     const status = document.getElementById('status')!;
     const world = buildWorld(ctx);
-    const { env, clouds, snow, terrain, collider, veg, lifts, liftLines, roads, tracks, bootprints, puffs, bigprints, deform, monsters, eat, trialWorld, riderView } = world;
+    const { env, clouds, snow, terrain, collider, veg, lifts, liftLines, roads, tracks, bootprints, puffs, bigprints, deform, wells, monsters, eat, trialWorld, riderView } = world;
     // FEAT-162: the session's states; the frame is the active state's update (states/RideFrame.ts has the order)
     const states = new StateMachine<GameStateName>();
     const outrunUI = new OutrunUI(); // FEAT-164: built here, before the labels, so its HUD stacks as it always has
@@ -444,7 +444,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       map.destroy();
       pause.destroy();
       labels.destroy();
-      tracks.dispose(); deform.dispose();
+      tracks.dispose(); deform.dispose(); wells.dispose(); pack.wells = null;
       trialWorld.dispose();
       modes.dispose();
       padFx.stop();
