@@ -3,7 +3,7 @@ import type { Pack } from '../pack/Pack';
 import type { StandsMeta } from '../pack/types';
 import { decodeRGBA } from '../pack/MaskSet';
 import { type Collider, CYLINDER } from '../sim/Collider';
-import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, setGhostBand, crownWidthsOf, kitUniforms, type FarAttrs, type StandGrid, type CrownWidthsMeta } from './trees';
+import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, stemArea, growRatio, setGhostBand, crownWidthsOf, kitUniforms, type FarAttrs, type StandGrid, type CrownWidthsMeta } from './trees';
 import { treelineOf } from '../pack/treeline';
 import { TreeShade } from './TreeShade';
 import { crownOverlap, type CrownHit } from './TreeBrush';
@@ -41,15 +41,6 @@ let FAR_RADIUS = 9000;
 let THIN_RADIUS = 4500;
 /** BUG-081: the impostors reach this many times the thinning start, so the ridges round the resort carry trees */
 const FAR_REACH_K = 2;
-/**
- * BUG-081: past the generated stems' reach (FEAT-074) a pack draws its detected crowns alone, and on Vail the stems
- * hold 4.2 times the crowns' canopy (crowns 0.064 of the ground, stems 0.28, the same in closed stands). The
- * impostors there grow by about the square root of 5.2 so the crowns stand in for the stems, and the terrain lets
- * them carry the forest (TerrainMaterial FOREST_DRAWN_FAR) instead of laying flat timber over the ground between.
- */
-const STEM_GROW = 2.2;
-// FEAT-298: a pack with crown widths holds the same canopy with wider crowns and fewer stems, so its crowns grow by
-// less: STEM_GROW / sqrt(crownWidths.crownArea), the detected crowns' drawn area over their area at the species radii
 /** LOD1 reach as a share of 400 m */
 let LOD_K = 1;
 /** BUG-107: how far the LOD0 branch cards reach (m), set by the graphics setting (`lod0ForDensity`, 200 m on Low) */
@@ -186,6 +177,9 @@ interface Cell {
   /** FEAT-074: the decoded stand image; 0 not asked, 1 loading, 2 ready, 3 none */
   stand: StandGrid | null;
   standState: number;
+  /** BUG-123: the stand's stems' crown area per block (trees/stemGrow.ts; empty: none), and per record its crown's growth (null: not worked out) */
+  stemArea: Float32Array | null;
+  grow: Float32Array | null;
   /** the density the stems in `data` were generated at (0 = none) and their collider entries (null = not solid) */
   gen: number;
   col: Float32Array[] | null;
@@ -378,7 +372,7 @@ export class Vegetation {
       this.kit.setBands(band[0], band[1], band[2], band[3], this.impostorsOn);
       this.kit.setThin(THIN_RADIUS);
       // only a pack with stands has stems to stand in for (older packs hold fill trees instead)
-      this.kit.setStemGrow(this.pack.meta.stands && STAND_K > 0 ? NEAR_RADIUS + STAND_MID : 1e8, STEM_GROW / Math.sqrt(this.widths?.crownArea ?? 1));
+      this.kit.setStemGrow(this.pack.meta.stands && STAND_K > 0 ? NEAR_RADIUS + STAND_MID : 1e8, STAND_K);
       for (const n of this.near) n.dirty = true;
     }
     const b0 = band[0], b1 = band[1], b2 = band[2];
@@ -429,7 +423,7 @@ export class Vegetation {
         keep.add(key);
         let cell = this.cells.get(key);
         if (!cell) {
-          cell = { key, cx, cy, data: null, base: null, stand: null, standState: 0, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, trimArea: null, trimmed: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
+          cell = { key, cx, cy, data: null, base: null, stand: null, standState: 0, stemArea: null, grow: null, gen: 0, col: null, own: null, dropped: false, sp: null, va: null, cr: null, yaw: null, tint: null, thin: null, trim: null, trimArea: null, trimmed: null, order: null, tileStart: null, zMin: 0, zMax: 0, lod2: null, imp: null, loading: false, missing: false, shaded: false, grounded: false };
           this.cells.set(key, cell);
         }
         if (!cell.data && !cell.loading && !cell.missing) this.load(cell);
@@ -441,9 +435,9 @@ export class Vegetation {
           for (const n of this.near) n.dirty = true;
         }
         if (stands) {
-          // FEAT-074: the stand's stems in the near and mid rings, solid round the rider
+          // FEAT-074: the stand's stems in the near and mid rings, solid round the rider (BUG-123: a far cell reads it once for its crowns' growth)
           const want = d < (cell.gen > 0 ? standReach + STAND_HYST : standReach) ? STAND_K : 0;
-          if (want > 0 && cell.standState === 0) void this.loadStand(cell, stands);
+          if (cell.standState === 0 && (want > 0 || !cell.stemArea)) void this.loadStand(cell, stands, want > 0);
           if (cell.standState === 1) pending++;
           const target = cell.standState === 2 ? want : 0;
           if (target !== cell.gen) {
@@ -456,7 +450,7 @@ export class Vegetation {
         }
         count += cell.data.length / 6;
         if (this.shade && !cell.shaded) { cell.shaded = true; this.shade.addCell(key, inst.minX + cx * cs, inst.minY + cy * cs, cs, cell.data, cell.cr!, cell.sp!, this.height); }
-        if (!far) { pending++; continue; } // waiting for the impostor bake
+        if (!far || (stands && !cell.stemArea)) { pending++; continue; } // waiting for the impostor bake or the stand
         // which far LODs this cell needs, from the camera's nearest and farthest distance to it
         const minX = inst.minX + cx * cs, minY = inst.minY + cy * cs;
         const dx = Math.max(minX - cpx, 0, cpx - minX - cs), dy = Math.max(minY - cpy, 0, cpy - minY - cs);
@@ -606,21 +600,24 @@ export class Vegetation {
     }
   }
 
-  /** FEAT-074: fetch and decode a cell's stand image */
-  private async loadStand(cell: Cell, st: StandsMeta): Promise<void> {
+  /** FEAT-074: fetch and decode a cell's stand image, keeping it (`keep`) for the stems; BUG-123: its stemArea either way */
+  private async loadStand(cell: Cell, st: StandsMeta, keep: boolean): Promise<void> {
     cell.standState = 1;
-    if (!this.standCells.has(cell.key)) { cell.standState = 3; return; }
+    const none = (): void => { cell.standState = 3; cell.stemArea ??= new Float32Array(0); };
+    if (!this.standCells.has(cell.key)) { none(); return; }
     try {
       const resp = await fetch(`${this.pack.baseUrl}/stands/${cell.key}.png`);
-      if (!resp.ok) { cell.standState = 3; return; }
+      if (!resp.ok) { none(); return; }
       const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
       const px = decodeRGBA(bmp, st.size, st.size * 2);
       bmp.close();
       const inst = this.pack.meta.instances!;
-      cell.stand = { px, size: st.size, res: st.res, minX: inst.minX + cell.cx * inst.cellSize, minY: inst.minY + cell.cy * inst.cellSize, zBase: st.zBase, zScale: st.zScale, hStep: st.hStep };
-      cell.standState = 2;
+      const g = { px, size: st.size, res: st.res, minX: inst.minX + cell.cx * inst.cellSize, minY: inst.minY + cell.cy * inst.cellSize, zBase: st.zBase, zScale: st.zScale, hStep: st.hStep };
+      cell.stemArea ??= stemArea(g, this.widths);
+      if (keep) cell.stand = g;
+      cell.standState = keep ? 2 : 0;
     } catch {
-      cell.standState = 3;
+      none();
     }
   }
 
@@ -778,7 +775,7 @@ export class Vegetation {
     for (let t = 0; t < TILE_N; t++) counts[t + 1] += counts[t];
     const order = new Uint32Array(n), fill = counts.slice(0, TILE_N);
     for (let i = 0; i < n; i++) order[fill[tileOf[i]]++] = i;
-    cell.sp = sp; cell.va = va; cell.cr = cr; cell.yaw = yaw; cell.tint = tint; cell.thin = thin; cell.trim = trim; cell.trimArea = trimArea; cell.trimmed = trimArea ? new Uint8Array(TILE_N) : null; cell.order = order; cell.tileStart = counts;
+    cell.sp = sp; cell.va = va; cell.cr = cr; cell.yaw = yaw; cell.tint = tint; cell.thin = thin; cell.trim = trim; cell.trimArea = trimArea; cell.trimmed = trimArea ? new Uint8Array(TILE_N) : null; cell.order = order; cell.tileStart = counts; cell.grow = null;
     cell.zMin = n ? zMin : 0; cell.zMax = n ? zMax : 0;
   }
 
@@ -857,7 +854,9 @@ export class Vegetation {
     const inst = this.pack.meta.instances!, tw = inst.cellSize / TILES;
     const pos = a.iPos.array as Float32Array, sc = a.iScale.array as Float32Array, yw = a.iYaw.array as Float32Array, col = a.iColor.array as Float32Array, spc = a.iSpec.array as Float32Array;
     let q = 0, tx0 = TILES, tx1 = -1, ty0 = TILES, ty1 = -1;
-    const th = cell.thin!;
+    const th = cell.thin!, gw = a.iGrow.array as Float32Array;
+    const grow = cell.grow ??= growRatio(d, cell.cr!, cell.base!.length / 6, inst.minX + cell.cx * inst.cellSize, inst.minY + cell.cy * inst.cellSize,
+      this.pack.meta.stands ? cell.stemArea : null, this.pack.meta.bounds, this.widths?.crownArea ?? 1);
     f.px = this.cam.x; f.py = -this.cam.z; f.thinned = false;
     for (let t = 0; t < TILE_N; t++) {
       f.mask[t] = 0;
@@ -878,13 +877,14 @@ export class Vegetation {
         yw[q] = cell.yaw![i];
         col[q * 3] = cell.tint![i * 3]; col[q * 3 + 1] = cell.tint![i * 3 + 1]; col[q * 3 + 2] = cell.tint![i * 3 + 2];
         spc[q] = cell.sp![i] + th[i] * 0.98; // BUG-081: the species, and the thinning draw in its fraction
+        gw[q] = grow[i];
         q++;
       }
     }
     f.count = q;
     const g = f.mesh.geometry as THREE.InstancedBufferGeometry;
     g.instanceCount = q;
-    for (const [attr, k] of [[a.iPos, 3], [a.iScale, 2], [a.iYaw, 1], [a.iColor, 3], [a.iSpec, 1]] as const) {
+    for (const [attr, k] of [[a.iPos, 3], [a.iScale, 2], [a.iYaw, 1], [a.iColor, 3], [a.iSpec, 1], [a.iGrow, 1]] as const) {
       attr.clearUpdateRanges(); if (q) attr.addUpdateRange(0, q * k); attr.needsUpdate = true;
     }
     if (q) {
