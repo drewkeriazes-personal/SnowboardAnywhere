@@ -23,7 +23,7 @@ export async function streamUntilSettled(
   const nextFrame = () => new Promise<void>((r) => { const t = setTimeout(r, 50); requestAnimationFrame(() => { clearTimeout(t); r(); }); });
   const saved = { tb: terrain.budgetMs, tm: terrain.maxBuilds, vb: veg.budgetMs };
   terrain.budgetMs = 12; terrain.maxBuilds = 64; veg.budgetMs = 12;
-  const tiles = () => [pack.fine, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.moguls].reduce((n, t) => n + (t?.inFlight ?? 0), 0);
+  const tiles = () => [pack.fine, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.moguls, pack.traffic].reduce((n, t) => n + (t?.inFlight ?? 0), 0);
   const t0 = performance.now();
   const r: StreamResult = { settled: false, ms: 0, frames: 0, terrain: 0, tiles: 0, trees: 0, rocks: 0, shrubs: 0 };
   let peak = 1, quiet = 0;
