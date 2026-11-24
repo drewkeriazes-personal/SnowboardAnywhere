@@ -6,7 +6,8 @@
 //   SHOT_REAL_PAD=1: let pages see the controllers plugged into this PC (BUG-137); by default every context
 //     gets navigator.getGamepads() returning [], so a press, stick drift or a virtual pad can't move a check's
 //     menus. A tool that fakes a pad (padcheck, menucheck) installs its own stub afterwards, which wins.
-// Prints the renderer it got. On software it appends &lowgfx to SHOT_QUERY so big packs don't crawl.
+// Prints the renderer it got. On software it appends &lowgfx to SHOT_QUERY so big packs don't crawl. On the real GPU
+//   every page starts on the High preset (FEAT-374: the game defaults to Medium); SHOT_DEFAULTS=1 keeps the defaults.
 // Local: game/node_modules (npm i). Cloud sandbox: preinstalled copy under /opt/npm-tools.
 const { chromium } = await import('playwright').catch(() => import('/opt/npm-tools/node_modules/playwright/index.js').then((m) => m.default));
 
@@ -30,6 +31,7 @@ export async function launchBrowser(args = process.argv.slice(2), extraArgs = []
   hidePads(browser);
   const renderer = await rendererName(browser);
   const software = /swiftshader|llvmpipe|software/i.test(renderer);
+  if (!software && process.env.SHOT_DEFAULTS !== '1') seedHigh(browser);
   console.log(`GPU: ${renderer}${software ? ' (software)' : ''} [${mode}]`);
   if (software && forceGpu) {
     await browser.close();
@@ -51,6 +53,26 @@ function hidePads(browser) {
     const context = await newContext(options);
     await context.addInitScript(() => {
       Object.defineProperty(Navigator.prototype, 'getGamepads', { configurable: true, writable: true, value: () => [] });
+    });
+    return context;
+  };
+  return browser;
+}
+
+/** FEAT-374: the game's default preset is Medium, but the GPU runs measure the most a player can pick, so every
+ *  context on the real GPU starts with the High preset's fields saved (`applyQuality(s, 'high')` in
+ *  src/ui/Settings.ts). Only when nothing is saved yet: a tool that seeds or sets its own settings still wins, and
+ *  ?lowgfx forces Low over it in Game.ts. SHOT_DEFAULTS=1 runs on the shipped defaults instead. */
+function seedHigh(browser) {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (options) => {
+    const context = await newContext(options);
+    await context.addInitScript(() => {
+      try {
+        if (localStorage.getItem('settings') === null) {
+          localStorage.setItem('settings', JSON.stringify({ v: 1, quality: 'high', shadows: true, treeDensity: 1, forestDensity: 1, pixelRatio: Math.min(2, window.devicePixelRatio || 1) }));
+        }
+      } catch { /* about:blank and other opaque origins have no storage */ }
     });
     return context;
   };
