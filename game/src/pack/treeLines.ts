@@ -693,6 +693,33 @@ export class TreeLines {
     return false;
   }
 
+  /**
+   * FEAT-373: the line whose rim is nearest (x, y) (the least distance past its half-width), of those not faint and within
+   * their trench and berm reach (the segment grid's pad): into `out` the distance to its centreline (m), its half-width (m),
+   * its strength under the forest gate (an open stretch ungated) and the unit direction (pack) from (x, y) toward it. False
+   * when there is none.
+   */
+  nearestLine(x: number, y: number, out: number[]): boolean {
+    const ids = this.grid.at(x, y), pad = EDGE + TRENCH_WALL + BERM_W;
+    if (!ids) return false;
+    const s = this.seg;
+    let best = pad, open = false;
+    for (const i of ids) {
+      const o = i * LINE_SEG, hw = s[o + 4];
+      if (s[o + 5] < STEM_FAINT) continue;
+      const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
+      let t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + dx * t - x, qy = ay + dy * t - y, d = Math.hypot(qx, qy);
+      if (d - hw >= best) continue;
+      best = d - hw; open = this.open[i] === 1;
+      out[0] = d; out[1] = hw; out[2] = s[o + 5]; out[3] = d > 1e-6 ? qx / d : 0; out[4] = d > 1e-6 ? qy / d : 0;
+    }
+    if (best >= pad) return false;
+    if (!open) out[2] *= this.gate(x, y);
+    return true;
+  }
+
   /** FEAT-303: how far a tree's lower branches are trimmed here, 0..1 */
   trimAt(x: number, y: number): number {
     const tx = Math.floor(x / TRIM_TILE), ty = Math.floor(y / TRIM_TILE), key = ty * 100003 + tx;
