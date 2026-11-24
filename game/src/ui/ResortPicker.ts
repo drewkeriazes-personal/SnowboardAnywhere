@@ -25,9 +25,10 @@ import { BUILD_CLOCK_SLACK_MS, buildLabel, buildLink, isOpenBuild, type BuildInf
  * a Favorites heading, then All resorts; the starred slugs stay in localStorage (FAVORITES_KEY, this browser only).
  * The star is its own button beside the row: the arrows reach it (right from the row) and Enter / A toggles it.
  */
-interface CatalogEntry { slug: string; name: string; status: string; pack: { version: number; formatVersion: number; bytes: number } }
-/** status: the catalog's, for a pack downloaded from it (FEAT-248: 'preview' did not pass the DATA-022 gate) */
-interface LocalPack { name: string; formatVersion: number; version?: number; status?: string }
+interface CatalogEntry { slug: string; name: string; status: string; pack: { version: number; formatVersion: number; bytes: number; build?: string } }
+/** status: the catalog's, for a pack downloaded from it (FEAT-248: 'preview' did not pass the DATA-022 gate);
+ *  build: its meta.build; copy: a get --from copy (BUG-175) */
+interface LocalPack { name: string; formatVersion: number; version?: number; status?: string; build?: string | null; copy?: boolean }
 interface CatalogReply { formatVersion: number; catalog: { resorts?: CatalogEntry[] } | null; local: Record<string, LocalPack> }
 interface Job { phase: 'download' | 'unzip' | 'done' | 'error'; received: number; total: number; error?: string }
 /** one match of `resort.py search --json` (MapPacker FEAT-279) */
@@ -73,6 +74,28 @@ export function favoritesFirst(base: Row[], favs: ReadonlySet<string>): Row[] {
 /** FEAT-248: the badge on a `preview` pack (status "preview" in the catalog: it did not pass the DATA-022 gate) */
 export const PREVIEW_BADGE = '<span class="badge-preview" title="Did not pass the resort quality gate yet">Preview</span>';
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** a meta.build stamp's time ("20261117T212451Z", a catalog's may end in "-<hash>"), comparable as text; '' for none */
+const buildStamp = (b?: string | null) => /^\d{8}T\d{6}Z/.exec(b ?? '')?.[0] ?? '';
+/** "20261117T212451Z" -> "Nov 17" */
+const buildDay = (stamp: string) => `${MONTHS[Number(stamp.slice(4, 6)) - 1]} ${Number(stamp.slice(6, 8))}`;
+
+/**
+ * BUG-175: a pack built on this PC or copied in with get --from (no catalog marker, so no version: get_pack never
+ * replaces it on its own) whose meta.build is older than the published pack at this game's format: "Local build from
+ * Nov 17; v9 from Nov 21 is published" (`name` goes after Local). '' for a current or newer one, a pack from the
+ * catalog, or a build stamp missing on either side. The picker's row and ReleaseToast's load check both say it.
+ */
+export function staleNote(l: Pick<LocalPack, 'version' | 'build' | 'copy'> | undefined, c: { pack: { formatVersion: number; version?: number; build?: string } } | undefined, name = ''): string {
+  if (!l || l.version !== undefined || !c || c.pack.formatVersion !== PACK_FORMAT) return '';
+  const mine = buildStamp(l.build), pub = buildStamp(c.pack.build);
+  if (!mine || !pub || pub <= mine) return '';
+  return `Local ${name ? `${name} ` : ''}${l.copy ? 'copy' : 'build'} from ${buildDay(mine)}; ${c.pack.version !== undefined ? `v${c.pack.version}` : 'a pack'} from ${buildDay(pub)} is published`;
+}
+
+/** the dev server, `npm run host` and the launcher have the __packs routes; a static host does not (no 404 asked for) */
+export const hasPackRoutes = (): boolean => !!(import.meta.env.DEV || import.meta.env.VITE_HOST_NAME || import.meta.env.VITE_HOSTED);
+
 /**
  * FEAT-248: the status the catalog gave a pack downloaded from it ('preview', 'playable'), which get_pack.mjs keeps
  * with the download (GET __packs/local); '' for a pack built on this PC or copied in, one downloaded before FEAT-248,
@@ -80,7 +103,7 @@ export const PREVIEW_BADGE = '<span class="badge-preview" title="Did not pass th
  * a static server logs no 404.
  */
 export async function packStatus(slug: string): Promise<string> {
-  if (!import.meta.env.DEV && !import.meta.env.VITE_HOST_NAME && !import.meta.env.VITE_HOSTED) return '';
+  if (!hasPackRoutes()) return '';
   try {
     const r = await fetch(api('local'), { cache: 'no-store' });
     if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) return '';
@@ -130,13 +153,14 @@ function rows(current: string, built: { slug: string; name: string }[], reply: C
   const out: Row[] = [];
   const localNote = (slug: string): Pick<Row, 'note' | 'act'> => {
     const l = local[slug], c = cat.find((e) => e.slug === slug && e.pack.formatVersion === PACK_FORMAT);
-    if (slug === current) return { note: 'here now', act: 'load' };
+    const stale = staleNote(l, c); // BUG-175
+    if (slug === current) return { note: stale ? `here now. ${stale}` : 'here now', act: 'load' };
     // BUG-106: `version` means the pack came from the catalog (it carries .catalog.json), so get_pack replaces it
     // on its own, also when it is an older format. A pack built on this PC or copied in with --from has no version:
     // get_pack replaces it only with --force, so an old one says "needs rebuild".
     if (l?.version && c && (l.formatVersion < PACK_FORMAT || c.pack.version > l.version)) return { note: `Update (${mb(c.pack.bytes)})`, act: 'get' };
     if (l && l.formatVersion < PACK_FORMAT) return { note: 'needs rebuild', act: 'load' };
-    return { note: '', act: 'load' };
+    return { note: stale, act: 'load' };
   };
   const preview = (slug: string) => local[slug]?.status === 'preview';
   for (const r of built) out.push({ ...r, ...localNote(r.slug), on: r.slug === current, preview: preview(r.slug) });

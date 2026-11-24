@@ -1,6 +1,6 @@
 import { PACK_FORMAT } from '../pack/format';
 import { buildLabel, buildLink, type BuildChange, type BuildInfo, type BuildWatch } from './BuildWatch';
-import { PREVIEW_BADGE, slugName } from './ResortPicker';
+import { PREVIEW_BADGE, slugName, staleNote } from './ResortPicker';
 
 /**
  * FEAT-248 (EPIC-17): when a maintainer's resort build is published, the pack downloads on its own and a toast says
@@ -17,6 +17,12 @@ import { PREVIEW_BADGE, slugName } from './ResortPicker';
  * job's error carries `local` and the toast asks, Replace (POST __packs/get {slug, replace: true}, then ready with
  * Ride, or the reload for Download and ride) or Keep mine (the pack is left and the run is not announced again). It
  * is a choice, not a failed download, and it never names get_pack's --force.
+ *
+ * BUG-175: the same choice at load, with no build behind it (`checkStale`): a pack built or copied in here whose
+ * meta.build is older than the published one (ResortPicker's staleNote) gets "Local Vail build from Nov 17; v9 from
+ * Nov 21 is published" with Replace and Keep mine. It is announced once per published build (`<slug>@<build>` kept
+ * with the run ids), so Keep mine does not ask again until a newer one is published. Replace on the resort being
+ * ridden downloads, then reloads into it.
  *
  * One toast per build: a No change or Failed build gets one too (no Ride; Failed links its run or publish PR). The
  * run ids announced are kept in localStorage, so a reload does not say the same build again. A build that finished
@@ -70,11 +76,17 @@ export function packHref(slug: string, href: string): string {
   return u.toString();
 }
 
-interface CatalogEntry { slug: string; name: string; status: string; pack: { formatVersion: number; version?: number } }
-interface Listing { formatVersion: number; catalog: { resorts?: CatalogEntry[]; test?: CatalogEntry[] } | null; local: Record<string, { name: string; formatVersion: number; status?: string }> }
+interface CatalogEntry { slug: string; name: string; status: string; pack: { formatVersion: number; version?: number; build?: string } }
+interface Listing { formatVersion: number; catalog: { resorts?: CatalogEntry[]; test?: CatalogEntry[] } | null; local: Record<string, { name: string; formatVersion: number; status?: string; version?: number; build?: string | null; copy?: boolean }> }
 interface Job { phase: 'download' | 'unzip' | 'done' | 'error'; received: number; total: number; error?: string; local?: LocalKind }
 /** how a download ended: why '' when the pack is in; local when a pack of this PC is in the way */
 interface Fetched { why: string; local?: LocalKind }
+/** what a toast is about: a build's run id, or BUG-175's `<slug>@<published build>`; the id it is announced under */
+type Key = number | string;
+/** a download's toast: its key, the pack, and the run or publish PR it links to (none for BUG-175's load check) */
+interface Subject { key: Key; slug: string; link?: { href: string; text: string } }
+/** BUG-140: what Replace deletes */
+const deleted = (k: LocalKind) => k === 'copy' ? 'The copy is deleted (the MapPacker build is not touched).' : 'Your local build is deleted.';
 
 export interface ReleaseOpts {
   builds: Pick<BuildWatch, 'onChange'>;
@@ -103,7 +115,7 @@ export class ReleaseToasts {
   /** runs this page has acted on (a download may still be going) */
   private readonly handled = new Set<number>();
   /** this page's copy, for a storage that throws */
-  private announcedHere: number[] = [];
+  private announcedHere: Key[] = [];
 
   constructor(o: ReleaseOpts) {
     let storage: Pick<Storage, 'getItem' | 'setItem'> | null = null;
@@ -127,17 +139,17 @@ export class ReleaseToasts {
   /** listen to the watcher; returns the unsubscribe */
   start(): () => void { return this.o.builds.onChange((_all, changes) => this.changed(changes)); }
 
-  /** the run ids already announced (on this PC, newest last) */
-  announced(): number[] {
+  /** the run ids (and BUG-175's stale-pack keys) already announced (on this PC, newest last) */
+  announced(): Key[] {
     try {
       const v = JSON.parse(this.o.storage?.getItem(ANNOUNCED_KEY) ?? '[]');
-      if (Array.isArray(v)) return [...new Set([...v.filter(Number.isInteger), ...this.announcedHere])];
+      if (Array.isArray(v)) return [...new Set([...v.filter((x): x is Key => Number.isInteger(x) || typeof x === 'string'), ...this.announcedHere])];
     } catch { /* unreadable: this page's copy */ }
     return this.announcedHere.slice();
   }
 
-  private remember(runId: number): void {
-    const next = [...this.announced().filter((x) => x !== runId), runId].slice(-ANNOUNCED_MAX);
+  private remember(key: Key): void {
+    const next = [...this.announced().filter((x) => x !== key), key].slice(-ANNOUNCED_MAX);
     this.announcedHere = next;
     try { this.o.storage?.setItem(ANNOUNCED_KEY, JSON.stringify(next)); } catch { /* private window, blocked storage */ }
   }
@@ -151,20 +163,37 @@ export class ReleaseToasts {
       if (!prev && (!b.doneAt || this.o.now() - Date.parse(b.doneAt) > RECENT_MS)) continue;
       if (this.announced().includes(b.runId)) continue;
       this.handled.add(b.runId);
-      const id = String(b.runId), name = slugName(b.slug), link = buildLink(b);
-      if (b.state === 'failed') this.say(b, { id, kind: 'failed', title: `${name}: the build failed`, detail: buildLabel(b), link });
-      else if (b.state === 'no-change') this.say(b, { id, kind: 'no-change', title: `${name}: no change`, detail: 'The build finished with nothing new to publish.', link });
+      const id = String(b.runId), name = slugName(b.slug), link = buildLink(b), s: Subject = { key: b.runId, slug: b.slug, link };
+      if (b.state === 'failed') this.say(b.runId, { id, kind: 'failed', title: `${name}: the build failed`, detail: buildLabel(b), link });
+      else if (b.state === 'no-change') this.say(b.runId, { id, kind: 'no-change', title: `${name}: no change`, detail: 'The build finished with nothing new to publish.', link });
       else if (b.slug === this.o.current()) {
         // the pack being ridden: not swapped under the running game
-        this.say(b, { id, kind: 'update', title: `A new ${name} is published`, detail: 'Download it, then ride it (the page reloads).', link,
-          action: { label: 'Download and ride', run: () => { void this.download(b, true); } } });
-      } else void this.download(b, false);
+        this.say(b.runId, { id, kind: 'update', title: `A new ${name} is published`, detail: 'Download it, then ride it (the page reloads).', link,
+          action: { label: 'Download and ride', run: () => { void this.download(s, true); } } });
+      } else void this.download(s, false);
     }
   }
 
-  /** the toast that ends a build's story on this PC: it is not announced again */
-  private say(b: BuildInfo, m: ToastModel): void {
-    this.remember(b.runId);
+  /**
+   * BUG-175: once at load, each pack built or copied in here that is older than the published one gets BUG-140's
+   * Replace / Keep mine toast, once per published build. A server without the pack routes, or offline: nothing.
+   */
+  async checkStale(): Promise<void> {
+    const listing = await this.listing();
+    for (const e of [...(listing?.catalog?.resorts ?? []), ...(listing?.catalog?.test ?? [])].filter((x) => x.pack)) {
+      const l = listing?.local?.[e.slug], key = `${e.slug}@${e.pack.build}`;
+      const note = l ? staleNote(l, e, l.name) : '';
+      if (!l || !note || this.announced().includes(key)) continue;
+      const s: Subject = { key, slug: e.slug };
+      this.say(key, { id: key, kind: 'local', title: `A newer ${l.name} is published`, detail: `${note}. Replace it? ${deleted(l.copy ? 'copy' : 'built')}`,
+        action: { label: 'Replace', run: () => { void this.download(s, e.slug === this.o.current(), true); } },
+        alt: { label: 'Keep mine', run: () => {} } });
+    }
+  }
+
+  /** the toast that ends a story on this PC: it is not announced again */
+  private say(key: Key, m: ToastModel): void {
+    this.remember(key);
     this.o.view.put(m);
   }
 
@@ -178,17 +207,17 @@ export class ReleaseToasts {
   }
 
   /** start the download and follow it (replace: over a pack built or copied in here, BUG-140) */
-  private async fetchPack(b: BuildInfo, replace: boolean, progress: (detail: string) => void): Promise<Fetched> {
+  private async fetchPack(slug: string, replace: boolean, progress: (detail: string) => void): Promise<Fetched> {
     for (let attempt = 0; ; attempt++) {
       let why = '';
       try {
-        const body = JSON.stringify(replace ? { slug: b.slug, replace: true } : { slug: b.slug });
+        const body = JSON.stringify(replace ? { slug, replace: true } : { slug });
         const r = await this.o.fetch(this.api('get'), { method: 'POST', headers: { 'content-type': 'application/json' }, body });
         if (!r.ok) why = ((await r.json().catch(() => ({}))) as Job).error ?? `HTTP ${r.status}`;
         else {
           for (;;) {
             await this.o.sleep(JOB_POLL_MS);
-            const jr = await this.o.fetch(this.api(`job?slug=${encodeURIComponent(b.slug)}`), { cache: 'no-store' });
+            const jr = await this.o.fetch(this.api(`job?slug=${encodeURIComponent(slug)}`), { cache: 'no-store' });
             const j = await jr.json().catch(() => ({})) as Job;
             if (!jr.ok) { why = j.error ?? `HTTP ${jr.status}`; break; } // 404: the server restarted and lost the job
             if (j.phase === 'error') {
@@ -208,12 +237,12 @@ export class ReleaseToasts {
     }
   }
 
-  private async download(b: BuildInfo, thenRide: boolean, replace = false): Promise<void> {
-    const id = String(b.runId), link = buildLink(b);
+  private async download(b: Subject, thenRide: boolean, replace = false): Promise<void> {
+    const id = String(b.key), link = b.link;
     let name = slugName(b.slug);
     const busy = (detail: string) => this.o.view.put({ id, kind: 'downloading', title: thenRide ? `Getting the new ${name}` : `${name} is published`, detail, link });
     busy('Downloading...');
-    const { why, local: inTheWay } = await this.fetchPack(b, replace, busy);
+    const { why, local: inTheWay } = await this.fetchPack(b.slug, replace, busy);
     const listing = await this.listing();
     const entries = [...(listing?.catalog?.resorts ?? []), ...(listing?.catalog?.test ?? [])].filter((e) => e.slug === b.slug && e.pack);
     const local = listing?.local?.[b.slug];
@@ -224,26 +253,24 @@ export class ReleaseToasts {
       // BUG-140: not a failure; the player's pack stays unless they say Replace
       const v = entries.find((e) => e.pack.formatVersion === PACK_FORMAT)?.pack.version;
       const pub = v !== undefined ? `the published v${v}` : 'the published pack';
-      const detail = inTheWay === 'copy'
-        ? `You have a ${name} pack copied in from a MapPacker build. Replace it with ${pub}? The copy is deleted (the MapPacker build is not touched).`
-        : `You have a ${name} pack built on this PC. Replace it with ${pub}? Your local build is deleted.`;
-      this.say(b, { id, kind: 'local', title: `${name}${v !== undefined ? ` v${v}` : ''} is published`, detail, link,
+      const detail = `You have a ${name} pack ${inTheWay === 'copy' ? 'copied in from a MapPacker build' : 'built on this PC'}. Replace it with ${pub}? ${deleted(inTheWay)}`;
+      this.say(b.key, { id, kind: 'local', title: `${name}${v !== undefined ? ` v${v}` : ''} is published`, detail, link,
         action: { label: 'Replace', run: () => { void this.download(b, thenRide, true); } },
         alt: { label: 'Keep mine', run: () => {} } });
       return;
     }
     if (f !== undefined && f !== PACK_FORMAT) {
       const newer = f > PACK_FORMAT;
-      this.say(b, { id, kind: 'blocked', title: `${name} was published`, link,
+      this.say(b.key, { id, kind: 'blocked', title: `${name} was published`, link,
         detail: newer ? `It needs a newer game: the pack is format ${f}, this game reads ${PACK_FORMAT} (git pull).` : `It needs rebuild: the pack is format ${f}, this game reads ${PACK_FORMAT}.` });
       return;
     }
-    if (why) { this.say(b, { id, kind: 'failed', title: `${name}: the download failed`, detail: why, link }); return; }
+    if (why) { this.say(b.key, { id, kind: 'failed', title: `${name}: the download failed`, detail: why, link }); return; }
     this.o.installed(b.slug);
     const preview = local?.status === 'preview' || (!local?.status && entries.some((e) => e.status === 'preview'));
     const ride = () => this.o.navigate(packHref(b.slug, this.o.href()));
-    if (thenRide) { this.remember(b.runId); ride(); return; }
-    this.say(b, { id, kind: 'ready', title: `${name} is ready`, preview, action: { label: 'Ride', run: ride } });
+    if (thenRide) { this.remember(b.key); ride(); return; }
+    this.say(b.key, { id, kind: 'ready', title: `${name} is ready`, preview, action: { label: 'Ride', run: ride } });
   }
 }
 
