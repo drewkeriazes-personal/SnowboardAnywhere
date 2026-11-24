@@ -425,11 +425,13 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         gWorn = clamp((vMogul.y - floor(vMogul.y + 0.02)) / ${WORN_K.toFixed(2)}, 0.0, 1.0);
         float skiedK = max(uSkied, smoothstep(0.5, 0.9, gWorn));
         // FEAT-380: the old tracks go where riders do (oldTracks.ts); a tree line's floor is ridden whatever the traffic says.
-        // A busy groomer is scraped smooth rather than more cut up: shallower grooves, a touch greyer and sleeker snow
-        float trkDens = max(vTrack.z, 0.6 * smoothstep(0.5, 0.9, gWorn));
-        gScrape = smoothstep(0.55, 0.95, vTrack.z) * uSkied * wGroom;
+        // Past TRK_BUSY a busy groomer is scraped smooth rather than more cut up: no more tracks, shallower grooves, a touch
+        // greyer and sleeker snow
+        #define TRK_BUSY 0.55
+        float trkDens = max(min(vTrack.z, TRK_BUSY), 0.6 * smoothstep(0.5, 0.9, gWorn));
+        gScrape = smoothstep(TRK_BUSY, 0.9, vTrack.z) * uSkied * wGroom;
         gTrk = vec3(0.0);
-        if (skiedK > 0.01 && trackFade > 0.0 && trkDens > 0.0) gTrk = oldTracks(wp.xz, vTrack.xy, trkDens, 1.0 + 0.8 * uSpring) * trackFade * (1.0 - 0.6 * gScrape);
+        if (skiedK > 0.01 && trackFade > 0.0 && trkDens > 0.0) gTrk = oldTracks(wp.xz, vTrack.xy, trkDens, 1.0 + 0.8 * uSpring) * trackFade * (1.0 - 0.75 * gScrape);
         groomed *= (1.0 + 0.035 * gTrk.x * uSkied) * (1.0 - 0.025 * gScrape);
         snow *= 1.0 + 0.03 * gTrk.x * skiedK;
         float wallK = smoothstep(0.04, 0.4, gWorn) * (1.0 - 0.6 * smoothstep(0.8, 1.0, gWorn));
@@ -657,7 +659,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
             #define CHOPH(q) (fbm2((q) * 0.9) * 0.35 + fbm2((q) * 2.2) * 0.15)
             float c0 = CHOPH(wpn.xz), cx = CHOPH(wpn.xz + vec2(ec, 0.0)), cz = CHOPH(wpn.xz + vec2(0.0, ec));
             // FEAT-380: a busy groomer's loose snow is pushed to its edges
-            float sides = smoothstep(0.55, 0.95, vTrack.z) * uSkied * smoothstep(0.1, 0.35, vColor.b) * (1.0 - smoothstep(0.55, 0.9, vColor.b));
+            float sides = smoothstep(TRK_BUSY, 0.9, vTrack.z) * uSkied * smoothstep(0.1, 0.35, vColor.b) * (1.0 - smoothstep(0.55, 0.9, vColor.b));
             float chop = skiedN * (1.0 - 0.7 * uSpring) * min(wS + 0.5 * sides * snowW, 1.0) * (1.0 - smoothstep(40.0, 120.0, length(cameraPosition - wpn)));
             vec3 cb = normalize(vec3(-(cx - c0) / ec, 1.0, -(cz - c0) / ec));
             nn = normalize(mix(nn, normalize(t * cb.x + nn * cb.y + b * cb.z), 0.6 * chop));
