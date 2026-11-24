@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_BODY, TREE_FADE_FRAG_ALPHA } from '../TreeFade';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 import { TRIM, TRIM_GLSL } from './trim';
+import { TRUNK_ROOT } from '../TreeWells';
 
 /**
  * FEAT-156: the tree kit's materials. Each LOD draws only inside its distance band (measured from the
@@ -67,6 +68,8 @@ const LOD_VERT = /* glsl */ `
   #ifndef SHRUB
     // FEAT-303: per instance (t, bare, hs): how far the tree's lower branches are trimmed, bare below the line, the line's height scale (trim.ts)
     attribute vec3 aTrim;
+    // BUG-177: 1 on the trunk's base ring (generate.ts trunk)
+    attribute float kRoot;
   #endif
   varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
   // 0..1 visibility at this distance; isIn is 1 on the fade-in edge, 0 on the fade-out edge
@@ -147,6 +150,9 @@ const KIT_BEGIN = /* glsl */ `
         }
       }
     }
+    // BUG-177: the base ring reaches TRUNK_ROOT m into the ground whatever the tree's height, so a trunk stands on the
+    // floor of its tree well (world/TreeWells.ts) instead of floating over it; the instance scales y by the height
+    transformed.y -= kRoot * ${TRUNK_ROOT.toFixed(2)} / length(ktm[1].xyz);
   #endif
   {
     float kPhase = dot(kOrigin.xz, vec2(0.071, 0.113));
