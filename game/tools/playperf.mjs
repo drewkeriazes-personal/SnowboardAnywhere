@@ -9,7 +9,7 @@
 // and "tuck" (ArrowUp held). Per window: frame interval median / p95 / p99 / max and frames over 33 ms; main-thread
 // time per frame (the game's requestAnimationFrame callbacks) and its share per system (terrain, trees, render
 // submit, ...: their methods on window.__sim timed in place); draw calls, triangles, chunks, tree instances, JS heap.
-// The frame cap is turned off for the run (the settings stay at their defaults, high), so the interval is what the GPU allows.
+// The frame cap is turned off for the run (High: tools/browser.mjs seeds it on the GPU, FEAT-374), so the interval is what the GPU allows.
 // Slow frames (over 33 ms) are matched against what changed in them: new shader programs, geometries, textures, tree
 // repacks and cells, decoded tiles, terrain builds. --ablate then poses the eye camera at the spot and times the frame
 // with each scene group hidden in turn, and without the shadow map pass (the cost of each, GPU included).

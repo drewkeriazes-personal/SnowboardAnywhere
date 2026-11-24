@@ -179,7 +179,7 @@ Rider, Accessibility, Credits), the settings in the middle, and what the focused
 | V (Triangle / Y), hold | peek at the game (from the pause menu) |
 | Esc (Circle / B) | clear the search, then close (with graphics changes waiting, it asks Apply or Discard first) |
 
-Type in the search box to find a setting in any category. Graphics has presets (Low, Medium, High, and Ultra:
+Type in the search box to find a setting in any category. Graphics has presets (Low, Medium (the default), High, and Ultra:
 High plus cascaded shadows at full resolution; the detailed trees reach 800 m on High, 400 m on Medium and 200 m on Low, simple cones beyond) over its advanced options, and a Frame cap (30, 60 or Uncapped);
 the game draws the settings you pick and never lowers them on its own. The preset and the advanced options
 (Detail, Shadows, Cascaded shadows, Trees, Forest, Resolution, Snow dents) wait, marked Pending, until you press
@@ -188,7 +188,7 @@ the menu. Leaving Settings with changes waiting asks Apply or Discard. Everythin
 applies at once. Gameplay has Feel presets (Arcade,
 Realistic) and Jump height: Realistic (the default; a full charge clears about knee height, a tap is a small hop) or
 Arcade (big air, about 2.5 m on a full charge). Kickers, lips and rollers launch you from your speed either way. Time trial best times and ghosts are kept for each Jump height, so Realistic and Arcade runs never race each other; changing it mid-run cancels the run. It also sets what a rock does: on Realistic a rock never launches you: with enough speed and a line that is not too steep you ride up and over it, scraping, otherwise it stops you like a tree; on Arcade a rock is a kicker that sends you from your speed. Accessibility has UI scale and Reduce motion (camera shake, first person shake and speed
-lines off together). Camera has See-through trees (on by default): in the third-person cameras, a tree that hides you or
+lines off together). Camera shake, speed lines, Widen view with speed and first person shake start off, and the goggle frame barely shows (the lens tint stays); turn them on under Camera. Camera has See-through trees (on by default): in the third-person cameras, a tree that hides you or
 your line ahead turns see-through (trees off to the side stay solid); a tree you are about to hit stays solid. Opened from the pause menu, changes show at once behind the screen, with the frame rate in the corner.
 
 ### Controllers
