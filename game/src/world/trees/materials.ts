@@ -25,7 +25,7 @@ export const kitUniforms = {
   uWindTime: { value: 0 },
   /** BUG-081: past this distance (m) the impostors thin (see THIN_GLSL) */
   uThin: { value: 1e8 },
-  /** BUG-081: (where the generated stems stop, m; the crowns' growth past it, linear; Vegetation STEM_GROW) */
+  /** BUG-081: (where the generated stems stop, m; the Forest density, which scales each crown's growth past it: BUG-123 iGrow) */
   uStemGrow: { value: new THREE.Vector2(1e8, 1) },
   /** BUG-121: the impostors' far edge (m): the share kept falls to none from x to y (see THIN_GLSL) */
   uFarEdge: { value: new THREE.Vector2(1e8, 1e8 + 1) },
@@ -45,9 +45,10 @@ export const kitUniforms = {
  */
 const THIN_GLSL = /* glsl */ `
   uniform float uThin; uniform vec2 uStemGrow; uniform vec2 uFarEdge;
-  float thinTree(vec3 o, float h) {
+  float thinTree(vec3 o, float h, float r) {
     float d = distance(o.xz, uLodCam.xz);
-    float g = mix(1.0, uStemGrow.y, smoothstep(uStemGrow.x, uStemGrow.x * 1.5, d));
+    // BUG-123: r is the crown's squared growth less one (trees/stemGrow.ts), for the stems of its block
+    float g = mix(1.0, sqrt(1.0 + uStemGrow.y * r), smoothstep(uStemGrow.x, uStemGrow.x * 1.5, d));
     float keep = (d <= uThin ? 1.0 : uThin * uThin / (d * d)) * (1.0 - smoothstep(uFarEdge.x, uFarEdge.y, d));
     if (keep >= 1.0) return g;
     vLodVis *= clamp((keep - h) * 12.0 / max(keep, 1e-4), 0.0, 1.0);
@@ -325,7 +326,7 @@ export const farLight: FarLight = {
 
 /**
  * LOD2 (crossed quads, `billboard` false) or the impostor (camera-facing quad). Per instance: iPos
- * (base, world), iScale (crown radius, height, m), iYaw, iColor (variation), iSpec (kit species).
+ * (base, world), iScale (crown radius, height, m), iYaw, iColor (variation), iSpec (kit species), iGrow (BUG-123, thinTree).
  */
 export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: THREE.Texture, halfW: number[], angles: number, rows: number, band: Band, billboard: boolean): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
@@ -338,7 +339,7 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
       uSunDir: farLight.sunDir, uSunColor: farLight.sunColor, uHemiSky: farLight.hemiSky, uHemiGround: farLight.hemiGround,
     },
     vertexShader: /* glsl */ `
-      attribute vec3 iPos; attribute vec2 iScale; attribute float iYaw; attribute vec3 iColor; attribute float iSpec;
+      attribute vec3 iPos; attribute vec2 iScale; attribute float iYaw; attribute vec3 iColor; attribute float iSpec; attribute float iGrow;
       #ifndef BILLBOARD
         attribute float aCol;
       #endif
@@ -358,7 +359,7 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
         float col;
         vec3 world;
         #ifdef BILLBOARD
-          float grow = thinTree(iPos, fract(iSpec) / 0.98);
+          float grow = thinTree(iPos, fract(iSpec) / 0.98, iGrow);
           hw *= grow;
           vec3 toCam = cameraPosition - iPos;
           float viewYaw = atan(toCam.x, toCam.z);

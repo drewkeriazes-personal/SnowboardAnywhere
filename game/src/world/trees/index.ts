@@ -10,6 +10,7 @@ export { kitUniforms, treeMaterial, treeDepthMaterial, newBand } from './materia
 export { SHRUBS, SHRUB_KINDS, WILLOW, JUNIPER, SAGE, YOUNG_CONIFER, OAK, buildShrubGeometries, type ShrubKind, type ShrubGeometrySet } from './shrubs';
 export { treeSnowState, winterDepth, setGhostBand, type TreeSnowState } from './snow';
 export { generateStems, type StandGrid } from './stands';
+export { stemArea, growRatio } from './stemGrow';
 export { crownWidthsOf, type CrownWidthsMeta } from './widths';
 
 /**
@@ -113,8 +114,8 @@ export class TreeKit {
 
   /** BUG-081: where the impostors start to thin (m from the camera) */
   setThin(d: number): void { kitUniforms.uThin.value = d; }
-  /** BUG-081: past `d` m the impostors grow by `g` (linear) to stand in for the stems that stop there */
-  setStemGrow(d: number, g: number): void { kitUniforms.uStemGrow.value.set(d, g); }
+  /** BUG-081: past `d` m the impostors grow to stand in for the stems that stop there, `k` of them (the Forest density; BUG-123: each by its iGrow) */
+  setStemGrow(d: number, k: number): void { kitUniforms.uStemGrow.value.set(d, k); }
   /** per frame: the camera the bands are measured from, and the clock the LOD0 sway runs on */
   setView(camPos: THREE.Vector3, timeS: number): void {
     kitUniforms.uLodCam.value.copy(camPos);
@@ -216,6 +217,7 @@ export interface FarAttrs {
   iYaw: THREE.InstancedBufferAttribute;
   iColor: THREE.InstancedBufferAttribute;
   iSpec: THREE.InstancedBufferAttribute;
+  iGrow: THREE.InstancedBufferAttribute;
   count: number;
 }
 export function farAttrs(n: number): FarAttrs {
@@ -225,6 +227,7 @@ export function farAttrs(n: number): FarAttrs {
     iYaw: new THREE.InstancedBufferAttribute(new Float32Array(n), 1),
     iColor: new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3),
     iSpec: new THREE.InstancedBufferAttribute(new Float32Array(n), 1),
+    iGrow: new THREE.InstancedBufferAttribute(new Float32Array(n), 1),
     count: n,
   };
 }
@@ -239,7 +242,7 @@ export function farGeometry(template: THREE.InstancedBufferGeometry, a: FarAttrs
   const g = new THREE.InstancedBufferGeometry();
   g.index = template.index!.clone();
   for (const name of Object.keys(template.attributes)) g.setAttribute(name, (template.getAttribute(name) as THREE.BufferAttribute).clone());
-  g.setAttribute('iPos', a.iPos); g.setAttribute('iScale', a.iScale); g.setAttribute('iYaw', a.iYaw); g.setAttribute('iColor', a.iColor); g.setAttribute('iSpec', a.iSpec);
+  g.setAttribute('iPos', a.iPos); g.setAttribute('iScale', a.iScale); g.setAttribute('iYaw', a.iYaw); g.setAttribute('iColor', a.iColor); g.setAttribute('iSpec', a.iSpec); g.setAttribute('iGrow', a.iGrow);
   g.instanceCount = a.count;
   return g;
 }
