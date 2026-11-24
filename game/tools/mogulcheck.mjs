@@ -20,7 +20,7 @@ const bundle = async (entry, name) => {
   await build({ entryPoints: [path.join(GAME, 'src', ...entry)], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
   return import(pathToFileURL(out).href);
 };
-const { mogulHeight, mogulHeightGrad, mogulSize, fallFrom, downhillFrom, MOGUL_MAX_AMP, MOGUL_CELL } = await bundle(['terrain', 'Moguls.ts'], 'moguls.mjs');
+const { mogulHeight, mogulHeightGrad, mogulSize, fallFrom, downhillFrom, MOGUL_MAX_AMP, MOGUL_CELL, LINE_STEEP_SPACING } = await bundle(['terrain', 'Moguls.ts'], 'moguls.mjs');
 const { Rider } = await bundle(['sim', 'Rider.ts'], 'rider.mjs');
 const { BumpAbsorb } = await bundle(['world', 'BumpAbsorb.ts'], 'absorb.mjs');
 const { ChaseCamera } = await bundle(['world', 'ChaseCamera.ts'], 'camera.mjs');
@@ -163,7 +163,7 @@ function crests(cx, cy, side, deg, amp, line = 0) {
   // the pattern along a line: 40 profiles 160 m down the fall line; crests (maxima over +-1 m, above 0.15 of the
   // profile's tallest, placed between samples by a parabola) and their spacings
   const along = (line) => {
-    const t = Math.tan(27 * D2R), change = [], peaks = [];
+    const t = Math.tan(27 * D2R), change = [], peaks = [], spacing = [];
     let repeats = 0;
     for (let k = 0; k < 40; k++) {
       const h = [];
@@ -176,6 +176,7 @@ function crests(cx, cy, side, deg, amp, line = 0) {
         if (pk) { const d = h[i - 1] - 2 * h[i] + h[i + 1]; at.push((i + (d < 0 ? 0.5 * (h[i - 1] - h[i + 1]) / d : 0)) * 0.1); }
       }
       const sp = at.slice(1).map((s, i) => s - at[i]);
+      spacing.push(...sp);
       let run = 0;
       for (let i = 1; i < sp.length; i++) {
         change.push(Math.abs(sp[i] - sp[i - 1]) / ((sp[i] + sp[i - 1]) / 2));
@@ -188,9 +189,12 @@ function crests(cx, cy, side, deg, amp, line = 0) {
       for (let lag = 30; lag <= 150; lag++) { let c = 0; for (let i = 0; i + lag < v.length; i++) c += v[i] * v[i + lag]; best = Math.max(best, c / v0 * v.length / (v.length - lag)); }
       peaks.push(best);
     }
-    return { change: pct(change, 0.5), repeats, ac: pct(peaks, 0.5) };
+    return { change: pct(change, 0.5), repeats, ac: pct(peaks, 0.5), spacing: pct(spacing, 0.5) };
   };
   const lineP = along(1), openP = along(0);
+  // v3: the steep line's bumps spread out (LINE_STEEP_SPACING); v2's line was 1.1 x the open field's spacing here
+  check(`tree line pattern (27 deg): bumps spread out along the line (median spacing over ${(1.1 * LINE_STEEP_SPACING * 0.9).toFixed(2)} x the open field's)`,
+    lineP.spacing > 1.1 * LINE_STEEP_SPACING * 0.9 * openP.spacing, `${lineP.spacing.toFixed(2)} vs ${openP.spacing.toFixed(2)} m`);
   check('tree line pattern: each bump spacing at least 15 % off the last (median)', lineP.change >= 0.15, `${(lineP.change * 100).toFixed(0)} %, the open field ${(openP.change * 100).toFixed(0)} %`);
   check('tree line pattern: no spacing repeats (within 5 %) more than 3 times in a row', lineP.repeats <= 3, `${lineP.repeats}, the open field ${openP.repeats}`);
   check('tree line pattern: the height along a line does not repeat (autocorrelation peak under 0.45, median)', lineP.ac < 0.45 && lineP.ac < openP.ac, `${lineP.ac.toFixed(2)}, the open field ${openP.ac.toFixed(2)}`);

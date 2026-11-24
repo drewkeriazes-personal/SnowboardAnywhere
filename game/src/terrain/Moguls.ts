@@ -71,11 +71,14 @@ const VAR = 0.3; // per-bump height spread, +-
  *  30 % off the last; under 1/3 keeps the warp one way down the hill); the per-turn side offset, m; the per-bump height spread, +-
  *  (the open field's 0.3); the share of bump knots that fade on the steep and on the flat, and how far they fade */
 export const LINE_SPACING = 0.3;
-export const LINE_SIDE = 0.8;
+export const LINE_SIDE = 1.2;
 export const LINE_VAR = 0.45;
 export const LINE_FADE_P = 0.15;
 export const LINE_FADE_P_FLAT = 0.8;
 export const LINE_FADE = 0.85;
+/** FEAT-268 v3 (Drew's ride of v2): on the steep a line's bumps are this much further apart along the fall line (same
+ *  height), easing back to the field's own spacing by LINE_FLAT_DEG (riders on a steep line carry speed: longer turns) */
+export const LINE_STEEP_SPACING = 1.3;
 /** FEAT-268: a line's bumps are full from LINE_STEEP_DEG of pitch and down to LINE_FLAT_AMP of that (and LINE_FADE_P_FLAT
  *  faded) at LINE_FLAT_DEG and gentler; smooth in between */
 export const LINE_STEEP_DEG = 25;
@@ -259,12 +262,14 @@ function mogulEval(x: number, y: number, amp: number, fallX: number, fallY: numb
   const l = Math.hypot(fallX, fallY);
   // FEAT-268: a tree line's bumps ease off with the pitch, and more of them fade
   const a = Math.min(1, amp) * mogulSize(l) * lineEase(l, line);
-  const fadeP = line > 0 ? LINE_FADE_P_FLAT + (LINE_FADE_P - LINE_FADE_P_FLAT) * lineSteep(l) : 0;
+  const steep = line > 0 ? lineSteep(l) : 1, fadeP = LINE_FADE_P_FLAT + (LINE_FADE_P - LINE_FADE_P_FLAT) * steep;
+  // FEAT-268 v3: and spread out along the fall line on the steep (U divided by the stretch)
+  const sU = 1 / (1 + line * (LINE_STEEP_SPACING - 1) * steep);
   let fx = 1, fy = 0;
   if (l > 1e-6) { fx = fallX / l; fy = fallY / l; }
   const ju = JITTER_U * jitter(x, y, 1, JG1), jv = JITTER_V * jitter(x, y, 2, JG2);
   // slopes of U (along the fall line) and V (across it) in pack x, y, the warp included
-  const Ux = fx + JITTER_U * JG1[0], Uy = fy + JITTER_U * JG1[1], Vx = -fy + JITTER_V * JG2[0], Vy = fx + JITTER_V * JG2[1];
+  const Ux = (fx + JITTER_U * JG1[0]) * sU, Uy = (fy + JITTER_U * JG1[1]) * sU, Vx = -fy + JITTER_V * JG2[0], Vy = fx + JITTER_V * JG2[1];
   // the four nearest cell centres and their weights
   const gx = x / MOGUL_CELL - 0.5, gy = y / MOGUL_CELL - 0.5;
   const ix = Math.floor(gx), iy = Math.floor(gy);
@@ -283,7 +288,7 @@ function mogulEval(x: number, y: number, amp: number, fallX: number, fallY: numb
     const u = dx * fx + dy * fy;
     const v = -dx * fy + dy * fx;
     const r = region(Math.floor((ix + ox) / MOGUL_REGION), Math.floor((iy + oy) / MOGUL_REGION), REG[c]);
-    cellField(r, u + creepM + ju, v + jv, line, fadeP);
+    cellField(r, (u + creepM + ju) * sU, v + jv, line, fadeP);
     const dev = CELL[0] - N_MEAN;
     acc += w * dev; ww += w * w;
     if (out) {
@@ -398,10 +403,12 @@ export const MOGUL_GLSL = /* glsl */ `
     float steep = line > 0.0 ? smoothstep(${f1(LINE_FLAT_DEG)}, ${f1(LINE_STEEP_DEG)}, degrees(atan(l))) : 1.0;
     float a = min(amp, 1.0) * mogulSize(l) * (1.0 - line * ${f3(1 - LINE_FLAT_AMP)} * (1.0 - steep));
     float fadeP = ${f3(LINE_FADE_P_FLAT)} + ${f3(LINE_FADE_P - LINE_FADE_P_FLAT)} * steep;
+    // FEAT-268 v3: and spread out along the fall line on the steep
+    float sU = 1.0 / (1.0 + line * ${f3(LINE_STEEP_SPACING - 1)} * steep);
     vec2 fd = l > 1e-6 ? fall / l : vec2(1.0, 0.0);
     vec3 ju = ${f1(JITTER_U)} * mogJitter(pxy, 1), jv = ${f1(JITTER_V)} * mogJitter(pxy, 2);
     // slopes of U and V in pack x, y, the warp included
-    vec2 gU = fd + ju.yz, gV = vec2(-fd.y, fd.x) + jv.yz;
+    vec2 gU = (fd + ju.yz) * sU, gV = vec2(-fd.y, fd.x) + jv.yz;
     vec2 g = pxy / ${f1(MOGUL_CELL)} - 0.5;
     vec2 gi = floor(g);
     vec2 z = clamp((g - gi - 0.4) / 0.2, 0.0, 1.0);
@@ -419,7 +426,7 @@ export const MOGUL_GLSL = /* glsl */ `
       if (wc <= 0.0 && dwc.x == 0.0 && dwc.y == 0.0) continue;
       vec2 d = pxy - (gi + o + 0.5) * ${f1(MOGUL_CELL)};
       ivec2 rr = ivec2(floor((gi + o) / ${f1(MOGUL_REGION)}));
-      vec3 n = mogCell(rr, dot(d, fd) + creep + ju.x, -d.x * fd.y + d.y * fd.x + jv.x, line, fadeP);
+      vec3 n = mogCell(rr, (dot(d, fd) + creep + ju.x) * sU, -d.x * fd.y + d.y * fd.x + jv.x, line, fadeP);
       float dev = n.x - ${N_MEAN.toFixed(2)};
       vec2 dh = n.y * gU + n.z * gV;
       acc += wc * dev; ww += wc * wc;
