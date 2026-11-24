@@ -8,14 +8,13 @@ import { TRIM, trimReach } from './trim';
  *
  * Per tree on a line's rim (`lineCanopy`, when its sub-tile is trimmed: Vegetation.trimTile), from the nearest line
  * (TreeLines.nearestLine) and how much it closes (`w`: full on a narrow line, WIDE_OPEN less on the wide, strong ones near
- * the run so riders can find them, none on a faint line's end or past the first row of trunks):
- *  - the trim line comes down toward H1 m (the glade trim's height scale hs, so the shader and the puffs both see it), so
- *    the boughs are back from about shoulder height instead of 3 to 8 m up
- *  - its lean: the direction to the line and the reach L (m). The shader (LEAN_GLSL) stretches the half of the crown facing
- *    the line toward it: a bough f m out along that direction moves min(f k, L) further, k = L / (CROWN x cr), so the
- *    crown's edge reaches L further at the widest and proportionally less up its narrowing top. It rises in from the tree's
- *    trim line (`leanFrom`, never lower than Y0) over RISE m, so nothing new overhangs the rider in the bare-trunk zone; the
- *    trunk itself (the core) stays put, and the collider only ever held trunks.
+ * the run so riders can find them, none on a faint line's end or past the first row of trunks),
+ * it leans by: the direction to the line and the reach L (m). The shader (LEAN_GLSL) stretches the half of the crown facing
+ * the line toward it: a bough f m out along that direction moves min(f k, L) further, k = L / (CROWN x cr), so the
+ * crown's edge reaches L further at the widest and proportionally less up its narrowing top. It rises in from the tree's
+ * trim line (`leanFrom`, never lower than Y0: above the chase camera's line of sight down the line) over RISE m, so nothing
+ * new overhangs the rider or hides the line ahead; the trunk itself (the core) stays put, and the collider only ever held
+ * trunks. The trim itself is left as it is (lowering it along the lines filled the chase view with boughs).
  *
  * The near LODs carry trim and lean in one per-instance vec4 (`stageTrim`), so the lean costs the vertex shader no attribute
  * of its own. The puffs (`drawnRadius`, through Vegetation.crownContact) invert the same stretch, so a rider brushes exactly
@@ -30,11 +29,9 @@ export const LEAN = {
   /** the trees from D0 to D1 m past the line's half-width fade out of it (the first row stands 1.25 to 1.85 m past it) */
   D0: 2.0, D1: 3.2,
   /** the crown's edge, CROWN of its radius out, reaches OVER m past the line's centreline, by at most MAX m */
-  OVER: 0, CROWN: 0.8, MAX: 2.0,
+  OVER: 0.3, CROWN: 0.5, MAX: 2.5,
   /** the reach rises in from the tree's trim line (at least Y0 m above its base) over RISE m */
-  Y0: 2.2, RISE: 2.2,
-  /** the trim line over a narrow line, m (where its boughs are full again; TRIM.H1 elsewhere) */
-  H1: 2.4,
+  Y0: 4.8, RISE: 3.0,
 } as const;
 
 const smooth = (e0: number, e1: number, v: number): number => {
@@ -44,8 +41,8 @@ const smooth = (e0: number, e1: number, v: number): number => {
 const hit = [0, 0, 0, 0, 0];
 
 /**
- * Tree i at (x, y) with crown radius cr, if trimmed, against the nearest line: lowers its trim line in `trim` (t, bare, hs
- * per tree) and writes its lean into `lean` (per tree the direction to the line as a three.js xz angle, and L; made for the
+ * Tree i at (x, y) with crown radius cr, if trimmed (`trim`: t, bare, hs per tree), against the nearest line: writes its
+ * lean into `lean` (per tree the direction to the line as a three.js xz angle, and L; made for the
  * cell's n trees on the first tree that leans), returned.
  */
 export function lineCanopy(tl: TreeLines, x: number, y: number, cr: number, trim: Float32Array, i: number, lean: Float32Array | null, n: number): Float32Array | null {
@@ -54,7 +51,6 @@ export function lineCanopy(tl: TreeLines, x: number, y: number, cr: number, trim
   const w = smooth(LEAN.STR_LO, LEAN.STR_HI, str) * (1 - LEAN.WIDE_OPEN * smooth(LEAN.HW_WIDE[0], LEAN.HW_WIDE[1], hw) * smooth(LEAN.STR_WIDE[0], LEAN.STR_WIDE[1], str)) * (1 - smooth(LEAN.D0, LEAN.D1, d - hw));
   const o = i * 3;
   if (w <= 0 || trim[o] <= 0) return lean; // only a trimmed tree (a closed stand) leans
-  trim[o + 2] += (Math.min(trim[o + 2], LEAN.H1 / TRIM.H1) - trim[o + 2]) * w;
   const L = w * Math.min(LEAN.MAX, Math.max(0, d + LEAN.OVER - LEAN.CROWN * cr));
   if (L < 0.05) return lean;
   lean ??= new Float32Array(n * 2);

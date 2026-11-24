@@ -11,7 +11,7 @@
 //   - the snow on a line is tracked (chop) and shallower than the powder either side; a storm softens it
 //   - the build takes under 1.5 s of CPU
 //   - FEAT-373: the trees on a narrow line's rim reach in over it, those on the wide, strong lines less; nothing new below
-//     where the reach starts (the rider's height); the puffs' crown (drawnRadius) inverts the shader's stretch (ported below)
+//     where the reach starts (the rider and the chase camera's view down the line); the puffs' crown (drawnRadius) inverts the shader's stretch (ported below)
 // FEAT-334: a pack with baked lines (treeLines.json, MapPacker pipeline/tree_lines.py) is checked on those, as the game loads
 // them; --runs checks the plan from the runs instead.
 // node tools/treelinecheck.mjs [pack] [--runs]        (exit code 1 if a check fails; packs from SHOT_PACKS or the repo's packs/)
@@ -213,7 +213,7 @@ check('only closed stands are trimmed', standGate(0.05) === 0 && standGate(0.5) 
     if (!ln) continue;
     const y0 = leanFrom(tr, 0, H), tx = Math.cos(ln[0]), ty = -Math.sin(ln[0]);
     // toward the line, below where the reach starts, the crown is the trim's alone
-    for (const yy of [0.3, 0.9, 1.6, 2.1]) {
+    for (const yy of [0.3, 0.9, 1.6, 2.1, 3.5, 4.5]) {
       const r = CR * 0.9, trimmed = r * trimReach(tr[0], tr[1], tr[2], H, yy, tmp), dr = drawnRadius(tr, ln, 0, H, CR, yy, r, tx, ty, tmp);
       if (yy <= y0 && Math.abs(dr - trimmed) > 1e-6) low.push(`${yy} m: ${trimmed.toFixed(2)} -> ${dr.toFixed(2)}`);
     }
@@ -231,7 +231,7 @@ check('only closed stands are trimmed', standGate(0.05) === 0 && standGate(0.5) 
   const leaned = nar.filter((v) => v > 0.5).length / Math.max(1, nar.length);
   check('the crowns on a narrow line\'s rim reach in over it', nar.length > 20 && leaned > 0.9, `${(leaned * 100).toFixed(0)} % of ${nar.length} rim trees on narrow lines reach in, ${mean(nar).toFixed(2)} m on average`);
   check('the wide, strong lines near the run stay more open', wide.length > 20 && mean(wide) < mean(nar) * 0.7, `${mean(wide).toFixed(2)} m on average over ${wide.length} rim trees on them, ${mean(nar).toFixed(2)} m on the narrow lines`);
-  check('nothing new reaches over the line below where the reach starts (the rider\'s height)', low.length === 0, low.length ? low.slice(0, 3).join('; ') : 'the trim alone up to there');
+  check('nothing new reaches over the line below where the reach starts (the rider and the chase camera\'s view down the line)', low.length === 0, low.length ? low.slice(0, 3).join('; ') : 'the trim alone up to there');
   check('the puffs\' crown is the shader\'s stretched crown', inv.length > 0 && inv.reduce((p, v) => Math.max(p, v), 0) < 1e-3, `the largest miss ${inv.reduce((p, v) => Math.max(p, v), 0).toFixed(4)} m over ${inv.length} points round the crown`);
 }
 
