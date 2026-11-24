@@ -6,7 +6,8 @@ import { loadTile } from './tileDecode';
 /**
  * Surface class mask: R rock, G scree, B groomed piste, A canopy cover. Values 0..1. Also the
  * single-channel sets on the same grid (ao, dir, moguls), built with `opaque`: BUG-090, those keep one byte
- * per pixel (the PNG's first channel; their readers use only that), a quarter of the RGBA heap.
+ * per pixel (the PNG's first channel; their readers use only that), a quarter of the RGBA heap. `rgb` keeps all
+ * channels of an opaque set (FEAT-380: traffic).
  */
 export class MaskSet {
   readonly meta: MaskMeta;
@@ -26,12 +27,15 @@ export class MaskSet {
    * exactly and the WebGL readback, which stalls the main thread on the frame's GPU work, is not needed.
    */
   private readonly opaque: boolean;
+  /** one byte per pixel: an opaque set without `rgb` */
+  private readonly single: boolean;
 
-  constructor(baseUrl: string, meta: MaskMeta, opts: { opaque?: boolean } = {}) {
+  constructor(baseUrl: string, meta: MaskMeta, opts: { opaque?: boolean; rgb?: boolean } = {}) {
     this.baseUrl = baseUrl;
     this.meta = meta;
     this.size = meta.res * meta.tileSize;
     this.opaque = opts.opaque ?? false;
+    this.single = this.opaque && !opts.rgb;
   }
 
   private key(tx: number, ty: number): number {
@@ -64,7 +68,7 @@ export class MaskSet {
   private async load(tx: number, ty: number): Promise<void> {
     const k = this.key(tx, ty);
     try {
-      if (this.opaque) { // FEAT-377: in a worker (pack/tileDecode.ts)
+      if (this.single) { // FEAT-377: one byte per pixel, in a worker (pack/tileDecode.ts)
         const d = await loadTile(`${this.baseUrl}/${tx}_${ty}.png`, this.meta.tileSize, 'grey');
         if (!d.data) { this.missing.add(k); return; }
         this.tiles.set(k, d.data as Uint8Array);
@@ -84,7 +88,11 @@ export class MaskSet {
       const t2 = performance.now();
       // main-thread time only: the async readback's fence wait is idle
       const timing = { mainMs: 0 };
-      this.tiles.set(k, await decodeRGBAAsync(bmp, this.meta.tileSize, this.meta.tileSize, timing));
+      if (this.opaque) {
+        const px = decodeOpaque(bmp, this.meta.tileSize);
+        this.tiles.set(k, px); timing.mainMs = performance.now() - t2; // an `rgb` set keeps all four (the single ones go to the worker above)
+      }
+      else this.tiles.set(k, await decodeRGBAAsync(bmp, this.meta.tileSize, this.meta.tileSize, timing));
       bmp.close();
       const t3 = performance.now();
       this.stats.add({ tx, ty, t: t3, bytes: blob.size, fetchMs: t1 - t0, bitmapMs: t2 - t1, decodeMs: timing.mainMs });
@@ -127,7 +135,7 @@ export class MaskSet {
 
   /**
    * out = [rock, scree, groomed, canopy] in 0..1; zeros when not loaded. A single-channel (`opaque`) set fills
-   * out[0] only (its value; the rest 0).
+   * out[0] only (its value; the rest 0); an `rgb` one its channels in order.
    */
   sample(x: number, y: number, out: number[] = [0, 0, 0, 0]): number[] {
     out[0] = out[1] = out[2] = out[3] = 0;
@@ -140,7 +148,7 @@ export class MaskSet {
     const col = Math.min(n - 1, Math.max(0, Math.floor(fx - tx * n)));
     const rowFromSouth = Math.min(n - 1, Math.max(0, Math.floor(fy - ty * n)));
     const p = (n - 1 - rowFromSouth) * n + col;
-    if (this.opaque) { out[0] = t[p] / 255; return out; }
+    if (this.single) { out[0] = t[p] / 255; return out; }
     const i = p * 4;
     out[0] = t[i] / 255; out[1] = t[i + 1] / 255; out[2] = t[i + 2] / 255; out[3] = t[i + 3] / 255;
     return out;

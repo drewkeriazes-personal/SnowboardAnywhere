@@ -11,15 +11,16 @@ type StreamWorld = Pick<World, 'terrain' | 'veg' | 'rocks' | 'shrubs' | 'buildin
 /**
  * FEAT-377: what the loading screen's terrain is built from, for core/builtData.ts: the pack build, the view it streams
  * (a chunk's detail and the tiles it gets follow the camera), the mogul field's scale and season creep (the menu shot's
- * conditions) and the tree lines; null for a pack without a build id. Terrain.ts's hash covers its imports (Pack.ts and
- * the sets, the tree lines, exposure).
+ * conditions), the tree lines and the traffic layer (FEAT-380, so a layer added under the same build is not missed); null
+ * for a pack without a build id. Terrain.ts's hash covers its imports (Pack.ts and the sets, the tree lines, exposure,
+ * oldTracks).
  */
 function terrainKey(pack: Pack, camera: THREE.Camera): BuiltKey | null {
   if (!pack.meta.build) return null;
   const p = camera.position, tl = pack.treeLines;
   return {
     what: 'terrain', slug: pack.meta.slug, build: pack.meta.build, code: ['terrain/Terrain.ts'],
-    settings: { view: `${p.x},${p.y},${p.z}`, moguls: `${pack.mogulScale},${pack.mogulCreep}`, treeLines: tl ? (tl.baked ? 'baked' : 'runs') : 'off' },
+    settings: { view: `${p.x},${p.y},${p.z}`, moguls: `${pack.mogulScale},${pack.mogulCreep}`, treeLines: tl ? (tl.baked ? 'baked' : 'runs') : 'off', traffic: JSON.stringify(pack.meta.traffic ?? null) },
   };
 }
 
@@ -50,7 +51,7 @@ export async function streamUntilSettled(
   terrain.budgetMs = 12; terrain.maxBuilds = 64; veg.budgetMs = 12;
   // FEAT-377: the near trees gather once the rest has landed, not on every pass a cell arrives (nothing is drawn meanwhile)
   veg.holdNear = true;
-  const tiles = () => [pack.fine, pack.coarse, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.moguls].reduce((n, t) => n + (t?.inFlight ?? 0), 0);
+  const tiles = () => [pack.fine, pack.coarse, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.moguls, pack.traffic].reduce((n, t) => n + (t?.inFlight ?? 0), 0);
   const t0 = performance.now();
   const r: StreamResult = { settled: false, ms: 0, frames: 0, terrain: 0, tiles: 0, trees: 0, rocks: 0, shrubs: 0 };
   let peak = 1, quiet = 0;

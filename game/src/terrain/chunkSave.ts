@@ -6,16 +6,18 @@
  */
 
 /** a chunk's vertex arrays as Terrain builds them (grid vertices first, then the skirt) */
-export interface ChunkArrays { pos: Float32Array; nor: Float32Array; col: Float32Array; forest: Float32Array; lift: Float32Array; ao: Float32Array; fall: Float32Array; mogul: Float32Array; mogLine: Float32Array }
+export interface ChunkArrays { pos: Float32Array; nor: Float32Array; col: Float32Array; forest: Float32Array; lift: Float32Array; ao: Float32Array; fall: Float32Array; mogul: Float32Array; mogLine: Float32Array;
+  /** FEAT-380: the near chunks' old tracks; null on the far ones (they share Terrain's noTrack) */
+  track: Float32Array | null }
 /** what places a chunk in the quadtree, and the data resolution it was built from */
 export interface ChunkMeta { level: number; x: number; y: number; minX: number; minY: number; size: number; res: number; dataRes: number }
 export interface SavedTerrain { meta: Float64Array; layout: Uint8Array; data: Float32Array }
 
 /** the kept parts: array, components per vertex, the first component kept, how many kept */
 const PARTS: [keyof ChunkArrays, number, number, number][] = [
-  ['pos', 3, 1, 1], ['nor', 3, 0, 3], ['col', 3, 0, 3], ['forest', 1, 0, 1], ['lift', 1, 0, 1], ['ao', 1, 0, 1], ['fall', 2, 0, 2], ['mogul', 4, 0, 4], ['mogLine', 1, 0, 1],
+  ['pos', 3, 1, 1], ['nor', 3, 0, 3], ['col', 3, 0, 3], ['forest', 1, 0, 1], ['lift', 1, 0, 1], ['ao', 1, 0, 1], ['fall', 2, 0, 2], ['mogul', 4, 0, 4], ['mogLine', 1, 0, 1], ['track', 3, 0, 3],
 ];
-const META = 8;
+const META = 9;
 
 /** pack the grid vertices (n x n) of each chunk */
 export function packChunks(n: number, list: { c: ChunkMeta; a: ChunkArrays }[]): SavedTerrain {
@@ -24,9 +26,10 @@ export function packChunks(n: number, list: { c: ChunkMeta; a: ChunkArrays }[]):
   const out: Float32Array[] = [];
   let len = 0;
   list.forEach(({ c, a }, k) => {
-    meta.set([c.level, c.x, c.y, c.minX, c.minY, c.size, c.res, c.dataRes], k * META);
+    meta.set([c.level, c.x, c.y, c.minX, c.minY, c.size, c.res, c.dataRes, a.track ? 1 : 0], k * META);
     PARTS.forEach(([name, stride, first, count], p) => {
       const src = a[name];
+      if (!src) return; // no track
       for (let q = 0; q < count; q++) {
         const v0 = src[first + q];
         let same = true;
@@ -50,9 +53,10 @@ export function unpackChunks(n: number, s: SavedTerrain, each: (meta: ChunkMeta,
   let o = 0;
   for (let k = 0; k < s.meta.length / META; k++) {
     const m = s.meta.subarray(k * META, (k + 1) * META);
-    const a = { pos: new Float32Array(verts * 3), nor: new Float32Array(verts * 3), col: new Float32Array(verts * 3), forest: new Float32Array(verts), lift: new Float32Array(verts), ao: new Float32Array(verts), fall: new Float32Array(verts * 2), mogul: new Float32Array(verts * 4), mogLine: new Float32Array(verts) };
+    const a = { pos: new Float32Array(verts * 3), nor: new Float32Array(verts * 3), col: new Float32Array(verts * 3), forest: new Float32Array(verts), lift: new Float32Array(verts), ao: new Float32Array(verts), fall: new Float32Array(verts * 2), mogul: new Float32Array(verts * 4), mogLine: new Float32Array(verts), track: m[8] ? new Float32Array(verts * 3) : null };
     PARTS.forEach(([name, stride, first, count], p) => {
       const dst = a[name], flags = s.layout[k * PARTS.length + p];
+      if (!dst) return;
       for (let q = 0; q < count; q++) {
         if (flags & (1 << q)) { const v0 = s.data[o++]; for (let v = 0; v < g; v++) dst[v * stride + first + q] = v0; }
         else { for (let v = 0; v < g; v++) dst[v * stride + first + q] = s.data[o + v]; o += g; }

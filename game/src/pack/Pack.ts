@@ -39,6 +39,8 @@ export class Pack {
   readonly dir: MaskSet | null;
   /** FEAT-059: mogul amplitude 0..1 m in channel 0; null in older packs */
   readonly moguls: MaskSet | null;
+  /** FEAT-380: travel direction (R, G) and density (B) for the old ski tracks; null in older packs */
+  readonly traffic: MaskSet | null;
   /** FEAT-153: forest cover levels for the terrain at a distance; null in older packs */
   readonly cover: CoverSet | null;
   /** FEAT-330: canopy score 0..1 overhead (the darkening in dense glades); null when the pack has none */
@@ -66,6 +68,7 @@ export class Pack {
     this.ao = meta.ao ? new MaskSet(`${baseUrl}/ao`, meta.ao, { opaque: true }) : null;
     this.dir = meta.dir ? new MaskSet(`${baseUrl}/dir`, meta.dir, { opaque: true }) : null;
     this.moguls = meta.moguls ? new MaskSet(`${baseUrl}/moguls`, meta.moguls, { opaque: true }) : null;
+    this.traffic = meta.traffic ? new MaskSet(`${baseUrl}/traffic`, meta.traffic, { opaque: true, rgb: true }) : null;
     this.cover = meta.cover && meta.cover.levels.length ? new CoverSet(baseUrl, meta.cover) : null;
     this.canopy = meta.canopy ? new CanopyGrid(baseUrl, meta.canopy) : null;
   }

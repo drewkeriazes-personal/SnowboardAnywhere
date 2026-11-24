@@ -6,6 +6,7 @@ import { treelineOf } from '../pack/treeline';
 import { MOGUL_FALL_D, WORN_K } from './Moguls';
 import { TRENCH_DEPTH } from '../pack/treeLines';
 import { createTerrainMaterial, COVER_SLOTS, EMPTY_RECT } from './TerrainMaterial';
+import { TRACK_MAX_RES, trackVertex } from './oldTracks';
 import { vegetationFarRadius, vegetationStemReach, vegetationClumpBand, vegetationTreeEnd } from '../world/Vegetation';
 import { CLUMP_RHO } from '../world/trees/clumps';
 import type { TreeShade } from '../world/TreeShade';
@@ -144,6 +145,7 @@ export class Terrain implements Ground {
     if (pack.mask) pack.mask.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.mask!.meta.minX + tx * pack.mask!.size, pack.mask!.meta.minY + ty * pack.mask!.size, pack.mask!.size, 0);
     if (pack.ao) pack.ao.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.ao!.meta.minX + tx * pack.ao!.size, pack.ao!.meta.minY + ty * pack.ao!.size, pack.ao!.size, 0);
     if (pack.dir) pack.dir.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.dir!.meta.minX + tx * pack.dir!.size, pack.dir!.meta.minY + ty * pack.dir!.size, pack.dir!.size, 0);
+    if (pack.traffic) pack.traffic.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.traffic!.meta.minX + tx * pack.traffic!.size, pack.traffic!.meta.minY + ty * pack.traffic!.size, pack.traffic!.size, 0);
     if (pack.moguls) pack.moguls.onTileLoaded = (tx, ty) => this.onTileLoaded(pack.moguls!.meta.minX + tx * pack.moguls!.size, pack.moguls!.meta.minY + ty * pack.moguls!.size, pack.moguls!.size, 0);
     // BUG-160: the levels may have loaded already (Pack.load waits for them for the tree lines' forest gate), so hand
     // over the ones that are here now, then each one as it arrives
@@ -302,6 +304,7 @@ export class Terrain implements Ground {
       if (tilesIn) c.awaitTiles = false;
       if (c.res <= 8 && this.pack.mask) this.pack.mask.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
       if (c.res <= 8 && this.pack.dir) this.pack.dir.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      if (c.res <= TRACK_MAX_RES && this.pack.traffic) this.pack.traffic.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
       if (c.res <= AO_MAX_RES && this.pack.ao) this.pack.ao.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
       if (c.res <= MOGUL_SHADE_MAX_RES && this.pack.moguls) this.pack.moguls.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size); // FEAT-059: bump geometry on the finest chunks, shading on the next ones
       if (!c.mesh || this.dirty.has(c.key)) {
@@ -329,7 +332,7 @@ export class Terrain implements Ground {
       if (show) tris += N * N * 2;
       // evict long-unused chunks
       if (!show && this.frame - c.lastUsed > 600) {
-        c.mesh.geometry.dispose();
+        this.disposeChunk(c.mesh.geometry);
         this.group.remove(c.mesh);
         this.chunks.delete(c.key);
       }
@@ -373,7 +376,8 @@ export class Terrain implements Ground {
     const list = [...this.chunks.values()].filter((c) => c.mesh && !c.blank && !this.dirty.has(c.key) && c.mesh.geometry.attributes.position.array);
     return packChunks(N + 1, list.map((c) => {
       const at = (name: string) => c.mesh!.geometry.attributes[name].array as Float32Array;
-      return { c, a: { pos: at('position'), nor: at('normal'), col: at('color'), forest: at('forest'), lift: at('lift'), ao: at('ao'), fall: at('fall'), mogul: at('mogul'), mogLine: at('mogLine') } };
+      const track = c.mesh!.geometry.getAttribute('track') === this.noTrack ? null : at('track'); // FEAT-380: the far chunks share noTrack
+      return { c, a: { pos: at('position'), nor: at('normal'), col: at('color'), forest: at('forest'), lift: at('lift'), ao: at('ao'), fall: at('fall'), mogul: at('mogul'), mogLine: at('mogLine'), track } };
     }));
   }
 
@@ -407,6 +411,7 @@ export class Terrain implements Ground {
     this.chunks.clear();
     this.dirty.clear();
     this.visible = [];
+    this.noTrack = null;
   }
 
   private isAncestor(a: Chunk, d: Chunk): boolean {
@@ -442,6 +447,17 @@ export class Terrain implements Ground {
   }
 
   private readonly fallSample = [0, 0];
+  /**
+   * FEAT-380: the `track` attribute of the chunks past TRACK_MAX_RES, all zeros (no tracks), one for every chunk. Not
+   * left out: a missing attribute reads the generic value another program may have left at its location (a ShaderMaterial
+   * sets `color` to 1), which would draw tracks and scrape on far snow. Kept off the chunks' geometry before they are
+   * disposed (`disposeChunk`), so its buffer stays; `dropAll` lets it go with them and makes a new one.
+   */
+  private noTrack: THREE.BufferAttribute | null = null;
+  private disposeChunk(geo: THREE.BufferGeometry): void {
+    if (geo.getAttribute('track') === this.noTrack) geo.deleteAttribute('track');
+    geo.dispose();
+  }
   private readonly lineSample = [0];
   private trenchBuf: Float64Array | null = null;
 
@@ -478,6 +494,9 @@ export class Terrain implements Ground {
     const fall = new Float32Array(vertCount * 2);
     const FR = 6;
     const dirSet = pack.dir && res <= 8 ? pack.dir : null;
+    // FEAT-380: where riders go, for the old tracks (oldTracks.ts), on the chunks near enough to show them
+    const trackOn = res <= TRACK_MAX_RES;
+    const track = trackOn ? new Float32Array(vertCount * 3) : null;
     const heights = new Float32Array((n + 2) * (n + 2)); // with a 1-sample border for normals
     // FEAT-339: the 1 and 2 m chunks' heights carry the tree lines' trench; keep it for the trench shading below
     const trenchIn = wornOn && res <= MOGUL_MAX_RES;
@@ -581,12 +600,14 @@ export class Terrain implements Ground {
           }
           mogul[v * 4 + 2] = -mgx; mogul[v * 4 + 3] = -mgy;
         }
+        let runAxis = false;
         if (groom > 0.02 || mog > 0.01) {
           // corduroy keeps a 6 m line; a bump field's own vertices reuse the mogul one (the snow tracks read it)
           const own = mog > 0.01 && groom <= 0.02;
           const gx = own ? mgx : (pack.height(x + FR, y, resB) - pack.height(x - FR, y, resB)) / (2 * FR);
           const gy = own ? mgy : (pack.height(x, y + FR, resB) - pack.height(x, y - FR, resB)) / (2 * FR);
           const b = groom > 0.02 && dirSet && dirSet.has(x, y) ? Math.round(dirSet.sample(x, y, this.maskSample)[0] * 255) : 0;
+          runAxis = b > 0;
           if (b > 0) {
             // run axis (pack east, north), undirected; take the sense that points downhill. A groomer
             // leaves corduroy on a flat cat track too, so the confidence has a floor the fall line lacks.
@@ -599,10 +620,19 @@ export class Terrain implements Ground {
             fall[v * 2] = -gx; fall[v * 2 + 1] = gy; // downhill east, and z = -north
           }
         }
+        if (track) {
+          const tr = pack.traffic && pack.traffic.has(x, y) ? pack.traffic.sampleBilinear(x, y, this.maskSample) : null;
+          let fx = fall[v * 2], fz = fall[v * 2 + 1];
+          if (!tr && !(groom > 0.02 || mog > 0.01)) { // off the groomers the tracks take the same 6 m fall line
+            fx = -(pack.height(x + FR, y, resB) - pack.height(x - FR, y, resB)) / (2 * FR);
+            fz = (pack.height(x, y + FR, resB) - pack.height(x, y - FR, resB)) / (2 * FR);
+          }
+          trackVertex(track, v, tr, fx, fz, runAxis, groom > 0.02);
+        }
         v++;
       }
     }
-    this.finish(c, { pos, nor, col, forest, lift, ao, fall, mogul, mogLine });
+    this.finish(c, { pos, nor, col, forest, lift, ao, fall, mogul, mogLine, track });
     c.dataRes = dataRes;
     c.saved = false;
   }
@@ -610,7 +640,7 @@ export class Terrain implements Ground {
   /** the skirt, the index and the mesh round a chunk's grid vertices (build, or FEAT-377's restore from a saved load) */
   private finish(c: Chunk, a: ChunkArrays): void {
     const n = N + 1;
-    const { pos, nor, col, forest, lift, ao, fall, mogul, mogLine } = a;
+    const { pos, nor, col, forest, lift, ao, fall, mogul, mogLine, track } = a;
     const skirt = Math.max(2, c.res * 3);
     let v = n * n;
     // skirt vertices: copies of the edge vertices dropped by `skirt`
@@ -625,7 +655,8 @@ export class Terrain implements Ground {
       pos[v * 3] = pos[e * 3]; pos[v * 3 + 1] = pos[e * 3 + 1] - skirt; pos[v * 3 + 2] = pos[e * 3 + 2];
       nor[v * 3] = nor[e * 3]; nor[v * 3 + 1] = nor[e * 3 + 1]; nor[v * 3 + 2] = nor[e * 3 + 2];
       col[v * 3] = col[e * 3]; col[v * 3 + 1] = col[e * 3 + 1]; col[v * 3 + 2] = col[e * 3 + 2]; forest[v] = forest[e]; ao[v] = ao[e]; lift[v] = lift[e];
-      fall[v * 2] = fall[e * 2]; fall[v * 2 + 1] = fall[e * 2 + 1]; for (let q = 0; q < 4; q++) mogul[v * 4 + q] = mogul[e * 4 + q]; mogLine[v] = mogLine[e];
+      fall[v * 2] = fall[e * 2]; fall[v * 2 + 1] = fall[e * 2 + 1]; if (track) for (let q = 0; q < 3; q++) track[v * 3 + q] = track[e * 3 + q];
+      for (let q = 0; q < 4; q++) mogul[v * 4 + q] = mogul[e * 4 + q]; mogLine[v] = mogLine[e];
       v++;
     }
     const idx: number[] = [];
@@ -657,9 +688,10 @@ export class Terrain implements Ground {
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     for (const a of Object.values(geo.attributes)) (a as THREE.BufferAttribute).onUpload(freeAfterUpload);
+    geo.setAttribute('track', track ? new THREE.BufferAttribute(track, 3).onUpload(freeAfterUpload) : (this.noTrack ??= new THREE.BufferAttribute(new Float32Array(v * 3), 3)));
     geo.index!.onUpload(freeAfterUpload);
     if (c.mesh) {
-      c.mesh.geometry.dispose();
+      this.disposeChunk(c.mesh.geometry);
       c.mesh.geometry = geo;
     } else {
       const mesh = new THREE.Mesh(geo, this.material);

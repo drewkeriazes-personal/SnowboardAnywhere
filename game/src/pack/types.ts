@@ -140,6 +140,10 @@ export interface PackMeta {
   dir?: MaskMeta;
   /** mogul amplitude 0..1 m (greyscale PNG tiles, same layout as the mask), FEAT-059; absent in older packs */
   moguls?: MaskMeta;
+  /** FEAT-380 (MapPacker FEAT-379): where riders go, RGB tiles on the mask's tile grid at their own resolution: R, G the mean
+   *  travel direction (x east, y north, byte = (v * 0.5 + 0.5) * 255; its length the coherence, 1 = all one way), B the
+   *  density 0..255; optional, absent in older packs (the tracks fall back to the run axis and the fall line) */
+  traffic?: MaskMeta;
   /** FEAT-153: forest cover levels for the terrain at a distance; absent in older packs */
   cover?: CoverMeta;
   /** FEAT-330: canopy score grid for the darkening under dense glades; absent = no canopy anywhere (no darkening) */
