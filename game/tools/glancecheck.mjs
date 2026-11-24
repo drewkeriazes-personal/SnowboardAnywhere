@@ -98,24 +98,26 @@ console.log(`riding at ${s.speed.toFixed(1)} m/s, the slope behind rises ${deg(s
 // each camera starts from this spot and speed, so the run does not flatten out by the last one
 const start = await page.evaluate(() => { const r = window.__sim.rider; return { x: r.x, y: r.y, z: r.z, vx: r.vx, vy: r.vy, vz: r.vz, heading: r.heading }; });
 
-for (const mode of ['fp', 'helmet', 'chase', 'close', 'far', 'cine']) {
+// BUG-176: with Widen view with speed off (the default since FEAT-374) and on: the look behind frames the run either way
+for (const speedFov of [false, true]) for (const cam of ['fp', 'helmet', 'chase', 'close', 'far', 'cine']) {
+  const mode = speedFov ? `${cam} (widen with speed)` : cam;
   console.log(`---- ${mode}`);
-  await page.evaluate(([m, st]) => { const s = window.__sim; s.cam.mode = m; Object.assign(s.rider, st); s.cam.snapTo(s.rider); }, [mode, start]);
+  await page.evaluate(([m, st, sf]) => { const s = window.__sim; s.cam.mode = m; s.cam.speedFov = sf; Object.assign(s.rider, st); s.cam.snapTo(s.rider); }, [cam, start, speedFov]);
   const fwd = await ride(90, false);
   const g = await ride(72, true);
   const back = await ride(90, false);
   const at = `pitch ${deg(g.pitch)} deg, view to travel ${g.along.toFixed(2)}, slope behind ${deg(g.slopeBehind)} deg, speed ${g.speed.toFixed(1)}, crashed ${g.crashed.toFixed(2)}`;
   // the cinematic camera trails off to one side, so it looks ahead at an angle
-  check(`${mode}: riding, looks ahead`, fwd.along > (mode === 'cine' ? 0.5 : 0.8), `view to travel ${fwd.along.toFixed(2)}, pitch ${deg(fwd.pitch)} deg`);
+  check(`${mode}: riding, looks ahead`, fwd.along > (cam === 'cine' ? 0.5 : 0.8), `view to travel ${fwd.along.toFixed(2)}, pitch ${deg(fwd.pitch)} deg`);
   check(`${mode}: look behind turns round`, g.along < -0.7, at);
-  if (mode === 'fp' || mode === 'helmet') {
+  if (cam === 'fp' || cam === 'helmet') {
     check(`${mode}: looks up the hill behind, not down into the snow`, g.pitch > 3 * Math.PI / 180, at);
     check(`${mode}: the run above in the top of the frame`, g.topClear, at);
   } else {
     check(`${mode}: the rider low in the frame`, g.riderY > -0.9 && g.riderY < -0.05, `rider at NDC y ${g.riderY.toFixed(2)}; ${at}`);
     check(`${mode}: the centre of the view on the run above the rider`, g.centre > 15, `${Number.isFinite(g.centre) ? g.centre.toFixed(1) + ' m' : 'sky'} from the rider; ${at}`);
   }
-  check(`${mode}: letting go looks ahead again`, back.along > (mode === 'cine' ? 0.5 : 0.8), `view to travel ${back.along.toFixed(2)}`);
+  check(`${mode}: letting go looks ahead again`, back.along > (cam === 'cine' ? 0.5 : 0.8), `view to travel ${back.along.toFixed(2)}`);
   // the swing round is a quick ease (about 28 deg in the first frame), never a cut
   check(`${mode}: smooth both ways`, Math.max(g.maxTurn, back.maxTurn) < 0.6, `largest turn in a frame ${deg(Math.max(g.maxTurn, back.maxTurn))} deg`);
 }
