@@ -3,14 +3,16 @@
 // Rider physics over a mogul field on exact planes (no pack, no browser). BUG-065: the snow tracks lie on the
 // bumps as the 1 m mesh draws them, and the legs and the chase camera soak the bumps up. Riding a 25 degree bump run
 // straight must throw the rider off the snow and bleed speed against the flat plane beside it; a
-// field that appears under the rider (its tile loading late) must not drop or fling them.
+// field that appears under the rider (its tile loading late) must not drop or fling them. FEAT-268: tree line bumps are
+// sized by the line's traffic and break the open field's even wave; on Vail (when packs/vail is there, else skipped) the
+// Steep and Deep lines are bumpy but under an open field at the same slope, and bigger at the runout than up top.
 // node tools/mogulcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { GAME } from './paths.mjs';
+import { GAME, PACKS } from './paths.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mogulcheck-'));
 const bundle = async (entry, name) => {
@@ -23,6 +25,7 @@ const { Rider } = await bundle(['sim', 'Rider.ts'], 'rider.mjs');
 const { BumpAbsorb } = await bundle(['world', 'BumpAbsorb.ts'], 'absorb.mjs');
 const { ChaseCamera } = await bundle(['world', 'ChaseCamera.ts'], 'camera.mjs');
 const { DrawnGround } = await bundle(['terrain', 'drawnGround.ts'], 'drawn.mjs');
+const { TreeLines, lineMogul } = await bundle(['pack', 'treeLines.ts'], 'lines.mjs');
 
 let fails = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ': ' + detail : ''}`); if (!ok) fails++; };
@@ -33,10 +36,10 @@ const mean = (v) => v.reduce((s, x) => s + x, 0) / v.length;
 const corrOf = (p, q) => { const mp = mean(p), mq = mean(q); let n = 0, dp = 0, dq = 0; for (let i = 0; i < p.length; i++) { n += (p[i] - mp) * (q[i] - mq); dp += (p[i] - mp) ** 2; dq += (q[i] - mq) ** 2; } return n / Math.sqrt(dp * dq); };
 const pct = (a, p) => { const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(b.length * p))]; };
 /** bump crests (local maxima over +-1 m, above 0.15 of the size) in a square patch on a plane falling
- *  to -y at `deg`, field strength `amp`; 0.25 m grid, a 1 m border left out */
-function crests(cx, cy, side, deg, amp) {
+ *  to -y at `deg`, field strength `amp`, tree line pattern `line` (FEAT-268); 0.25 m grid, a 1 m border left out */
+function crests(cx, cy, side, deg, amp, line = 0) {
   const t = Math.tan(deg * D2R), px = 0.25, n = Math.round(side / px), H = new Float64Array(n * n), out = [];
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) H[j * n + i] = mogulHeight(cx - side / 2 + i * px, cy - side / 2 + j * px, amp, 0, -t, 0);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) H[j * n + i] = mogulHeight(cx - side / 2 + i * px, cy - side / 2 + j * px, amp, 0, -t, 0, line);
   const floor = 0.15 * amp * mogulSize(t);
   for (let j = 4; j < n - 4; j++) for (let i = 4; i < n - 4; i++) {
     const h = H[j * n + i];
@@ -140,6 +143,103 @@ function crests(cx, cy, side, deg, amp) {
   check('fallFrom on flat ground is east', f[0] === 1 && f[1] === 0);
   downhillFrom((x, y) => 0.4 * y + 0.1 * x, 10, 10, f);
   check('downhillFrom carries the slope as its length', Math.abs(f[0] + 0.1) < 1e-9 && Math.abs(f[1] + 0.4) < 1e-9, `${f[0].toFixed(3)}, ${f[1].toFixed(3)}`);
+}
+
+// ---------------------------------------------------------------- FEAT-268: tree lines
+{
+  // crest heights over six 40 m squares down a plane
+  const field = (deg, amp, line) => { const c = []; for (let k = 0; k < 6; k++) c.push(...crests(1234 + k * 40, -600 - k * 40, 40, deg, amp, line)); return c; };
+  const open = field(27, 1, 0), one = field(27, lineMogul(0.6), 1), full = field(27, lineMogul(1), 1);
+  check('tree lines (27 deg): a one-rider line ripples (p95 crest 0.1 to 0.35 m)', pct(one, 0.95) >= 0.1 && pct(one, 0.95) <= 0.35, `p95 ${pct(one, 0.95).toFixed(2)} m`);
+  check('tree lines (27 deg): a merged line is a mogul line, well under the open field (p95 0.4 to 0.75 of it)', pct(full, 0.95) >= 0.4 * pct(open, 0.95) && pct(full, 0.95) <= 0.75 * pct(open, 0.95),
+    `p95 ${pct(full, 0.95).toFixed(2)} vs ${pct(open, 0.95).toFixed(2)} m`);
+  // the pattern along a line: 40 profiles 160 m down the fall line; crests (maxima over +-1 m, above 0.15 of the
+  // profile's tallest, placed between samples by a parabola) and their spacings
+  const along = (line) => {
+    const t = Math.tan(27 * D2R), change = [], peaks = [];
+    let repeats = 0;
+    for (let k = 0; k < 40; k++) {
+      const h = [];
+      for (let s = 0; s < 160; s += 0.1) h.push(mogulHeight(1000 + k * 7.3, -500 - k * 37 - s, lineMogul(1), 0, -t, 0, line));
+      const top = Math.max(...h), at = [];
+      for (let i = 10; i < h.length - 10; i++) {
+        if (h[i] < 0.15 * top) continue;
+        let pk = true;
+        for (let q = -10; q <= 10 && pk; q++) if (q && h[i + q] > h[i]) pk = false;
+        if (pk) { const d = h[i - 1] - 2 * h[i] + h[i + 1]; at.push((i + (d < 0 ? 0.5 * (h[i - 1] - h[i + 1]) / d : 0)) * 0.1); }
+      }
+      const sp = at.slice(1).map((s, i) => s - at[i]);
+      let run = 0;
+      for (let i = 1; i < sp.length; i++) {
+        change.push(Math.abs(sp[i] - sp[i - 1]) / ((sp[i] + sp[i - 1]) / 2));
+        run = Math.abs(sp[i] - sp[i - 1]) <= 0.05 * sp[i - 1] ? run + 1 : 0;
+        repeats = Math.max(repeats, run);
+      }
+      // autocorrelation of the height along the line: its peak over lags of 3 to 15 m (an even wave repeats near 1)
+      const m = mean(h), v = h.map((x) => x - m), v0 = v.reduce((a, x) => a + x * x, 0);
+      let best = -1;
+      for (let lag = 30; lag <= 150; lag++) { let c = 0; for (let i = 0; i + lag < v.length; i++) c += v[i] * v[i + lag]; best = Math.max(best, c / v0 * v.length / (v.length - lag)); }
+      peaks.push(best);
+    }
+    return { change: pct(change, 0.5), repeats, ac: pct(peaks, 0.5) };
+  };
+  const lineP = along(1), openP = along(0);
+  check('tree line pattern: each bump spacing at least 15 % off the last (median)', lineP.change >= 0.15, `${(lineP.change * 100).toFixed(0)} %, the open field ${(openP.change * 100).toFixed(0)} %`);
+  check('tree line pattern: no spacing repeats (within 5 %) more than 3 times in a row', lineP.repeats <= 3, `${lineP.repeats}, the open field ${openP.repeats}`);
+  check('tree line pattern: the height along a line does not repeat (autocorrelation peak under 0.45, median)', lineP.ac < 0.45 && lineP.ac < openP.ac, `${lineP.ac.toFixed(2)}, the open field ${openP.ac.toFixed(2)}`);
+  // the shader's analytic slope still matches the height, and no steps, with the pattern on
+  {
+    const o = [0, 0, 0], SLx = Math.tan(27 * D2R);
+    let worst = 0, scale = 0, step = 0;
+    for (let i = 0; i < 4000; i++) {
+      const x = -900 + (i * 7.31) % 1800, y = -900 + (i * 13.7) % 1800, r = i * 0.37, e = 1e-3, fx = SLx * Math.cos(r), fy = SLx * Math.sin(r);
+      mogulHeightGrad(x, y, 0.57, fx, fy, 0.4, o, 1);
+      const gx = (mogulHeight(x + e, y, 0.57, fx, fy, 0.4, 1) - mogulHeight(x - e, y, 0.57, fx, fy, 0.4, 1)) / (2 * e);
+      const gy = (mogulHeight(x, y + e, 0.57, fx, fy, 0.4, 1) - mogulHeight(x, y - e, 0.57, fx, fy, 0.4, 1)) / (2 * e);
+      worst = Math.max(worst, Math.hypot(o[1] - gx, o[2] - gy));
+      scale = Math.max(scale, Math.hypot(gx, gy));
+    }
+    for (let x = 1230; x < 1300; x += 0.5) for (let y = -560; y > -760; y -= 0.01) step = Math.max(step, Math.abs(mogulHeight(x, y, 0.57, 0, -SLx, 0, 1) - mogulHeight(x, y - 0.01, 0.57, 0, -SLx, 0, 1)));
+    check('tree line pattern: analytic slope matches the height within 6% of the steepest bump face', worst < 0.06 * scale, `${worst.toFixed(3)} of ${scale.toFixed(2)}`);
+    check('tree line pattern: no steps (under 2 cm per 1 cm along the fall line)', step < 0.02, `${(step * 100).toFixed(2)} cm`);
+  }
+
+  // Vail's baked lines round Steep and Deep (FEAT-334), the forest gate left open
+  const vail = path.join(PACKS, 'vail');
+  if (!fs.existsSync(path.join(vail, 'treeLines.json'))) console.log('skip Vail tree line checks: no packs/vail/treeLines.json (npm run get vail)');
+  else {
+    const runs = JSON.parse(fs.readFileSync(path.join(vail, 'features.json'), 'utf8')).runs;
+    const baked = JSON.parse(fs.readFileSync(path.join(vail, 'treeLines.json'), 'utf8'));
+    const tl = new TreeLines(runs, baked);
+    tl.finish();
+    const run = runs.find((r) => r.name === 'Steep And Deep').points, cum = [0];
+    for (let i = 1; i < run.length; i++) cum.push(cum[i - 1] + Math.hypot(run[i][0] - run[i - 1][0], run[i][1] - run[i - 1][1]));
+    const len = cum[cum.length - 1];
+    /** [distance from the run, distance along it, its pitch there (deg, from the run's point heights)] */
+    const onRun = (x, y) => {
+      let best = Infinity, s = 0, deg = 0;
+      for (let i = 1; i < run.length; i++) {
+        const ax = run[i - 1][0], ay = run[i - 1][1], dx = run[i][0] - ax, dy = run[i][1] - ay, l2 = dx * dx + dy * dy;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)), d = Math.hypot(x - ax - dx * t, y - ay - dy * t);
+        if (d < best) { best = d; s = cum[i - 1] + t * Math.sqrt(l2); deg = Math.atan((run[i - 1][2] - run[i][2]) / Math.sqrt(l2)) / D2R; }
+      }
+      return [best, s, deg];
+    };
+    const top = [], runout = [], spot = [], P = [1827, -3506];
+    for (const l of baked.lines) for (let k = 0; k < l.p.length; k += 4) {
+      const x = l.p[k], y = l.p[k + 1], [d, s] = onRun(x, y);
+      if (d > 150) continue;
+      const a = lineMogul(tl.wornAt(x, y));
+      if (s < 250) top.push(a); else if (s > len - 250) runout.push(a);
+      if (Math.hypot(x - P[0], y - P[1]) < 60) spot.push(a);
+    }
+    check('Vail Steep and Deep: the merged lines at the runout carry bigger bumps than the one-rider lines up top (p90 over twice the median)',
+      pct(runout, 0.9) > 2 * pct(top, 0.5), `amplitude ${pct(runout, 0.9).toFixed(2)} in the last 250 m vs ${pct(top, 0.5).toFixed(2)} in the first 250 m`);
+    // trees14: its lines' bumps (the busiest tenth of them) against an open field at the run's pitch there
+    const deg = onRun(P[0], P[1])[2], lineF = field(deg, pct(spot, 0.9), 1), openF = field(deg, 1, 0);
+    check(`Vail trees14 (${deg.toFixed(0)} deg): the lines are bumpy (p95 crest over 0.1 m) and under the open field (0.75 of it)`,
+      pct(lineF, 0.95) > 0.1 && pct(lineF, 0.95) < 0.75 * pct(openF, 0.95), `p95 ${pct(lineF, 0.95).toFixed(2)} vs ${pct(openF, 0.95).toFixed(2)} m, amplitude ${pct(spot, 0.9).toFixed(2)}`);
+  }
 }
 
 // ---------------------------------------------------------------- riding

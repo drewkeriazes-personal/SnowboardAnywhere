@@ -424,6 +424,7 @@ export class Terrain implements Ground {
     // north) from the same 30 m difference as Pack.bumpAt, its length the slope that sizes the bumps
     // (FEAT-147), kept apart from `fall` so the corduroy's 6 m line and run axis never size them.
     const mogul = new Float32Array(vertCount * 4);
+    const mogLine = new Float32Array(vertCount); // FEAT-268: how much of a tree line's irregular bump pattern applies
     const shadeMoguls = pack.hasMoguls && res <= MOGUL_SHADE_MAX_RES;
     const geoMoguls = pack.hasMoguls && res <= MOGUL_MAX_RES;
     const wornOn = !!pack.treeLines && res <= 8; // FEAT-333: the tree lines' ski tracks, near the rider
@@ -471,9 +472,11 @@ export class Terrain implements Ground {
         // FEAT-339: the field's amplitude and fall line once per vertex, for the bumps and the shading both (Pack.bumpWith
         // gives Pack.bumpAt's very numbers, so the mesh stays on the physics' ground)
         const amp = shadeMoguls ? pack.mogulAmp(x, y, true) : 0;
+        const line = shadeMoguls ? pack.mogulLine : 0;
         const hasFall = geoMoguls && amp >= 0.005;
         if (hasFall) pack.fallAt(x, y, fv);
-        pos[v * 3] = x; pos[v * 3 + 1] = hasFall ? h + pack.bumpWith(x, y, amp, fv) : h; pos[v * 3 + 2] = -y;
+        pos[v * 3] = x; pos[v * 3 + 1] = hasFall ? h + pack.bumpWith(x, y, amp, fv, line) : h; pos[v * 3 + 2] = -y;
+        mogLine[v] = line;
         // normal by central differences (pack x east, y north -> three x, -z)
         const nxp = -(H(i + 1, j) - H(i - 1, j)) / (2 * res);
         const nyp = -(H(i, j + 1) - H(i, j - 1)) / (2 * res);
@@ -566,7 +569,7 @@ export class Terrain implements Ground {
       pos[v * 3] = pos[e * 3]; pos[v * 3 + 1] = pos[e * 3 + 1] - skirt; pos[v * 3 + 2] = pos[e * 3 + 2];
       nor[v * 3] = nor[e * 3]; nor[v * 3 + 1] = nor[e * 3 + 1]; nor[v * 3 + 2] = nor[e * 3 + 2];
       col[v * 3] = col[e * 3]; col[v * 3 + 1] = col[e * 3 + 1]; col[v * 3 + 2] = col[e * 3 + 2]; forest[v] = forest[e]; ao[v] = ao[e]; lift[v] = lift[e];
-      fall[v * 2] = fall[e * 2]; fall[v * 2 + 1] = fall[e * 2 + 1]; for (let q = 0; q < 4; q++) mogul[v * 4 + q] = mogul[e * 4 + q];
+      fall[v * 2] = fall[e * 2]; fall[v * 2 + 1] = fall[e * 2 + 1]; for (let q = 0; q < 4; q++) mogul[v * 4 + q] = mogul[e * 4 + q]; mogLine[v] = mogLine[e];
       v++;
     }
     const idx: number[] = [];
@@ -594,6 +597,7 @@ export class Terrain implements Ground {
     geo.setAttribute('ao', new THREE.BufferAttribute(ao, 1));
     geo.setAttribute('fall', new THREE.BufferAttribute(fall, 2));
     geo.setAttribute('mogul', new THREE.BufferAttribute(mogul, 4));
+    geo.setAttribute('mogLine', new THREE.BufferAttribute(mogLine, 1));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
     for (const a of Object.values(geo.attributes)) (a as THREE.BufferAttribute).onUpload(freeAfterUpload);
