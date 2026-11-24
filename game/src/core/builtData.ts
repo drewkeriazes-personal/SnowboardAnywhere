@@ -7,10 +7,19 @@ import sourceHashes from 'virtual:source-hashes';
  * it, three.js's version and a hash of the code that made it (tools/source_hashes.mjs: the producer modules and what
  * they import, so an edit in dev or a new build with changed code throws it away), and the entry stores that key and
  * FORMAT, both checked on read. A mismatch, a read error or a write error (quota, a private window) just builds it.
- * One entry per pack and kind: a new key replaces the old entry, so nothing piles up.
+ * One entry per pack and kind: a new key replaces the old entry, so nothing piles up. An entry not used for
+ * BUILT_MAX_AGE_DAYS is deleted (`expireBuilt`, once the game is up): every port is its own origin, so a test server
+ * would otherwise leave its 50 MB of Vail behind for good.
  */
 const DB = 'built-resort-data';
 const STORE = 'entries';
+/** when each entry was last saved or read, apart from the entries so a read does not rewrite the data: { id, usedAt } */
+const USED = 'used';
+/** an entry unused this long is deleted (one without a `usedAt`, from before it was kept, counts as unused) */
+export const BUILT_MAX_AGE_DAYS = 14;
+const DAY_MS = 86400000;
+/** 'change' when entries are deleted (Settings' size readout) */
+export const builtDataChanged = new EventTarget();
 /** the entry layout; a change here drops every saved entry */
 const FORMAT = 1;
 
@@ -35,17 +44,21 @@ export function setKeepBuiltData(on: boolean): void { keep = on; }
 let db: Promise<IDBDatabase> | null = null;
 function open(): Promise<IDBDatabase> {
   db ??= new Promise((resolve, reject) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'id' }).createIndex('bytes', 'bytes'); // sizes without reading the data
+    const r = indexedDB.open(DB, 2);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' }).createIndex('bytes', 'bytes'); // sizes without reading the data
+      if (!d.objectStoreNames.contains(USED)) d.createObjectStore(USED, { keyPath: 'id' });
+    };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
   db.catch(() => { db = null; });
   return db;
 }
-function request<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+function request<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>, store = STORE): Promise<T> {
   return open().then((d) => new Promise<T>((resolve, reject) => {
-    const tx = d.transaction(STORE, mode), r = f(tx.objectStore(STORE));
+    const tx = d.transaction(store, mode), r = f(tx.objectStore(store));
     tx.oncomplete = () => resolve(r.result);
     tx.onerror = tx.onabort = () => reject(tx.error ?? r.error);
   }));
@@ -81,7 +94,7 @@ export async function loadBuilt<T>(k: BuiltKey): Promise<T | null> {
   try {
     const e = await (reads.get(id) ?? read(id));
     reads.delete(id);
-    if (e && e.format === FORMAT && e.key === key) { console.info(`built data: ${id} from the last load`); return e.data as T; }
+    if (e && e.format === FORMAT && e.key === key) { console.info(`built data: ${id} from the last load`); touch(id); return e.data as T; }
     if (e) why = e.format !== FORMAT ? 'format changed' : staleReason(e.key, key);
   } catch { why = 'read failed'; }
   console.info(`built data: ${id} to build (${why})`); // tools/loadperf.mjs prints these
@@ -92,7 +105,30 @@ export async function loadBuilt<T>(k: BuiltKey): Promise<T | null> {
 export function saveBuilt(k: BuiltKey, data: unknown): void {
   if (!keep) return;
   const entry: Entry = { id: idOf(k), format: FORMAT, key: keyOf(k), bytes: bytesOf(data), data };
-  try { request('readwrite', (s) => s.put(entry)).catch(() => { /* quota or no IndexedDB: the next load builds it again */ }); } catch { /* not cloneable */ }
+  try { request('readwrite', (s) => s.put(entry)).then(() => touch(entry.id), () => { /* quota or no IndexedDB: the next load builds it again */ }); } catch { /* not cloneable */ }
+}
+
+/** this entry was used now (a few bytes in USED, so a read does not rewrite the entry) */
+function touch(id: string): void {
+  request('readwrite', (s) => s.put({ id, usedAt: Date.now() }), USED).catch(() => {});
+}
+
+/** Delete the entries unused for BUILT_MAX_AGE_DAYS (after the load: never in its way) */
+export async function expireBuilt(): Promise<void> {
+  try {
+    const used = new Map((await request<{ id: string; usedAt: number }[]>('readonly', (s) => s.getAll(), USED)).map((u) => [u.id, u.usedAt]));
+    const ids = (await request('readonly', (s) => s.getAllKeys())) as string[];
+    let gone = 0;
+    for (const id of ids) {
+      const at = used.get(id), days = at === undefined ? Infinity : (Date.now() - at) / DAY_MS;
+      if (days < BUILT_MAX_AGE_DAYS) continue;
+      await request('readwrite', (s) => s.delete(id));
+      await request('readwrite', (s) => s.delete(id), USED);
+      console.info(`built data: expired ${id} (${Number.isFinite(days) ? Math.floor(days) : 'unknown'} days unused)`);
+      gone++;
+    }
+    if (gone) builtDataChanged.dispatchEvent(new Event('change'));
+  } catch { /* no IndexedDB */ }
 }
 
 /**
@@ -130,6 +166,7 @@ function staleReason(was: string, now: string): string {
 /** Settings' Clear: every saved entry gone (the next load builds everything) */
 export async function clearBuiltData(): Promise<void> {
   await request('readwrite', (s) => s.clear()).catch(() => {});
+  await request('readwrite', (s) => s.clear(), USED).catch(() => {});
 }
 
 /** bytes saved, for Settings (0 when none or no IndexedDB): summed over the `bytes` index, so no entry's data is read */

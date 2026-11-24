@@ -60,7 +60,7 @@ import { LiftPicker } from '../ui/LiftPicker';
 import { MapState } from '../states/MapState';
 import { Modes } from '../modes/Modes';
 import { timedStep } from '../core/loadSteps';
-import { setKeepBuiltData } from '../core/builtData';
+import { expireBuilt, setKeepBuiltData } from '../core/builtData';
 
 /** FEAT-105: the New snow setting as a snow cover amount */
 const NEW_SNOW: Record<string, number> = { none: 0, dusting: 0.25, '6in': 0.6, powder: 1 };
@@ -523,6 +523,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         : null,
       ready: () => {
         performance.mark('load: sim ready');
+        setTimeout(() => void expireBuilt(), 5000); // FEAT-377: old built data goes once the first frames are drawn
         status.textContent = '';
         installSimDebug({ env, events, audio, ghosts, menu, shot, rider, riderView, controls, padFx, inputView, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, speedLines, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */

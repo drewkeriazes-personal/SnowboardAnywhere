@@ -10,7 +10,7 @@ import { KEY_GROUPS, PAD_GROUPS, applyUiScale, defaultSettings, keyName, migrate
 import { CATEGORIES, HELD_FIELDS, SECTIONS, descOf, optsOf, presetLine, rowsOf, type CatId, type Row } from './SettingsRows';
 import { LoadingScreen } from './Loading';
 import { launcherBrowser } from './LauncherBrowser';
-import { builtDataBytes, clearBuiltData } from '../core/builtData';
+import { builtDataBytes, builtDataChanged, clearBuiltData } from '../core/builtData';
 
 /**
  * FEAT-128 settings screen (layout B): full screen, categories on the left, rows of label and control in
@@ -69,6 +69,7 @@ class SettingsOverlay {
   private readonly leaveScreen: Screen;
 
   constructor(private readonly s: Settings) {
+    builtDataChanged.addEventListener('change', () => { if (this.cat === 'graphics') this.showBuiltSize(); }); // FEAT-377: old data expired
     this.draft = { ...s };
     this.el = document.createElement('div');
     this.el.id = 'settings';

@@ -10,6 +10,8 @@
 //   --profile: sample the JavaScript of the last warm load to sim ready and print the time by task, file and function
 //     (build with `npx vite build --sourcemap` so the bundle maps back to src/)
 //   --held: what the menu waits on between sim ready and menu live, every 500 ms
+//   --expiry: before the first warm load, plants three small entries (used 20 days ago, used now, and one with no
+//     `usedAt`) and checks the game deletes the old two once it is up and keeps the fresh one (exit 1 if not)
 //   --stale-build: the warm loads get the pack's meta.json with another `build` (as after a rebuild of the pack), so
 //     what the cold load kept must be thrown away; nothing on disk changes
 //   SHOT_QUERY: more URL parameters, as for the other tools. A build without the load marks (main before FEAT-377)
@@ -30,6 +32,7 @@ const warm = Number(opt('--warm', 2));
 const profile = args.includes('--profile');
 const showHeld = args.includes('--held');
 const staleBuild = args.includes('--stale-build');
+const expiry = args.includes('--expiry');
 const jsonOut = opt('--json', null);
 let label = 'cold';
 
@@ -100,11 +103,37 @@ async function load(cdp) {
   return { label, ...r, prof };
 }
 
+/** --expiry: the game's IndexedDB (src/core/builtData.ts), as test entries or their ids */
+const plant = () => page.evaluate(() => new Promise((resolve, reject) => {
+  const r = indexedDB.open('built-resort-data');
+  r.onerror = () => reject(r.error);
+  r.onsuccess = () => {
+    const tx = r.result.transaction(['entries', 'used'], 'readwrite'), day = 86400000;
+    for (const id of ['test/old', 'test/fresh', 'test/legacy']) tx.objectStore('entries').put({ id, format: 0, key: '', bytes: 8, data: null });
+    tx.objectStore('used').put({ id: 'test/old', usedAt: Date.now() - 20 * day });
+    tx.objectStore('used').put({ id: 'test/fresh', usedAt: Date.now() });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  };
+}));
+const testIds = () => page.evaluate(() => new Promise((resolve) => {
+  const r = indexedDB.open('built-resort-data');
+  r.onsuccess = () => { const g = r.result.transaction('entries').objectStore('entries').getAllKeys(); g.onsuccess = () => resolve(g.result.filter((k) => k.startsWith('test/'))); };
+}));
+
 const runs = [await load(null)];
 for (let i = 1; i <= warm; i++) {
   await page.waitForTimeout(3000); // the last load's saves land
+  if (expiry && i === 1) await plant();
   label = `warm ${i}`;
   runs.push(await load(i === warm && profile ? await context.newCDPSession(page) : null));
+  if (expiry && i === 1) {
+    await page.waitForTimeout(6000); // expireBuilt runs 5 s after sim ready
+    const left = (await testIds()).sort().join(', ');
+    const ok = left === 'test/fresh';
+    console.log(`${ok ? 'ok  ' : 'FAIL'} expiry: entries unused ${'>'}= 14 days (and one with no usedAt) deleted, a fresh one kept: left ${left || 'none'}`);
+    if (!ok) process.exitCode = 1;
+  }
 }
 if (warm > 1) {
   const med = (k) => { const v = runs.slice(1).map((r) => r[k]).sort((a, b) => a - b); return v[Math.floor((v.length - 1) / 2)]; };
