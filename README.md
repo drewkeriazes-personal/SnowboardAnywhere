@@ -179,7 +179,7 @@ Rider, Accessibility, Credits), the settings in the middle, and what the focused
 | V (Triangle / Y), hold | peek at the game (from the pause menu) |
 | Esc (Circle / B) | clear the search, then close (with graphics changes waiting, it asks Apply or Discard first) |
 
-Type in the search box to find a setting in any category. Graphics has presets (Low, Medium, High, and Ultra:
+Type in the search box to find a setting in any category. Graphics has presets (Low, Medium (the default), High, and Ultra:
 High plus cascaded shadows at full resolution; the detailed trees reach 800 m on High, 400 m on Medium and 200 m on Low, simple cones beyond) over its advanced options, and a Frame cap (30, 60 or Uncapped);
 the game draws the settings you pick and never lowers them on its own. The preset and the advanced options
 (Detail, Shadows, Cascaded shadows, Trees, Forest, Resolution, Snow dents) wait, marked Pending, until you press

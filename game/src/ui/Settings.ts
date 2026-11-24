@@ -179,7 +179,7 @@ export function addStrapDefaults(keys: Record<string, string[]>, padKeys: Record
 }
 
 const DEFAULTS: Settings = {
-  v: 1, strapKeyDefault: 2, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'high', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 1, forestDensity: 1, pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+  v: 1, strapKeyDefault: 2, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'medium', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 0.6, forestDensity: 0.6, pixelRatio: 1, // FEAT-374: the Medium preset (applyQuality)
   fov: 68, targetFps: 60, speedFov: true, camShake: true, speedLines: true, invertSteer: false, camera: 'chase', seeThroughTrees: true, fpVignette: true, goggleStrength: 0.6, goggleLens: 'rose', lensStrength: 1, fpShake: 0.3, showMarkers: true, showLabels: true, roadsOnSnow: false, liftLines: true, timeTrials: false, pressBalance: 'on', outfit: { ...OUTFIT_PRESETS['Classic red'] }, discipline: 'board', stance: 'regular', fallLine: 'real', jumpMode: 'real', timeOfDay: 'pack', month: 2, units: 'imperial', keys: migrateKeys(undefined).keys,
   outrun: { difficulty: 'normal', escape: 'base', gentle: false },
   padKeys: migratePadKeys(undefined), inputView: false, rumble: true, vibration: 0.8, padDead: 0.18, padTrigDead: 0.3, lookSens: 1, invertLookY: false,
