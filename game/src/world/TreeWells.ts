@@ -18,6 +18,8 @@ const SIZE = 128, RES = 512, SNAP = 16, EDGE = 8;
 const TEXEL = SIZE / RES;
 /** the deepest well (m): 1.0 in the texture */
 const WELL_MAX = 1;
+/** BUG-177: how far (m) the kit sinks a trunk's base ring below its base (trees/materials.ts), past the deepest well and a slope's fall across the trunk */
+export const TRUNK_ROOT = WELL_MAX + 0.5;
 /** a well's depth at the trunk as a share of the snowpack there */
 const WELL_K = 0.5;
 /** how far a well reaches from the trunk (m): this share of the crown radius, clamped */

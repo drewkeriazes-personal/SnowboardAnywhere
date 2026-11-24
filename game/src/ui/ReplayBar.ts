@@ -1,5 +1,6 @@
 import { PAD } from '../sim/Pad';
 import type { KeyLabels } from './KeyLabels';
+import { hotSwap } from '../core/hot';
 
 /** m:ss */
 export const fmtT = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
@@ -40,3 +41,6 @@ export class ReplayBar {
       (s.take ? `<div class="keys">Main menu take: I in ${s.take.in === null ? '-' : fmtT(s.take.in)} &middot; O out ${s.take.out === null ? '-' : fmtT(s.take.out)} &middot; L save</div>` : '');
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

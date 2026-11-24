@@ -5,6 +5,7 @@ import { CanopyGrid } from './CanopyGrid';
 import type { BakedTreeLines, Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
 import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
+import { packFetch } from './fetch';
 
 /** FEAT-333: tree cells fetched at once while the tree lines load */
 const TRUNK_FETCHES = 8;
@@ -74,12 +75,12 @@ export class Pack {
   /** `treeLines` false: no FEAT-333 tree lines or FEAT-303 trim (`?notreelines`); `bakedTreeLines` false: plan them from
    *  the runs even when the pack has its own (FEAT-334, `?treelines=runs`) */
   static async load(baseUrl: string, opts: { treeLines?: boolean; bakedTreeLines?: boolean } = {}): Promise<Pack> {
-    const resp = await fetch(`${baseUrl}/meta.json`);
+    const resp = await packFetch(`${baseUrl}/meta.json`);
     if (!resp.ok) throw new Error(`Pack not found at ${baseUrl}/ (HTTP ${resp.status}). Run the Vite dev server (cd game && npm run dev) and open http://localhost:5173/?pack=<slug>; the pack folder must exist at packs/<slug>/ next to game/.`);
     const meta = (await resp.json()) as PackMeta;
     const pack = new Pack(baseUrl, meta);
     try {
-      pack.features = (await (await fetch(`${baseUrl}/features.json`)).json()) as Features;
+      pack.features = (await (await packFetch(`${baseUrl}/features.json`)).json()) as Features;
     } catch (e) {
       console.warn('no features.json', e);
     }
@@ -205,7 +206,7 @@ export class Pack {
     let file: BakedTreeLines | null = null;
     if (baked && this.meta.treeLines) {
       try {
-        const r = await fetch(`${this.baseUrl}/${this.meta.treeLines.file}`);
+        const r = await packFetch(`${this.baseUrl}/${this.meta.treeLines.file}`);
         if (r.ok) {
           const j = (await r.json()) as BakedTreeLines;
           if (j.version === 1 && Array.isArray(j.lines)) file = j;
@@ -235,7 +236,7 @@ export class Pack {
       const worker = async (): Promise<void> => {
         for (let k = queue.shift(); k !== undefined; k = queue.shift()) {
           try {
-            const r = await fetch(`${this.baseUrl}/trees/${k}.bin`);
+            const r = await packFetch(`${this.baseUrl}/trees/${k}.bin`);
             if (r.ok) trunks.add(new Float32Array(await r.arrayBuffer()), 6); else failed++;
           } catch { failed++; } // a cell that will not load: its trunks stay where the lines plan them (counted in the log)
         }

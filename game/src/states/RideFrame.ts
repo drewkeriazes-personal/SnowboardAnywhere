@@ -36,6 +36,7 @@ import type { FpsMeter } from '../core/FpsMeter';
 import type { World } from '../session/World';
 import type { Modes } from '../modes/Modes';
 import type { ModeFrame } from '../modes/RideMode';
+import { hotSwap } from '../core/hot';
 
 /** FEAT-077: how skied out the snow gets by late afternoon for each Snow conditions setting */
 const SKIED_BASE: Record<string, number> = { fresh: 0.15, mid: 0.9, spring: 0.7 };
@@ -414,3 +415,6 @@ export class RideFrame {
     labels.update(cam.camera, settings.units === 'metric');
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));
