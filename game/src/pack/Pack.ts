@@ -4,7 +4,7 @@ import { CoverSet } from './CoverSet';
 import { CanopyGrid } from './CanopyGrid';
 import type { BakedTreeLines, Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
-import { TreeLines, TrunkIndex, lineMogul } from './treeLines';
+import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
 
 /** FEAT-333: tree cells fetched at once while the tree lines load */
 const TRUNK_FETCHES = 8;
@@ -169,14 +169,14 @@ export class Pack {
 
   /**
    * FEAT-059: mogul amplitude (m) at a point from the pack's moguls set; 0 without the set or its tile. FEAT-333: a
-   * worn tree line is a mogul line too, sized by its traffic (`lineMogul`, FEAT-268), wherever the set is weaker; it sets
+   * worn tree line is a mogul line too, as strong as it is worn (LINE_MOGUL at full), wherever the set is weaker; it sets
    * `mogulLine` to how much of the line's irregular pattern applies here (1 where the set has none, 0 off the lines).
    */
   mogulAmp(x: number, y: number, raw = false): number {
     this.mogulLine = 0;
     if (!raw && this.mogulScale <= 0) return 0;
     let a = this.moguls ? this.moguls.sampleBilinear(x, y, this.mogTmp)[0] : 0;
-    if (this.treeLines) { const l = lineMogul(this.treeLines.wornAt(x, y)); if (l > a) { this.mogulLine = 1 - a / l; a = l; } }
+    if (this.treeLines) { const l = this.treeLines.wornAt(x, y) * LINE_MOGUL; if (l > a) { this.mogulLine = 1 - a / l; a = l; } }
     return a * (raw ? 1 : this.mogulScale);
   }
 

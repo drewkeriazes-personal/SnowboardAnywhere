@@ -12,8 +12,8 @@ import type { BakedTreeLines, RunFeature } from './types';
  * A line is 1.5 to 3 m wide, wider and stronger near the run, and fades out at its ends and deeper in the woods.
  *
  * What reads it: the generated stems leave the corridor (trees/stands.ts), the mogul field takes the line's
- * traffic as its amplitude (Pack.mogulAmp, so the physics, the bump geometry and the shader agree: a one-rider line
- * ripples, a merged one is a modest mogul line with its own uneven pattern, FEAT-268), the snow on it is tracked
+ * strength as its amplitude (Pack.mogulAmp, so the physics, the bump geometry and the shader agree: a mogul line with
+ * its own uneven pattern on the steep, nearly flat at a runout, FEAT-268), the snow on it is tracked
  * (SnowConditions, `worn`), and the terrain draws ski tracks along it (TerrainMaterial). All of that only under the
  * forest (`gate`, Pack.forestGate): beside a run in the open there is no tree line to wear.
  *
@@ -84,14 +84,8 @@ const EDGE = 0.9;
 const STEM_GAP = 0.15, STEM_JITTER = 0.6;
 /** a line fainter than this (its trench under 5 cm) leaves the stems where they are */
 const STEM_FAINT = 0.05;
-/**
- * FEAT-268: a line's mogul amplitude (0..1) grows with its traffic (its strength, from the riders on it: 0.6 for one,
- * 1 where four or more merge and funnel): LINE_MOGUL x strength ^ LINE_MOGUL_POW, so a one-rider line has ripples
- * (0.17) and a merged one two thirds of an open field's full amplitude (0.57). Tune by riding.
- */
-export const LINE_MOGUL = 0.57, LINE_MOGUL_POW = 2.4;
-/** a tree line's mogul amplitude where it is worn `w` (0..1, `TreeLines.wornAt`) */
-export const lineMogul = (w: number): number => LINE_MOGUL * w ** LINE_MOGUL_POW;
+/** mogul amplitude (0..1) at a line's full strength; the field eases it off on gentle pitches (FEAT-268, Moguls.ts) */
+export const LINE_MOGUL = 0.85;
 /** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
  *  the berm of pushed-aside snow on the rim, m high and wide (`trenchAt`) */
 export const TRENCH_DEPTH = 1.0;

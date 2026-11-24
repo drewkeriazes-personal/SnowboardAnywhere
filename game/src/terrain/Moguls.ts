@@ -33,8 +33,11 @@
  * Tree lines (FEAT-268): a worn tree line (Pack.mogulAmp, `line` 0..1 here) keeps the field but breaks its even wave, so
  * a line through one cell is not a row of identical bumps: each turn gets its own spacing (a smooth warp of the distance
  * down the fall line, knots one turn apart, so every turn has its own radius) and side offset, each bump a wider height
- * spread, and now and then one fades almost out. All from the same hashes, so the physics, mesh and shader agree; at
- * `line` 0 (the open field) none of it applies.
+ * spread, and now and then one fades almost out. The pitch sets how much is left (Drew's ride, 2026-11-24): full bumps
+ * from LINE_STEEP_DEG, and toward LINE_FLAT_DEG they shrink to LINE_FLAT_AMP and most of them fade (LINE_FADE_P_FLAT),
+ * so a runout keeps only an odd side hit. The pitch is the field's own slope (the length of the fall vector that sizes
+ * the bumps), so the physics, mesh and shader agree. All from the same hashes; at `line` 0 (the open field) none of it
+ * applies.
  *
  * Pure functions: both the physics (Pack.terrainHeight) and the near terrain mesh (Pack.height) add the
  * same bumps, and MOGUL_GLSL is the same field for the shader, so the board sits on what the player sees.
@@ -66,12 +69,20 @@ const SIZE_DEG1 = 32;
 const VAR = 0.3; // per-bump height spread, +-
 /** FEAT-268, on a tree line only (tune by riding): the per-turn spacing warp, as a share of a turn (each spacing about
  *  30 % off the last; under 1/3 keeps the warp one way down the hill); the per-turn side offset, m; the per-bump height spread, +-
- *  (the open field's 0.3); the share of bump knots that fade, and how far they fade */
+ *  (the open field's 0.3); the share of bump knots that fade on the steep and on the flat, and how far they fade */
 export const LINE_SPACING = 0.3;
 export const LINE_SIDE = 0.8;
 export const LINE_VAR = 0.45;
 export const LINE_FADE_P = 0.15;
+export const LINE_FADE_P_FLAT = 0.8;
 export const LINE_FADE = 0.85;
+/** FEAT-268: a line's bumps are full from LINE_STEEP_DEG of pitch and down to LINE_FLAT_AMP of that (and LINE_FADE_P_FLAT
+ *  faded) at LINE_FLAT_DEG and gentler; smooth in between */
+export const LINE_STEEP_DEG = 25;
+export const LINE_FLAT_DEG = 15;
+export const LINE_FLAT_AMP = 0.3;
+/** half-width of the fade's threshold, so a knot fades in smoothly as the pitch eases (no step in the snow) */
+const FADE_EDGE = 0.05;
 const WF_REF = 1.7; // gap width (in lane widths) that makes a full-height bump
 const JITTER_CELL = 25; // m: scale of the slow warp that bends the lines
 const JITTER_U = 0.8; // m of warp along and across the fall line
@@ -87,6 +98,22 @@ export function mogulSize(slopeTan: number): number {
   const d = Math.atan(Math.abs(slopeTan)) * (180 / Math.PI);
   const t = Math.min(1, Math.max(0, (d - SIZE_DEG0) / (SIZE_DEG1 - SIZE_DEG0)));
   return SIZE_LO + (SIZE_HI - SIZE_LO) * t * t * (3 - 2 * t);
+}
+
+/** FEAT-268: 0 at LINE_FLAT_DEG of pitch and gentler .. 1 from LINE_STEEP_DEG (`slopeTan` rise over run) */
+export function lineSteep(slopeTan: number): number {
+  return smoothstep(LINE_FLAT_DEG, LINE_STEEP_DEG, Math.atan(Math.abs(slopeTan)) * (180 / Math.PI));
+}
+
+/** FEAT-268: the share of a tree line's bump height left at this pitch, `line` its pattern weight (1 off the lines) */
+export function lineEase(slopeTan: number, line: number): number {
+  return line > 0 ? 1 - line * (1 - LINE_FLAT_AMP) * (1 - lineSteep(slopeTan)) : 1;
+}
+
+/** GLSL's smoothstep */
+function smoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
 }
 
 /** cheap 2D hash to -1..1, in uint32 arithmetic so MOGUL_GLSL reproduces it bit for bit */
@@ -166,7 +193,7 @@ const CELL = [0, 0, 0];
  * [n, dn/dU, dn/dV] into CELL, n in 0..1.3 (times the bump size gives metres). `L` 0..1: how much of a tree line's
  * irregular pattern (FEAT-268) applies.
  */
-function cellField(r: Region, U0: number, V0: number, L: number): void {
+function cellField(r: Region, U0: number, V0: number, L: number, fadeP: number): void {
   // FEAT-268: on a tree line, warp the distance down the fall line (per-turn spacing) and across it (per-turn side
   // offset), value noise with knots one turn (half a bump) apart
   let U = U0, V = V0, uU = 1, vU = 0;
@@ -197,8 +224,8 @@ function cellField(r: Region, U0: number, V0: number, L: number): void {
   const vr = VAR + L * (LINE_VAR - VAR);
   let ka = 1 + vr * hash(r.rx * 97 + j, r.ry * 89 + m, 31), kz = 1 + vr * hash(r.rx * 97 + j, r.ry * 89 + m + 1, 31);
   if (L > 0) {
-    if (h01(r.rx * 97 + j, r.ry * 89 + m, 34) < LINE_FADE_P) ka *= 1 - L * LINE_FADE;
-    if (h01(r.rx * 97 + j, r.ry * 89 + m + 1, 34) < LINE_FADE_P) kz *= 1 - L * LINE_FADE;
+    ka *= 1 - L * LINE_FADE * smoothstep(-FADE_EDGE, FADE_EDGE, fadeP - h01(r.rx * 97 + j, r.ry * 89 + m, 34));
+    kz *= 1 - L * LINE_FADE * smoothstep(-FADE_EDGE, FADE_EDGE, fadeP - h01(r.rx * 97 + j, r.ry * 89 + m + 1, 34));
   }
   const sf = f * f * (3 - 2 * f);
   const mult = ka + (kz - ka) * sf, multU = (kz - ka) * 6 * f * (1 - f) / r.lam;
@@ -230,7 +257,9 @@ function mogulEval(x: number, y: number, amp: number, fallX: number, fallY: numb
   if (out) { out[0] = 0; out[1] = 0; out[2] = 0; }
   if (amp <= 0) return 0;
   const l = Math.hypot(fallX, fallY);
-  const a = Math.min(1, amp) * mogulSize(l);
+  // FEAT-268: a tree line's bumps ease off with the pitch, and more of them fade
+  const a = Math.min(1, amp) * mogulSize(l) * lineEase(l, line);
+  const fadeP = line > 0 ? LINE_FADE_P_FLAT + (LINE_FADE_P - LINE_FADE_P_FLAT) * lineSteep(l) : 0;
   let fx = 1, fy = 0;
   if (l > 1e-6) { fx = fallX / l; fy = fallY / l; }
   const ju = JITTER_U * jitter(x, y, 1, JG1), jv = JITTER_V * jitter(x, y, 2, JG2);
@@ -254,7 +283,7 @@ function mogulEval(x: number, y: number, amp: number, fallX: number, fallY: numb
     const u = dx * fx + dy * fy;
     const v = -dx * fy + dy * fx;
     const r = region(Math.floor((ix + ox) / MOGUL_REGION), Math.floor((iy + oy) / MOGUL_REGION), REG[c]);
-    cellField(r, u + creepM + ju, v + jv, line);
+    cellField(r, u + creepM + ju, v + jv, line, fadeP);
     const dev = CELL[0] - N_MEAN;
     acc += w * dev; ww += w * w;
     if (out) {
@@ -320,7 +349,7 @@ export const MOGUL_GLSL = /* glsl */ `
     return vec2(float(i) * reg.y + a * sin(th), a * kap * cos(th));
   }
   // one cell's field: vec3(n, dn/dU, dn/dV); L: how much of the tree line's irregular pattern applies (FEAT-268)
-  vec3 mogCell(ivec2 rr, float U0, float V0, float L) {
+  vec3 mogCell(ivec2 rr, float U0, float V0, float L, float fadeP) {
     float lam = ${f1(MOGUL_TURN_MIN)} + ${f1(MOGUL_TURN_MAX - MOGUL_TURN_MIN)} * mog01(rr.x, rr.y, 11);
     float U = U0, V = V0, uU = 1.0, vU = 0.0;
     if (L > 0.0) {
@@ -354,8 +383,8 @@ export const MOGUL_GLSL = /* glsl */ `
     float vr = ${f3(VAR)} + L * ${f3(LINE_VAR - VAR)};
     float ka = 1.0 + vr * mogHash(rr.x * 97 + j, rr.y * 89 + m, 31), kz = 1.0 + vr * mogHash(rr.x * 97 + j, rr.y * 89 + m + 1, 31);
     if (L > 0.0) {
-      if (mog01(rr.x * 97 + j, rr.y * 89 + m, 34) < ${f3(LINE_FADE_P)}) ka *= 1.0 - L * ${f3(LINE_FADE)};
-      if (mog01(rr.x * 97 + j, rr.y * 89 + m + 1, 34) < ${f3(LINE_FADE_P)}) kz *= 1.0 - L * ${f3(LINE_FADE)};
+      ka *= 1.0 - L * ${f3(LINE_FADE)} * smoothstep(${f3(-FADE_EDGE)}, ${f3(FADE_EDGE)}, fadeP - mog01(rr.x * 97 + j, rr.y * 89 + m, 34));
+      kz *= 1.0 - L * ${f3(LINE_FADE)} * smoothstep(${f3(-FADE_EDGE)}, ${f3(FADE_EDGE)}, fadeP - mog01(rr.x * 97 + j, rr.y * 89 + m + 1, 34));
     }
     float mult = mix(ka, kz, f * f * (3.0 - 2.0 * f));
     float multU = (kz - ka) * 6.0 * f * (1.0 - f) / lam;
@@ -365,7 +394,10 @@ export const MOGUL_GLSL = /* glsl */ `
   // height and slope in one evaluation: vec3(h, dh/dx, dh/dy), pack frame (mogulHeightGrad above)
   vec3 mogulHG(vec2 pxy, vec2 fall, float amp, float creep, float line) {
     float l = length(fall);
-    float a = min(amp, 1.0) * mogulSize(l);
+    // FEAT-268: a tree line's bumps ease off with the pitch
+    float steep = line > 0.0 ? smoothstep(${f1(LINE_FLAT_DEG)}, ${f1(LINE_STEEP_DEG)}, degrees(atan(l))) : 1.0;
+    float a = min(amp, 1.0) * mogulSize(l) * (1.0 - line * ${f3(1 - LINE_FLAT_AMP)} * (1.0 - steep));
+    float fadeP = ${f3(LINE_FADE_P_FLAT)} + ${f3(LINE_FADE_P - LINE_FADE_P_FLAT)} * steep;
     vec2 fd = l > 1e-6 ? fall / l : vec2(1.0, 0.0);
     vec3 ju = ${f1(JITTER_U)} * mogJitter(pxy, 1), jv = ${f1(JITTER_V)} * mogJitter(pxy, 2);
     // slopes of U and V in pack x, y, the warp included
@@ -387,7 +419,7 @@ export const MOGUL_GLSL = /* glsl */ `
       if (wc <= 0.0 && dwc.x == 0.0 && dwc.y == 0.0) continue;
       vec2 d = pxy - (gi + o + 0.5) * ${f1(MOGUL_CELL)};
       ivec2 rr = ivec2(floor((gi + o) / ${f1(MOGUL_REGION)}));
-      vec3 n = mogCell(rr, dot(d, fd) + creep + ju.x, -d.x * fd.y + d.y * fd.x + jv.x, line);
+      vec3 n = mogCell(rr, dot(d, fd) + creep + ju.x, -d.x * fd.y + d.y * fd.x + jv.x, line, fadeP);
       float dev = n.x - ${N_MEAN.toFixed(2)};
       vec2 dh = n.y * gU + n.z * gV;
       acc += wc * dev; ww += wc * wc;

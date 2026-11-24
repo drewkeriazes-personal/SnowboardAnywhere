@@ -3,9 +3,9 @@
 // Rider physics over a mogul field on exact planes (no pack, no browser). BUG-065: the snow tracks lie on the
 // bumps as the 1 m mesh draws them, and the legs and the chase camera soak the bumps up. Riding a 25 degree bump run
 // straight must throw the rider off the snow and bleed speed against the flat plane beside it; a
-// field that appears under the rider (its tile loading late) must not drop or fling them. FEAT-268: tree line bumps are
-// sized by the line's traffic and break the open field's even wave; on Vail (when packs/vail is there, else skipped) the
-// Steep and Deep lines are bumpy but under an open field at the same slope, and bigger at the runout than up top.
+// field that appears under the rider (its tile loading late) must not drop or fling them. FEAT-268: tree line bumps
+// break the open field's even wave, keep their size on the steep and nearly flatten (a few isolated bumps) on gentle
+// pitches; on Vail (when packs/vail is there, else skipped) the same at the top and the runout of Steep and Deep.
 // node tools/mogulcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -25,7 +25,7 @@ const { Rider } = await bundle(['sim', 'Rider.ts'], 'rider.mjs');
 const { BumpAbsorb } = await bundle(['world', 'BumpAbsorb.ts'], 'absorb.mjs');
 const { ChaseCamera } = await bundle(['world', 'ChaseCamera.ts'], 'camera.mjs');
 const { DrawnGround } = await bundle(['terrain', 'drawnGround.ts'], 'drawn.mjs');
-const { TreeLines, lineMogul } = await bundle(['pack', 'treeLines.ts'], 'lines.mjs');
+const { TreeLines, LINE_MOGUL } = await bundle(['pack', 'treeLines.ts'], 'lines.mjs');
 
 let fails = 0;
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ': ' + detail : ''}`); if (!ok) fails++; };
@@ -149,10 +149,17 @@ function crests(cx, cy, side, deg, amp, line = 0) {
 {
   // crest heights over six 40 m squares down a plane
   const field = (deg, amp, line) => { const c = []; for (let k = 0; k < 6; k++) c.push(...crests(1234 + k * 40, -600 - k * 40, 40, deg, amp, line)); return c; };
-  const open = field(27, 1, 0), one = field(27, lineMogul(0.6), 1), full = field(27, lineMogul(1), 1);
-  check('tree lines (27 deg): a one-rider line ripples (p95 crest 0.1 to 0.35 m)', pct(one, 0.95) >= 0.1 && pct(one, 0.95) <= 0.35, `p95 ${pct(one, 0.95).toFixed(2)} m`);
-  check('tree lines (27 deg): a merged line is a mogul line, well under the open field (p95 0.4 to 0.75 of it)', pct(full, 0.95) >= 0.4 * pct(open, 0.95) && pct(full, 0.95) <= 0.75 * pct(open, 0.95),
-    `p95 ${pct(full, 0.95).toFixed(2)} vs ${pct(open, 0.95).toFixed(2)} m`);
+  // a full-strength line against the same amplitude without the tree line pattern (main's line bumps), on the steep and
+  // on a runout: crest height (p95) and how many crests stand over 0.1 m
+  const vsMain = (deg) => {
+    const line = field(deg, LINE_MOGUL, 1), main = field(deg, LINE_MOGUL, 0), n = (c) => c.filter((h) => h > 0.1).length;
+    return { p95: pct(line, 0.95), main: pct(main, 0.95), share: n(line) / n(main) };
+  };
+  const steep = vsMain(27), flat = vsMain(11);
+  check('tree lines (27 deg): the steep keeps main\'s bumps (p95 crest 0.85 to 1.15 of it)', steep.p95 >= 0.85 * steep.main && steep.p95 <= 1.15 * steep.main,
+    `p95 ${steep.p95.toFixed(2)} vs ${steep.main.toFixed(2)} m`);
+  check('tree lines (11 deg): a runout is nearly flat, a few isolated bumps (p95 under 0.35 of main\'s, under a third of its crests over 0.1 m)',
+    flat.p95 < 0.35 * flat.main && flat.share < 1 / 3, `p95 ${flat.p95.toFixed(2)} vs ${flat.main.toFixed(2)} m, ${(flat.share * 100).toFixed(0)} % of the crests`);
   // the pattern along a line: 40 profiles 160 m down the fall line; crests (maxima over +-1 m, above 0.15 of the
   // profile's tallest, placed between samples by a parabola) and their spacings
   const along = (line) => {
@@ -160,7 +167,7 @@ function crests(cx, cy, side, deg, amp, line = 0) {
     let repeats = 0;
     for (let k = 0; k < 40; k++) {
       const h = [];
-      for (let s = 0; s < 160; s += 0.1) h.push(mogulHeight(1000 + k * 7.3, -500 - k * 37 - s, lineMogul(1), 0, -t, 0, line));
+      for (let s = 0; s < 160; s += 0.1) h.push(mogulHeight(1000 + k * 7.3, -500 - k * 37 - s, LINE_MOGUL, 0, -t, 0, line));
       const top = Math.max(...h), at = [];
       for (let i = 10; i < h.length - 10; i++) {
         if (h[i] < 0.15 * top) continue;
@@ -187,9 +194,9 @@ function crests(cx, cy, side, deg, amp, line = 0) {
   check('tree line pattern: each bump spacing at least 15 % off the last (median)', lineP.change >= 0.15, `${(lineP.change * 100).toFixed(0)} %, the open field ${(openP.change * 100).toFixed(0)} %`);
   check('tree line pattern: no spacing repeats (within 5 %) more than 3 times in a row', lineP.repeats <= 3, `${lineP.repeats}, the open field ${openP.repeats}`);
   check('tree line pattern: the height along a line does not repeat (autocorrelation peak under 0.45, median)', lineP.ac < 0.45 && lineP.ac < openP.ac, `${lineP.ac.toFixed(2)}, the open field ${openP.ac.toFixed(2)}`);
-  // the shader's analytic slope still matches the height, and no steps, with the pattern on
+  // the shader's analytic slope still matches the height, and no steps, with the pattern on (20 deg: part faded)
   {
-    const o = [0, 0, 0], SLx = Math.tan(27 * D2R);
+    const o = [0, 0, 0], SLx = Math.tan(20 * D2R);
     let worst = 0, scale = 0, step = 0;
     for (let i = 0; i < 4000; i++) {
       const x = -900 + (i * 7.31) % 1800, y = -900 + (i * 13.7) % 1800, r = i * 0.37, e = 1e-3, fx = SLx * Math.cos(r), fy = SLx * Math.sin(r);
@@ -225,20 +232,21 @@ function crests(cx, cy, side, deg, amp, line = 0) {
       }
       return [best, s, deg];
     };
-    const top = [], runout = [], spot = [], P = [1827, -3506];
-    for (const l of baked.lines) for (let k = 0; k < l.p.length; k += 4) {
-      const x = l.p[k], y = l.p[k + 1], [d, s] = onRun(x, y);
-      if (d > 150) continue;
-      const a = lineMogul(tl.wornAt(x, y));
-      if (s < 250) top.push(a); else if (s > len - 250) runout.push(a);
-      if (Math.hypot(x - P[0], y - P[1]) < 60) spot.push(a);
-    }
-    check('Vail Steep and Deep: the merged lines at the runout carry bigger bumps than the one-rider lines up top (p90 over twice the median)',
-      pct(runout, 0.9) > 2 * pct(top, 0.5), `amplitude ${pct(runout, 0.9).toFixed(2)} in the last 250 m vs ${pct(top, 0.5).toFixed(2)} in the first 250 m`);
-    // trees14: its lines' bumps (the busiest tenth of them) against an open field at the run's pitch there
-    const deg = onRun(P[0], P[1])[2], lineF = field(deg, pct(spot, 0.9), 1), openF = field(deg, 1, 0);
-    check(`Vail trees14 (${deg.toFixed(0)} deg): the lines are bumpy (p95 crest over 0.1 m) and under the open field (0.75 of it)`,
-      pct(lineF, 0.95) > 0.1 && pct(lineF, 0.95) < 0.75 * pct(openF, 0.95), `p95 ${pct(lineF, 0.95).toFixed(2)} vs ${pct(openF, 0.95).toFixed(2)} m, amplitude ${pct(spot, 0.9).toFixed(2)}`);
+    // the lines' amplitude (the busiest tenth) and the run's pitch (median) over its first and last 250 m
+    const part = (inPart) => {
+      const amp = [], deg = [];
+      for (const l of baked.lines) for (let k = 0; k < l.p.length; k += 4) {
+        const x = l.p[k], y = l.p[k + 1], [d, s, g] = onRun(x, y);
+        if (d <= 150 && inPart(s)) { amp.push(tl.wornAt(x, y) * LINE_MOGUL); deg.push(g); }
+      }
+      const a = pct(amp, 0.9), g = pct(deg, 0.5), line = field(g, a, 1), main = field(g, a, 0);
+      return { g, p95: pct(line, 0.95), main: pct(main, 0.95) };
+    };
+    const top = part((s) => s < 250), out = part((s) => s > len - 250);
+    check(`Vail Steep and Deep top (${top.g.toFixed(0)} deg): the lines keep main's bumps (p95 crest 0.85 to 1.15 of it)`, top.p95 >= 0.85 * top.main && top.p95 <= 1.15 * top.main,
+      `p95 ${top.p95.toFixed(2)} vs ${top.main.toFixed(2)} m`);
+    check(`Vail Steep and Deep runout (${out.g.toFixed(0)} deg): the lines nearly flatten (p95 crest under 0.35 of main's)`, out.p95 < 0.35 * out.main,
+      `p95 ${out.p95.toFixed(2)} vs ${out.main.toFixed(2)} m`);
   }
 }
 
