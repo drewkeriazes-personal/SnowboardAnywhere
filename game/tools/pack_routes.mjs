@@ -31,7 +31,7 @@ export function packFiles(packsDir = PACKS) {
 /**
  * FEAT-222: the resort picker's Download button. The download runs here in Node (tools/get_pack.mjs): GitHub release
  * assets send no CORS headers, so the page can't fetch them.
- *   GET  /__packs/catalog      { formatVersion, catalog | null, error?, local: { slug: { formatVersion, build, version? } }, jobs }
+ *   GET  /__packs/catalog      { formatVersion, catalog | null, error?, local: { slug: { formatVersion, build, version?, copy? } }, jobs }
  *   POST /__packs/get {slug, replace?}  starts the download; 202, or 400 with the reason. replace: true (BUG-140,
  *                              the release toast's Replace) deletes a pack built on this PC or copied in with --from
  *                              and installs the published one, as get_pack.mjs --force does

@@ -11,7 +11,7 @@ import { MainMenu } from '../ui/MainMenu';
 import { showFirstRun } from '../ui/FirstRun';
 import { BuildWatch } from '../ui/BuildWatch';
 import { ReleaseToasts, ToastStack } from '../ui/ReleaseToast';
-import { PACK_INSTALLED } from '../ui/ResortPicker';
+import { hasPackRoutes, PACK_INSTALLED } from '../ui/ResortPicker';
 import { leaveTo } from '../sim/Controls';
 import { LoadingScreen } from '../ui/Loading';
 import { applyUiScale, loadSettings } from '../ui/Settings';
@@ -43,7 +43,11 @@ export class Game {
     // FEAT-248: a build that turns Published downloads on its own, and a toast offers Ride (a same-tab ?pack= reload).
     // `loaded` is the pack the page rides: a new release of it is not swapped in under the running game.
     let loaded = '';
-    if (!headless) new ReleaseToasts({ builds, view: new ToastStack(), current: () => loaded, navigate: leaveTo, installed: () => window.dispatchEvent(new Event(PACK_INSTALLED)) }).start();
+    if (!headless) {
+      const toasts = new ReleaseToasts({ builds, view: new ToastStack(), current: () => loaded, navigate: leaveTo, installed: () => window.dispatchEvent(new Event(PACK_INSTALLED)) });
+      toasts.start();
+      if (hasPackRoutes()) void toasts.checkStale(); // BUG-175: a local pack older than the published one
+    }
     if (!headless) builds.start();
     if (import.meta.env.DEV) (window as any).__builds = builds;
     let packSlug = params.pack;
