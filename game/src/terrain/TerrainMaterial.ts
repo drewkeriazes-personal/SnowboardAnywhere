@@ -5,6 +5,7 @@ import { DEFORM_GLSL, deformUniforms } from '../world/Deform';
 import { WELL_GLSL, wellUniforms } from '../world/TreeWells';
 import { SNOW_SHADE_TINT } from '../world/snowLook';
 import { SNOWPACK_GLSL, snowpackState, snowpackUniform } from '../sim/Snowpack';
+import { TRACK_GLSL } from './oldTracks';
 
 /**
  * Snow / rock / scree / groomed material. Per-vertex class weights arrive in the color attribute
@@ -184,6 +185,8 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         attribute float ao;
         attribute vec4 mogul;
         attribute float lift;
+        attribute vec3 track;
+        varying vec3 vTrack;
         uniform float uLiftNear;
         varying float vAO;
         varying float vForest;
@@ -212,6 +215,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
         vFall = fall;
         vMogul = mogul;
+        vTrack = track;
         vAO = ao;
         vForest = forest;`);
 
@@ -224,6 +228,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         varying float vAO;
         varying vec2 vFall;
         varying vec4 vMogul;
+        varying vec3 vTrack;
         uniform float uMogulScale, uMogulCreep, uDebugMoguls;
         uniform vec3 uSunDir;
         uniform float uTime;
@@ -347,10 +352,13 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         vec3 gMogN;
         float gMogT;
         float gMogK; // 0..1 mask of the field's strength for the colouring and the lighting tweaks
+        vec3 gTrk; // FEAT-380: the old tracks here (height -1..0, gradient per m in world x, z), faded, for the normal pass
+        float gScrape; // FEAT-380: 0..1 how scraped a busy groomer is
         float gWorn; // FEAT-333: 0..1 how deep in a tree line's trench (0 rim .. 1 floor; the mogul attribute's y fraction)
         ${DEFORM_GLSL}
         ${WELL_GLSL}
         ${NOISE_GLSL}
+        ${TRACK_GLSL}
         ${ROCK_GLSL}
         ${MOGUL_GLSL}
         // BUG-062: the mogul field at a point as vec3(height, dh/dx, dh/dy), pack frame and metres: the
@@ -386,22 +394,6 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           seam = smoothstep(0.93, 1.0, pf) * (1.0 - smoothstep(0.3, 1.2, fwidth(pu) * 8.0));
           return vec4(ridge, slope, normalize(mix(d0, d1, t)));
         }
-        // FEAT-077 skied snow: three families of ski tracks, each a set of sinuous grooves (about 10 cm
-        // wide, 2 to 3 cm deep) roughly down the fall line, swinging through turns; about half the slots
-        // in each family hold a track, so they cross and break up. Height in -1..0.
-        float trackH(vec2 p, vec2 down) {
-          vec2 acr = vec2(-down.y, down.x);
-          float al = dot(p, down), ac = dot(p, acr), h = 0.0;
-          for (int i = 0; i < 3; i++) {
-            float fi = float(i);
-            float S = 1.3 + 0.55 * fi, A = 1.1 + 0.9 * fi, w = 0.28 - 0.06 * fi;
-            float v = ac + A * sin(al * w + fi * 2.1) + 0.7 * vnoise(vec3(p * 0.12, fi * 7.0));
-            float on = step(0.45, hash3(vec3(floor(v / S), fi, 5.0)));
-            float d = (fract(v / S) - 0.5) * S;
-            h -= on * exp(-d * d / 0.003);
-          }
-          return max(h, -1.0);
-        }
         vec2 fallDown(vec2 fallDir) { float nl = length(fallDir); return nl > 1e-4 ? fallDir / nl : vec2(0.0, 1.0); }`)
       .replace('#include <color_fragment>', `
         // class weights from the vertex colour
@@ -432,9 +424,14 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         // (against the whole part rounded with some slack: an interpolated 2.0 can read 1.99999, whose fract is not 0)
         gWorn = clamp((vMogul.y - floor(vMogul.y + 0.02)) / ${WORN_K.toFixed(2)}, 0.0, 1.0);
         float skiedK = max(uSkied, smoothstep(0.5, 0.9, gWorn));
-        float th = skiedK > 0.01 ? trackH(wp.xz, fallDown(vFall)) * trackFade : 0.0;
-        groomed *= 1.0 + 0.035 * th * uSkied;
-        snow *= 1.0 + 0.03 * th * skiedK;
+        // FEAT-380: the old tracks go where riders do (oldTracks.ts); a tree line's floor is ridden whatever the traffic says.
+        // A busy groomer is scraped smooth rather than more cut up: shallower grooves, a touch greyer and sleeker snow
+        float trkDens = max(vTrack.z, 0.6 * smoothstep(0.5, 0.9, gWorn));
+        gScrape = smoothstep(0.55, 0.95, vTrack.z) * uSkied * wGroom;
+        gTrk = vec3(0.0);
+        if (skiedK > 0.01 && trackFade > 0.0 && trkDens > 0.0) gTrk = oldTracks(wp.xz, vTrack.xy, trkDens, 1.0 + 0.8 * uSpring) * trackFade * (1.0 - 0.6 * gScrape);
+        groomed *= (1.0 + 0.035 * gTrk.x * uSkied) * (1.0 - 0.025 * gScrape);
+        snow *= 1.0 + 0.03 * gTrk.x * skiedK;
         float wallK = smoothstep(0.04, 0.4, gWorn) * (1.0 - 0.6 * smoothstep(0.8, 1.0, gWorn));
         snow *= mix(vec3(1.0), vec3(0.8, 0.85, 0.94), 0.6 * wallK);
         vec3 springTint = vec3(0.975, 0.955, 0.925);
@@ -653,17 +650,15 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           // ungroomed snow, less in spring when it has melted smooth
           float skiedN = max(uSkied, smoothstep(0.5, 0.9, gWorn)); // FEAT-333: a tree line's floor is skied too
           if (skiedN > 0.01) {
-            float tf = 1.0 - smoothstep(25.0, 70.0, length(cameraPosition - wpn));
-            vec2 dn = fallDown(vFall);
-            float et = 0.04;
-            float t0 = trackH(wpn.xz, dn), tx = trackH(wpn.xz + vec2(et, 0.0), dn), tz = trackH(wpn.xz + vec2(0.0, et), dn);
-            float depth = 0.025 * skiedN * tf * snowW;
-            vec3 tb = vec3(-(tx - t0) / et * depth, 1.0, -(tz - t0) / et * depth);
-            nn = normalize(t * tb.x + nn * tb.y + b * tb.z);
+            // FEAT-380: the grooves' own gradient from the colour pass (2.5 cm deep), tilted into the snow's surface
+            vec3 tg = vec3(gTrk.y, 0.0, gTrk.z) * 0.025 * skiedN * snowW;
+            nn = normalize(nn - (tg - nn * dot(tg, nn)));
             float ec = 0.2;
             #define CHOPH(q) (fbm2((q) * 0.9) * 0.35 + fbm2((q) * 2.2) * 0.15)
             float c0 = CHOPH(wpn.xz), cx = CHOPH(wpn.xz + vec2(ec, 0.0)), cz = CHOPH(wpn.xz + vec2(0.0, ec));
-            float chop = skiedN * (1.0 - 0.7 * uSpring) * wS * (1.0 - smoothstep(40.0, 120.0, length(cameraPosition - wpn)));
+            // FEAT-380: a busy groomer's loose snow is pushed to its edges
+            float sides = smoothstep(0.55, 0.95, vTrack.z) * uSkied * smoothstep(0.1, 0.35, vColor.b) * (1.0 - smoothstep(0.55, 0.9, vColor.b));
+            float chop = skiedN * (1.0 - 0.7 * uSpring) * min(wS + 0.5 * sides * snowW, 1.0) * (1.0 - smoothstep(40.0, 120.0, length(cameraPosition - wpn)));
             vec3 cb = normalize(vec3(-(cx - c0) / ec, 1.0, -(cz - c0) / ec));
             nn = normalize(mix(nn, normalize(t * cb.x + nn * cb.y + b * cb.z), 0.6 * chop));
           }
@@ -707,7 +702,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         }`)
       .replace('#include <roughnessmap_fragment>', `
         // flat light: no sheen toward a sun hidden behind cloud, so the snow goes fully rough
-        float roughnessFactor = roughness * mix(0.6, 1.1, uFlat) * wSnow + rockR * rockCov + screeR * screeCov;
+        float roughnessFactor = roughness * mix(0.6, 1.1, uFlat) * (1.0 - 0.2 * gScrape) * wSnow + rockR * rockCov + screeR * screeCov;
         roughnessFactor = mix(roughnessFactor, 1.0, fd); // FEAT-075: canopy has no snow sheen`);
   };
   return mat;
