@@ -30,7 +30,7 @@ type QueueItem = { list: string } & ({ track: TrackInfo } | { style: JukeStyle; 
  *  - lift: drive hum while riding
  * One-shots, each picked from three variants with +/- 8% pitch jitter: jump pop with a board
  * creak, landings in three impact bands with a spray whoosh, crash crunch, rock ramp, tree
- * graze and branch brush, snow off a bough (FEAT-217), tower clunk, bull-wheel rumble at terminals, boarding and unload chimes.
+ * graze, snow off a bough (FEAT-217), tower clunk, bull-wheel rumble at terminals, boarding and unload chimes.
  * On foot (FEAT-067): a boot crunch per footstep by surface (groomed squeak, powder whump, ice
  * scrape), breathing that gets heavier with a sprint or a climb, binding ratchet clicks on and off.
  */
@@ -434,7 +434,6 @@ export class GameAudio {
   }
   private ramp(): void { this.pick([() => this.burst('bandpass', 650, 0.2, 0.5, 1.0, 1200), () => this.burst('bandpass', 560, 0.22, 0.5, 1.0, 1100), () => this.burst('bandpass', 720, 0.18, 0.45, 1.0, 1300)])(); }
   private graze(): void { this.pick([() => this.burst('lowpass', 420, 0.16, 0.4), () => this.burst('lowpass', 380, 0.18, 0.4), () => this.burst('lowpass', 460, 0.15, 0.38)])(); }
-  private brush(): void { this.burst('highpass', 2500 + Math.random() * 1500, 0.12, 0.12, 0.5); }
   /** FEAT-159: the board through willow stems or a juniper mat: a twiggy scratch and a soft swish, louder the more brush and speed (k 0..1) */
   private shrubBrush(k: number, v: number): void {
     const g = (0.4 + 0.6 * k) * (0.4 + 0.6 * v);
@@ -604,7 +603,6 @@ export class GameAudio {
     // FEAT-159: brush under the board: a swish on the way in, then every 0.1 to 0.25 s while it lasts
     const shrub = onSnow && spd > 1.5 ? s.shrub : 0;
     if (shrub > 0.05 && (this.brushT <= 0 || this.wasShrub <= 0.05)) { this.brushT = 0.1 + Math.random() * 0.15; this.shrubBrush(shrub, Math.min(1, spd / 15)); }
-    else if (onSnow && s.canopy > 0.5 && spd > 6 && this.brushT <= 0) { this.brushT = 0.4 + Math.random() * 1.6; this.brush(); }
     this.wasShrub = shrub;
     if (riding && !this.wasRiding) { this.chime(); this.bullWheel(); }
     if (!riding && this.wasRiding) { this.unloadChime(); this.bullWheel(); }
