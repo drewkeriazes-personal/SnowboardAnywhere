@@ -132,7 +132,7 @@ on the main menu, which works through the host too.
 | G (hold) | look behind, in every camera |
 | Alt (hold) or right mouse button | look around |
 | C | change camera (chase, close, far, cinematic, first person, helmet cam, free) |
-| M | map; click to drop in anywhere |
+| M | map; click to drop in anywhere. V (or the 3D view button) switches it to the 3D mountain view and back |
 | P | piste lines |
 | T | go to the nearest time trial (when on in Settings) |
 | N | next song |
@@ -144,6 +144,16 @@ on the main menu, which works through the host too.
 
 Every action has two slots in Settings > Controls (click a slot, press a key or the right mouse button; Delete clears it).
 The replay viewer lists its own keys on screen.
+
+The mountain view is the map in 3D: M opens the 2D map as always, then V, △ (Y) or the 3D view button in its top corner
+tilts it into a 3D view of the whole resort over the real terrain, with the lifts, runs, peaks, mountain lodges and you
+(the red dot) marked. Drag to turn round it, right drag or WASD to move, scroll or Q / E to zoom, arrows to turn and
+tilt, Home to go back to the whole resort. The dots are drop zones, made from the resort's own data: every lift top
+(blue), the named peaks (gold), the top of every named run (purple) and the time trial starts (yellow flags; a drop
+there rides that course). Zoom in to see the ones packed close together; hover one (or Tab through them) to see what
+it holds. Click one and the camera flies down to it, waits there until the snow and the trees are in, then you land on
+the snow facing downhill and ride on. So the top of Blue Sky Basin on Vail is M, 3D view, then a click on the Skyline
+Express Lift dot (it holds Earl's Express top and Battle Mountain too). Esc or M closes the map, also mid flight.
 
 Menus work with the keyboard, a gamepad, the mouse or touch: arrows or the D-pad move, Enter / Space or Cross / A select, Esc or Circle / B go back
 (Esc or Circle / B resumes from pause), B on the keyboard or Square / X on the pad switches Snowboard / Skis on the main menu.
@@ -211,7 +221,7 @@ shapes on a DualSense or DualShock); press a key and they switch back to the key
 | right stick, R3 | look around, look behind |
 | L3 | strap in or out, anywhere; boost while Outrun runs |
 | D-pad up / left / down | camera / piste lines / next song |
-| D-pad right or touchpad click | map: left stick moves the crosshair, R2 / L2 zoom, ✕ drops in, ○ closes |
+| D-pad right or touchpad click | map: left stick moves the crosshair, R2 / L2 zoom, ✕ drops in, △ 3D mountain view, ○ closes. In 3D: left stick moves, right stick turns and tilts, R2 / L2 zoom, L1 / R1 step through the drop zones, ✕ drops in at the one picked out, △ back to the 2D map |
 | Create (Select) | replay viewer |
 | Options (Start) or PS | pause |
 

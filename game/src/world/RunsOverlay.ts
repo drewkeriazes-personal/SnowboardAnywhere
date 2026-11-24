@@ -12,21 +12,37 @@ const COLORS: Record<string, number> = {
   freeride: 0xf97316,
 };
 
-/** Piste centre lines draped just above the snow, coloured by difficulty. Toggle with M. */
+/** FEAT-054: share of the view distance the lines are drawn toward the camera, so the coarse far terrain
+ *  (the mountain view's whole-resort overview) doesn't swallow them; a ridge in front still hides them */
+const DEPTH_PULL = 0.005;
+
+/**
+ * Piste centre lines draped just above the snow, coloured by difficulty: P toggles them while riding, and the
+ * mountain view (FEAT-054) shows them. One draw call (FEAT-054: it was a line per run).
+ */
 export class RunsOverlay {
   readonly group = new THREE.Group();
 
   constructor(pack: Pack) {
+    const pos: number[] = [], col: number[] = [];
+    const c = new THREE.Color();
     for (const run of pack.features.runs) {
       if (run.points.length < 2) continue;
-      const pts = run.points.map(([x, y, z]) => new THREE.Vector3(x, Math.max(z, pack.groundHeight(x, y)) + 0.6, -y));
-      const geo = new THREE.BufferGeometry().setFromPoints(pts);
-      const mat = new THREE.LineBasicMaterial({ color: COLORS[(run.difficulty ?? 'intermediate') as Difficulty] ?? 0x888888, transparent: true, opacity: 0.85 });
-      const line = new THREE.Line(geo, mat);
-      line.name = `run ${run.name ?? '(unnamed)'}`;
-      line.userData.run = run;
-      this.group.add(line);
+      c.setHex(COLORS[(run.difficulty ?? 'intermediate') as Difficulty] ?? 0x888888);
+      for (let i = 1; i < run.points.length; i++) {
+        for (const [x, y, z] of [run.points[i - 1], run.points[i]]) { pos.push(x, Math.max(z, pack.groundHeight(x, y)) + 0.6, -y); col.push(c.r, c.g, c.b); }
+      }
     }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, fog: false });
+    mat.onBeforeCompile = (s) => {
+      s.vertexShader = s.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\n  mvPosition.xyz *= ${(1 - DEPTH_PULL).toFixed(4)}; gl_Position = projectionMatrix * mvPosition;`);
+    };
+    const lines = new THREE.LineSegments(geo, mat);
+    lines.name = 'runs';
+    this.group.add(lines);
     this.group.visible = false;
   }
 

@@ -32,6 +32,10 @@ export class ResortMap {
   /** FEAT-162: told when the full map opens or closes, however it happened (the session's Map state follows it) */
   onOpenChange: ((open: boolean) => void) | null = null;
   private hover: [number, number] | null = null;
+  /** FEAT-054: the map is in its 3D mode (the mountain view draws instead; the map stays open) */
+  in3d = false;
+  /** FEAT-054: the 3D view button (the map's state switches the mode) */
+  onToggle3d: (() => void) | null = null;
 
   /** FEAT-059: with ?debug, runs that score 0.3 or more for moguls get an orange under-stroke */
   private debug = false;
@@ -59,6 +63,11 @@ export class ResortMap {
     this.fullInfo = document.createElement('div');
     Object.assign(this.fullInfo.style, { position: 'absolute', left: '16px', top: '12px', color: '#fff', font: '14px system-ui, sans-serif', textShadow: '0 1px 3px #000', pointerEvents: 'none' });
     this.fullWrap.appendChild(this.fullInfo);
+    const to3d = document.createElement('button');
+    to3d.textContent = '3D view';
+    to3d.className = 'map-view-toggle';
+    to3d.addEventListener('click', () => this.onToggle3d?.());
+    this.fullWrap.appendChild(to3d);
     document.body.appendChild(this.fullWrap);
     // zoom about the cursor, drag to pan, click (no drag) to drop in
     let down: { x: number; y: number; t: number; cx: number; cy: number } | null = null;
@@ -88,7 +97,7 @@ export class ResortMap {
     this.full.addEventListener('mouseleave', (e) => { this.hover = null; if (down) up(e); this.drawFull(); });
     this.full.addEventListener('dblclick', (e) => { e.preventDefault(); const r = this.full.getBoundingClientRect(); this.zoomAt(e.clientX - r.left, e.clientY - r.top, 2); this.drawFull(); });
     this.onKey = (e: KeyboardEvent) => {
-      if (!this.fullOpen) return;
+      if (!this.fullOpen || this.in3d) return;
       if (e.key === '+' || e.key === '=') { this.zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1.5); this.drawFull(); }
       else if (e.key === '-') { this.zoomAt(window.innerWidth / 2, window.innerHeight / 2, 1 / 1.5); this.drawFull(); }
       else if (e.key === 'Home' || e.key === '0') { this.zoom = 1; this.centre = this.boundsCentre(); this.drawFull(); }
@@ -400,9 +409,15 @@ export class ResortMap {
     this.drawFull();
     this.onOpenChange?.(true);
   }
+  /** FEAT-054: the 3D mode on (the 2D map hides under it) or off (it shows again) */
+  set3d(on: boolean): void {
+    this.in3d = on;
+    this.fullWrap.style.display = on || !this.fullOpen ? 'none' : 'flex';
+    if (!on && this.fullOpen) this.drawFull();
+  }
   close(): void {
     const was = this.fullOpen;
-    this.fullOpen = false; this.fullWrap.style.display = 'none'; this.padHelp = null;
+    this.fullOpen = false; this.in3d = false; this.fullWrap.style.display = 'none'; this.padHelp = null;
     if (was) this.onOpenChange?.(false);
   }
 
@@ -431,6 +446,7 @@ export class ResortMap {
   spawnPos: [number, number] | null = null;
 
   drawFull(): void {
+    if (this.in3d) return;
     const c = this.full;
     c.width = window.innerWidth; c.height = window.innerHeight;
     const ctx = c.getContext('2d')!;
@@ -462,7 +478,7 @@ export class ResortMap {
       ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx - 4, cy); ctx.moveTo(cx + 4, cy); ctx.lineTo(cx + 14, cy);
       ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy - 4); ctx.moveTo(cx, cy + 4); ctx.lineTo(cx, cy + 14); ctx.stroke();
     }
-    const help = this.padHelp ?? `click to drop in &middot; scroll to zoom (${this.zoom.toFixed(1)}x) &middot; drag to pan &middot; Home resets &middot; M or Esc to close`;
+    const help = this.padHelp ?? `click to drop in &middot; scroll to zoom (${this.zoom.toFixed(1)}x) &middot; drag to pan &middot; Home resets &middot; V 3D view &middot; M or Esc to close`;
     if (this.hover) {
       dot(this.hover[0], this.hover[1], 'rgba(255,255,255,.5)', 5);
       const h = this.pack.groundHeight(this.hover[0], this.hover[1]);
