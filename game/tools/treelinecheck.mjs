@@ -10,6 +10,8 @@
 //   - a full line is dug about a metre into the snow like a bobsled run, with a berm on its rim; no trunk in its walls
 //   - the snow on a line is tracked (chop) and shallower than the powder either side; a storm softens it
 //   - the build takes under 1.5 s of CPU
+//   - FEAT-373: the trees on a narrow line's rim reach in over it, those on the wide, strong lines less; nothing new below
+//     where the reach starts (the rider and the chase camera's view down the line); the puffs' crown (drawnRadius) inverts the shader's stretch (ported below)
 // FEAT-334: a pack with baked lines (treeLines.json, MapPacker pipeline/tree_lines.py) is checked on those, as the game loads
 // them; --runs checks the plan from the runs instead.
 // node tools/treelinecheck.mjs [pack] [--runs]        (exit code 1 if a check fails; packs from SHOT_PACKS or the repo's packs/)
@@ -29,10 +31,11 @@ const rel = (p) => path.relative(dir, path.join(GAME, 'src', p)).replace(/\\/g, 
 fs.writeFileSync(entry, `export { TreeLines, TrunkIndex } from '${rel('pack/treeLines')}';
 export { generateStems } from '${rel('world/trees/stands')}';
 export { snowAt, newSnowState, DEFAULT_SNOW_WORLD } from '${rel('sim/SnowConditions')}';
-export { trimReach, standGate } from '${rel('world/trees/trim')}';\n`);
+export { trimReach, standGate, treeTrim } from '${rel('world/trees/trim')}';
+export { LEAN, lineCanopy, drawnRadius, leanFrom, stageTrim } from '${rel('world/trees/lineCanopy')}';\n`);
 const out = path.join(dir, 'entry.mjs');
 await build({ entryPoints: [entry], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
-const { TreeLines, TrunkIndex, generateStems, snowAt, newSnowState, DEFAULT_SNOW_WORLD, trimReach, standGate } = await import(pathToFileURL(out).href);
+const { TreeLines, TrunkIndex, generateStems, snowAt, newSnowState, DEFAULT_SNOW_WORLD, trimReach, standGate, treeTrim, LEAN, lineCanopy, drawnRadius, leanFrom, stageTrim } = await import(pathToFileURL(out).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
@@ -182,6 +185,55 @@ const bush = trimReach(1, 0, 1, 18, 4.8, tt);
 check('a bare-trimmed trunk has no needled crown at body height (no puffs from boughs that are not drawn)', bareBody === 0, `reach ${bareBody.toFixed(2)} of the crown from 0.3 to 2.4 m`);
 check('an untrimmed tree keeps its whole crown, a trimmed one grows out over its trim line', fullBody === 1 && bush > 1.2, `untrimmed ${fullBody.toFixed(2)}, 0.6 m over the line ${bush.toFixed(2)}`);
 check('only closed stands are trimmed', standGate(0.05) === 0 && standGate(0.5) === 1, `gate ${standGate(0.05)} at 5 % crown cover, ${standGate(0.5)} at 50 %`);
+
+// FEAT-373: a 15 m spruce (crown radius 1.95 m) on the rim of every 7th strong segment, 1.5 m past its half-width, trimmed
+{
+  const nar = [], wide = [], low = [], inv = [], tr = new Float32Array(3), tmp = [0, 0], CR = 1.95, H = 15;
+  const smooth = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  // the shader's stretch (lineCanopy.ts LEAN_GLSL, leanCrown, without its core taper) on a pack offset (px, py) from the trunk,
+  // in metres: into the frame of an instance with yaw `yaw` (Vegetation's instance matrix), stretched along the staged angle, back
+  const staged = new Float32Array(4);
+  const stretch = (ln, yaw, y0, y, px, py) => {
+    stageTrim(tr, ln, 0, yaw, staged, 0);
+    const ca = Math.cos(yaw), sa = Math.sin(yaw), wx = px, wz = -py;
+    let lx = ca * wx - sa * wz, lz = sa * wx + ca * wz;
+    const L = Math.hypot(staged[2], staged[3]), ux = staged[2] / L, uz = staged[3] / L, g = smooth(y0, y0 + LEAN.RISE, y), f = lx * ux + lz * uz;
+    if (g > 0 && f > 0) { const m = Math.min(f * L / (LEAN.CROWN * CR), L) * g; lx += ux * m; lz += uz * m; }
+    return [ca * lx + sa * lz, -(-sa * lx + ca * lz)];
+  };
+  for (let i = 0; i < tl.count; i += 7) {
+    const o = i * 6, s = tl.seg, hw = s[o + 4], str = s[o + 5];
+    if (str < 0.5) continue;
+    const mx = (s[o] + s[o + 2]) / 2, my = (s[o + 1] + s[o + 3]) / 2, l = Math.hypot(s[o + 2] - s[o], s[o + 3] - s[o + 1]) || 1;
+    const x = mx - (s[o + 3] - s[o + 1]) / l * (hw + 1.5), y = my + (s[o + 2] - s[o]) / l * (hw + 1.5);
+    if (tl.trenchAt(x, y) < -0.05) continue; // in another line's trench
+    treeTrim(1, 1, x, y, tr, 0);
+    const ln = lineCanopy(tl, x, y, CR, tr, 0, null, 1), L = ln ? ln[1] : 0;
+    if (hw < 1.3 && str < 0.75) nar.push(L); else if (hw > 1.8 && str > 0.95) wide.push(L);
+    if (!ln) continue;
+    const y0 = leanFrom(tr, 0, H), tx = Math.cos(ln[0]), ty = -Math.sin(ln[0]);
+    // toward the line, below where the reach starts, the crown is the trim's alone
+    for (const yy of [0.3, 0.9, 1.6, 2.1, 3.5, 4.5]) {
+      const r = CR * 0.9, trimmed = r * trimReach(tr[0], tr[1], tr[2], H, yy, tmp), dr = drawnRadius(tr, ln, 0, H, CR, yy, r, tx, ty, tmp);
+      if (yy <= y0 && Math.abs(dr - trimmed) > 1e-6) low.push(`${yy} m: ${trimmed.toFixed(2)} -> ${dr.toFixed(2)}`);
+    }
+    // round the crown at 4 and 7 m, at a random yaw: in the direction of each stretched edge point, the puffs see the crown end there
+    const yaw = (i * 2.399) % (2 * Math.PI);
+    for (const yy of [4, 7]) {
+      const r = CR * 0.6, rt = r * trimReach(tr[0], tr[1], tr[2], H, yy, tmp);
+      for (let a = 0; a < 16; a++) {
+        const [qx, qy] = stretch(ln, yaw, y0, yy, rt * Math.cos(a * Math.PI / 8), rt * Math.sin(a * Math.PI / 8));
+        inv.push(Math.abs(drawnRadius(tr, ln, 0, H, CR, yy, r, qx, qy, tmp) - Math.hypot(qx, qy)));
+      }
+    }
+  }
+  const mean = (a) => a.reduce((p, v) => p + v, 0) / Math.max(1, a.length);
+  const leaned = nar.filter((v) => v > 0.5).length / Math.max(1, nar.length);
+  check('the crowns on a narrow line\'s rim reach in over it', nar.length > 20 && leaned > 0.9, `${(leaned * 100).toFixed(0)} % of ${nar.length} rim trees on narrow lines reach in, ${mean(nar).toFixed(2)} m on average`);
+  check('the wide, strong lines near the run stay more open', wide.length > 20 && mean(wide) < mean(nar) * 0.7, `${mean(wide).toFixed(2)} m on average over ${wide.length} rim trees on them, ${mean(nar).toFixed(2)} m on the narrow lines`);
+  check('nothing new reaches over the line below where the reach starts (the rider and the chase camera\'s view down the line)', low.length === 0, low.length ? low.slice(0, 3).join('; ') : 'the trim alone up to there');
+  check('the puffs\' crown is the shader\'s stretched crown', inv.length > 0 && inv.reduce((p, v) => Math.max(p, v), 0) < 1e-3, `the largest miss ${inv.reduce((p, v) => Math.max(p, v), 0).toFixed(4)} m over ${inv.length} points round the crown`);
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(fails ? `\n${fails} check(s) failed` : '\nall tree line checks passed');

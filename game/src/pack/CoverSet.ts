@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { CoverLevelMeta, CoverMeta } from './types';
 import { decodeRGBA } from './MaskSet';
+import { packFetch } from './fetch';
 
 /**
  * FEAT-153: forest cover levels for the terrain at a distance (`cover/<level>.png`, see MapPacker's docs/pack-format.md).
@@ -32,7 +33,7 @@ export class CoverLevel {
   get loaded(): boolean { return !!this.cpu; }
 
   async load(baseUrl: string): Promise<void> {
-    const resp = await fetch(`${baseUrl}/${this.meta.file}`);
+    const resp = await packFetch(`${baseUrl}/${this.meta.file}`);
     if (!resp.ok) throw new Error(`cover ${this.meta.file}: HTTP ${resp.status}`);
     const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     const { w, h } = this.meta;
@@ -43,7 +44,7 @@ export class CoverLevel {
     let near: Uint8ClampedArray | null = null;
     if (this.meta.stands) {
       try {
-        const r2 = await fetch(`${baseUrl}/${this.meta.stands}`);
+        const r2 = await packFetch(`${baseUrl}/${this.meta.stands}`);
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
         const b2 = await createImageBitmap(await r2.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
         near = decodeRGBA(b2, w, h);

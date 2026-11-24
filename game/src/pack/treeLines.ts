@@ -12,10 +12,10 @@ import type { BakedTreeLines, RunFeature } from './types';
  * A line is 1.5 to 3 m wide, wider and stronger near the run, and fades out at its ends and deeper in the woods.
  *
  * What reads it: the generated stems leave the corridor (trees/stands.ts), the mogul field takes the line's
- * strength as its amplitude (Pack.mogulAmp, so the physics, the bump geometry and the shader agree: on a steep
- * pitch it is a mogul line), the snow on it is tracked (SnowConditions, `worn`), and the terrain draws ski
- * tracks along it (TerrainMaterial). All of that only under the forest (`gate`, Pack.forestGate): beside a run
- * in the open there is no tree line to wear.
+ * strength as its amplitude (Pack.mogulAmp, so the physics, the bump geometry and the shader agree: a mogul line with
+ * its own uneven pattern on the steep, nearly flat at a runout, FEAT-268), the snow on it is tracked
+ * (SnowConditions, `worn`), and the terrain draws ski tracks along it (TerrainMaterial). All of that only under the
+ * forest (`gate`, Pack.forestGate): beside a run in the open there is no tree line to wear.
  *
  * Trim (FEAT-303): how far a tree's lower branches are worn back (0 untouched .. 1 trimmed), for the tree
  * kit's shader: full in the trees of a gladed or expert run, half along a black run's edges, most of it in the strips of forest between two runs, and round the
@@ -84,7 +84,7 @@ const EDGE = 0.9;
 const STEM_GAP = 0.15, STEM_JITTER = 0.6;
 /** a line fainter than this (its trench under 5 cm) leaves the stems where they are */
 const STEM_FAINT = 0.05;
-/** mogul amplitude (0..1) at a line's full strength, and the share of a full-strength line's snow that is tracked */
+/** mogul amplitude (0..1) at a line's full strength; the field eases it off on gentle pitches (FEAT-268, Moguls.ts) */
 export const LINE_MOGUL = 0.85;
 /** the trench a full-strength line wears into the snow, m deep, how far its rim is past the corridor's half-width, m, and
  *  the berm of pushed-aside snow on the rim, m high and wide (`trenchAt`) */
@@ -691,6 +691,33 @@ export class TreeLines {
       if (s[o + 5] >= 0.15 && segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]) < r * r) return true;
     }
     return false;
+  }
+
+  /**
+   * FEAT-373: the line whose rim is nearest (x, y) (the least distance past its half-width), of those not faint and within
+   * their trench and berm reach (the segment grid's pad): into `out` the distance to its centreline (m), its half-width (m),
+   * its strength under the forest gate (an open stretch ungated) and the unit direction (pack) from (x, y) toward it. False
+   * when there is none.
+   */
+  nearestLine(x: number, y: number, out: number[]): boolean {
+    const ids = this.grid.at(x, y), pad = EDGE + TRENCH_WALL + BERM_W;
+    if (!ids) return false;
+    const s = this.seg;
+    let best = pad, open = false;
+    for (const i of ids) {
+      const o = i * LINE_SEG, hw = s[o + 4];
+      if (s[o + 5] < STEM_FAINT) continue;
+      const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
+      let t = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const qx = ax + dx * t - x, qy = ay + dy * t - y, d = Math.hypot(qx, qy);
+      if (d - hw >= best) continue;
+      best = d - hw; open = this.open[i] === 1;
+      out[0] = d; out[1] = hw; out[2] = s[o + 5]; out[3] = d > 1e-6 ? qx / d : 0; out[4] = d > 1e-6 ? qy / d : 0;
+    }
+    if (best >= pad) return false;
+    if (!open) out[2] *= this.gate(x, y);
+    return true;
   }
 
   /** FEAT-303: how far a tree's lower branches are trimmed here, 0..1 */

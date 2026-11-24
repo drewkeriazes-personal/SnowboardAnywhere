@@ -1,3 +1,4 @@
+import { hotSwap } from '../core/hot';
 /**
  * Procedural jukebox in Web Audio, one style per playlist so every playlist plays something
  * before real tracks are added. No samples: drums are noise bursts and pitch-dropped sines,
@@ -492,3 +493,6 @@ export class Jukebox {
     o.connect(f).connect(g).connect(dirty ? this.shaper : this.out); o.start(t); o.stop(t + dur + 0.02);
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

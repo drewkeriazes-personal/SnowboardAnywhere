@@ -1,5 +1,6 @@
 import type { MaskMeta } from './types';
 import { TileStats } from './tileStats';
+import { packFetch } from './fetch';
 
 /**
  * Surface class mask: R rock, G scree, B groomed piste, A canopy cover. Values 0..1. Also the
@@ -67,7 +68,7 @@ export class MaskSet {
     const k = this.key(tx, ty);
     try {
       const t0 = performance.now();
-      const resp = await fetch(`${this.baseUrl}/${tx}_${ty}.png`);
+      const resp = await packFetch(`${this.baseUrl}/${tx}_${ty}.png`);
       if (!resp.ok) {
         this.missing.add(k);
         return;

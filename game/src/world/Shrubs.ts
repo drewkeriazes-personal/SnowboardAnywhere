@@ -4,6 +4,7 @@ import type { Collider } from '../sim/Collider';
 import { aspectOf, snowpackChanged, snowpackDepth, snowpackState, type SnowpackState } from '../sim/Snowpack';
 import { SPECIES, VARIANTS, hash01, fadeWidth, treeMaterial, treeDepthMaterial, newBand, SHRUBS, SHRUB_KINDS, WILLOW, YOUNG_CONIFER, buildShrubGeometries, type TreeKit, type ShrubGeometrySet } from './trees';
 import { vegetationNearRadius } from './Vegetation';
+import { packFetch } from '../pack/fetch';
 
 /**
  * FEAT-159: the shrubs and understory (DATA-020's shrub set: willow, juniper, sagebrush, young conifers,
@@ -196,7 +197,7 @@ export class Shrubs {
     if (listed && !listed.includes(`${cell.cx}_${cell.cy}`)) { cell.missing = true; return; } // empty cell, no request
     cell.loading = true;
     try {
-      const resp = await fetch(`${this.pack.baseUrl}/shrubs/${cell.cx}_${cell.cy}.bin`);
+      const resp = await packFetch(`${this.pack.baseUrl}/shrubs/${cell.cx}_${cell.cy}.bin`);
       if (!resp.ok) { cell.missing = true; return; }
       const d = new Float32Array(await resp.arrayBuffer());
       if (this.cells.get(`${cell.cx}_${cell.cy}`) !== cell) return; // dropped while loading

@@ -12,6 +12,7 @@ import type { BuildWatch } from './BuildWatch';
 import { mountAccountLine } from './AccountLine';
 import { fillAccountPanel } from './AccountPanel';
 import type { PauseCourse, PauseMode } from './PauseMenu';
+import { hotSwap } from '../core/hot';
 
 /**
  * FEAT-138: on a build from `npm run host`, the address another computer on the home network opens, so it is
@@ -349,3 +350,6 @@ export class MainMenu {
   /** the Settings screen is open over the menu */
   get settingsUp(): boolean { return settingsOpen(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

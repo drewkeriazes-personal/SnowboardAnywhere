@@ -1,6 +1,7 @@
 import { packLandmarks } from '../world/Landmarks';
 import type { Pack } from '../pack/Pack';
 import type { Difficulty, RunFeature } from '../pack/types';
+import { hotSwap } from '../core/hot';
 
 /**
  * 2D map of the resort drawn once to an offscreen canvas (hillshade from the mid height set,
@@ -486,3 +487,6 @@ export class ResortMap {
     return run;
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

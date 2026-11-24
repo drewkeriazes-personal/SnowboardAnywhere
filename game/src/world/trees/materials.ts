@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_BODY, TREE_FADE_FRAG_ALPHA } from '../TreeFade';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 import { TRIM, TRIM_GLSL } from './trim';
+import { LEAN_GLSL } from './lineCanopy';
+import { TRUNK_ROOT } from '../TreeWells';
 
 /**
  * FEAT-156: the tree kit's materials. Each LOD draws only inside its distance band (measured from the
@@ -33,6 +35,8 @@ export const kitUniforms = {
   uKitCore: { value: 0 },
   /** FEAT-303: the glade trim's strength (0 with `?notrim`, for before / after looks) */
   uTrimK: { value: 1 },
+  /** FEAT-373: the lean over the tree lines fades out over this distance (m), before the far LODs (TreeKit.setBands) */
+  uLeanFar: { value: new THREE.Vector2(1e8, 1e8 + 1) },
 };
 
 /**
@@ -65,19 +69,28 @@ const LOD_VERT = /* glsl */ `
   // FEAT-298 (generate.ts Builder.core): natural crown radius / height, core radius and the lean per unit height (crown-radius frame)
   attribute vec4 kCore;
   #ifndef SHRUB
-    // FEAT-303: per instance (t, bare, hs): how far the tree's lower branches are trimmed, bare below the line, the line's height scale (trim.ts)
-    attribute vec3 aTrim;
+    // FEAT-303: per instance (t + 2 bare, hs, ...): how far the tree's lower branches are trimmed, bare below the line, the
+    // line's height scale (trim.ts); FEAT-373: and its lean over a tree line (a vector in the instance's frame, m), lineCanopy.ts stageTrim
+    attribute vec4 aTrim;
+    uniform vec2 uLeanFar;
+    // BUG-177: 1 on the trunk's base ring (generate.ts trunk)
+    attribute float kRoot;
   #endif
   varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
   // 0..1 visibility at this distance; isIn is 1 on the fade-in edge, 0 on the fade-out edge
+  float kCamD; // FEAT-373: the camera's distance, for the lean's fade (lineCanopy.ts)
   float lodVis(vec3 o, out float isIn) {
     float d = distance(o, uLodCam);
+    kCamD = d;
     float vin = clamp((d - uLodBand.x) / max(uLodBand.y - uLodBand.x, 1e-3), 0.0, 1.0);
     float vout = 1.0 - clamp((d - uLodBand.z) / max(uLodBand.w - uLodBand.z, 1e-3), 0.0, 1.0);
     isIn = d < 0.5 * (uLodBand.y + uLodBand.z) ? 1.0 : 0.0;
     return isIn > 0.5 ? vin : vout;
   }
   ${TRIM_GLSL}
+  #ifndef SHRUB
+    ${LEAN_GLSL}
+  #endif
 `;
 const LOD_FRAG_HEAD = /* glsl */ `
   varying float vLodVis; varying float vLodIn; varying float vTrimLow; varying float vTrimBare;
@@ -94,9 +107,15 @@ const BAYER = /* glsl */ `
   float treeBayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
   float treeBayer8(vec2 a) { return treeBayer2(0.25 * a) * 0.0625 + treeBayer2(0.5 * a) * 0.25 + treeBayer2(a); }
 `;
+/**
+ * BUG-178: the crossfade's Bayer thresholds sit mid-cell (this is added to the cell's value), so a tree fully in its band
+ * keeps every pixel: the interpolated vLodVis of 1.0 can come out a hair under 1, and against the cell at 0 that dropped
+ * up to one pixel in 64 on solid trunks and crowns, a scatter of see-through dots. The two LODs at an edge still cover once.
+ */
+export const BAYER_HALF_CELL = (0.5 / 64).toFixed(7);
 /** needs treeBayer8 (TREE_FADE_FRAG_HEAD) */
 const LOD_FRAG_BODY = /* glsl */ `
-  { float lb = treeBayer8(gl_FragCoord.xy); if (vLodIn > 0.5 ? lb < 1.0 - vLodVis : lb >= vLodVis) discard; }
+  { float lb = treeBayer8(gl_FragCoord.xy) + ${BAYER_HALF_CELL}; if (vLodIn > 0.5 ? lb < 1.0 - vLodVis : lb >= vLodVis) discard; }
 `;
 const COLLAPSE = /* glsl */ `if (vLodVis <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);`;
 
@@ -128,10 +147,12 @@ const KIT_BEGIN = /* glsl */ `
     // FEAT-303: a glade tree's lower branches are worn back by the riders (trim.ts, the same profile as the puffs): below
     // the tree's own trim line they reach TRIM.PULL less far out at full trim and thin (TRIM_FRAG), all gone on a bare tree;
     // just over it they grow out fuller
-    if (aTrim.x * uTrimK > 0.0) {
+    float kBare = step(1.5, aTrim.x);
+    vec3 kTrim = vec3(aTrim.x - 2.0 * kBare, kBare, aTrim.y);
+    if (kTrim.x * uTrimK > 0.0) {
       float kH = length(ktm[1].xyz);
-      vTrimBare = aTrim.y;
-      vec2 kLU = trimLowUp(vec3(aTrim.x * uTrimK, aTrim.yz), kH, position.y * kH);
+      vTrimBare = kBare;
+      vec2 kLU = trimLowUp(vec3(kTrim.x * uTrimK, kTrim.yz), kH, position.y * kH);
       if (kLU.x > 0.0 || kLU.y > 0.0) {
         vec2 tAx = position.y * kCore.zw, tD = transformed.xz - tAx;
         float tr = length(tD), ta = max(kCore.y, 0.05);
@@ -140,7 +161,12 @@ const KIT_BEGIN = /* glsl */ `
           vTrimLow = kLU.x * smoothstep(ta, mix(2.0 * ta + 0.05, 1.3 * ta + 0.02, vTrimBare), tr); // none on the trunk
         }
       }
+      // FEAT-373: over a narrow tree line, the crown's line side reaches in over it (lineCanopy.ts; only trimmed trees lean)
+      if (aTrim.z != 0.0 || aTrim.w != 0.0) transformed.xz = leanCrown(transformed.xz, position.y * kCore.zw, max(kCore.y, 0.05), position.y * kH, kTrim, aTrim.zw, kH, length(ktm[0].xyz));
     }
+    // BUG-177: the base ring reaches TRUNK_ROOT m into the ground whatever the tree's height, so a trunk stands on the
+    // floor of its tree well (world/TreeWells.ts) instead of floating over it; the instance scales y by the height
+    transformed.y -= kRoot * ${TRUNK_ROOT.toFixed(2)} / length(ktm[1].xyz);
   #endif
   {
     float kPhase = dot(kOrigin.xz, vec2(0.071, 0.113));

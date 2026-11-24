@@ -10,17 +10,58 @@ import { refuseForeignOrigin } from './same_origin.mjs';
 
 const TYPES = { '.png': 'image/png', '.json': 'application/json', '.bin': 'application/octet-stream', '.webp': 'image/webp' };
 
+/**
+ * FEAT-375: validators for a file served from disk, so the browser keeps it and asks again each load instead of
+ * downloading it again. Sets ETag (size and mtime, no hashing of a 20 MB tile, plus `tag`: a pack file's is its
+ * pack's meta.build) and Last-Modified, and answers a request that names them with 304 and no body (true: the
+ * response is done). With cache-control: no-cache the browser revalidates every load, and a pack replaced on disk
+ * (`npm run get`, the picker's Download or Replace) has a new build id and new mtimes, so it is never served stale.
+ */
+export function notModified(req, res, stat, tag = '') {
+  const etag = `"${tag ? `${tag}-` : ''}${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`;
+  res.setHeader('etag', etag);
+  res.setHeader('last-modified', stat.mtime.toUTCString());
+  const inm = req.headers['if-none-match'], ims = req.headers['if-modified-since'];
+  // If-None-Match wins when both are sent (RFC 9110 13.2.2). If-Modified-Since alone (whole seconds, and blind to a
+  // new build whose files kept their mtimes) is answered only for a file with no tag.
+  const same = inm !== undefined ? inm.split(',').some((t) => t.trim().replace(/^W\//, '') === etag)
+    : !tag && ims !== undefined && Math.floor(stat.mtimeMs / 1000) <= Date.parse(ims) / 1000;
+  if (!same) return false;
+  res.statusCode = 304;
+  res.end();
+  return true;
+}
+
 /** /packs/* from packsDir (resort packs stay out of the game bundle; they are gitignored). */
 export function packFiles(packsDir = PACKS) {
+  // FEAT-375: each pack's meta.build, read again when its meta.json changes (a pack built or installed over it), so a
+  // file that kept its size and mtime through a rebuild (an archive's mtimes carried over) still gets a new ETag
+  const builds = new Map();
+  const buildOf = (rel) => {
+    const meta = path.join(packsDir, rel.split('/')[0], 'meta.json');
+    let st;
+    try { st = fs.statSync(meta); } catch { return ''; } // no meta.json there (packs/index.json): size and mtime only
+    const at = `${st.size}-${st.mtimeMs}`;
+    let b = builds.get(meta);
+    if (b?.at !== at) {
+      let id = '';
+      try { id = String(JSON.parse(fs.readFileSync(meta, 'utf8')).build ?? ''); } catch { /* no build id: size and mtime only */ }
+      b = { at, id: id.replace(/[^\w.-]/g, '') };
+      builds.set(meta, b);
+    }
+    return b.id;
+  };
   return (req, res, next) => {
     if (!req.url || !req.url.startsWith('/packs/')) return next();
     // npm run host serves this to the LAN: a bad escape is a 400, and only files inside packs/ (not a packs-old/ sibling)
     let rel;
     try { rel = decodeURIComponent(req.url.split('?')[0].slice('/packs/'.length)); } catch { res.statusCode = 400; res.end(); return; }
     const file = path.join(packsDir, rel);
-    if (!file.startsWith(packsDir + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.statusCode = 404; res.end(); return; }
+    const stat = file.startsWith(packsDir + path.sep) && fs.existsSync(file) ? fs.statSync(file) : null;
+    if (!stat || stat.isDirectory()) { res.statusCode = 404; res.end(); return; }
     res.setHeader('content-type', TYPES[path.extname(file)] ?? 'application/octet-stream');
     res.setHeader('cache-control', 'no-cache');
+    if (notModified(req, res, stat, buildOf(rel))) return;
     // pipeline, not pipe: a request the browser drops mid-file (a page left while a cover image streams) closes the
     // file too. With pipe it stayed open, and Windows then refused to rename the pack folder, so the picker's
     // Update or Download over it failed with EPERM until the server stopped (BUG-095)

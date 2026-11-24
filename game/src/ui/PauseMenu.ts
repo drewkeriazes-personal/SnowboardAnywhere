@@ -4,6 +4,7 @@ import { closeScreen, lastInputKind, openScreen, Screen } from './MenuNav';
 import { renderHints, type Hint } from './HintBar';
 import { optsOf, rowById, type Row } from './SettingsRows';
 import { fmtDistance, fmtHeight, fmtSpeed } from './Units';
+import { hotSwap } from '../core/hot';
 
 export type PauseAction = 'resume' | 'restart' | 'map' | 'quit' | 'replay' | 'freeride' | 'trial' | 'outrunStart' | 'outrunStop';
 export type PauseMode = { kind: 'free' } | { kind: 'trial'; course: string } | { kind: 'outrun' };
@@ -307,3 +308,6 @@ export class PauseMenu {
   }
   destroy(): void { this.hide(); this.el.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));
