@@ -36,6 +36,8 @@ export class Builder {
   readonly idx: number[] = [];
   /** FEAT-158: triangles inside the shell that add nothing to the shadow (drawn after `idx`, left out of the shadow pass) */
   readonly idxInner: number[] = [];
+  /** BUG-177: the trunk's base-ring vertices (`trunk`), written as `kRoot` = 1 for the kit shader to sink below the snow */
+  readonly root: number[] = [];
   /** FEAT-157: the snow hold the next vertices get (times what `card` adds along the branch) */
   holdK = 1;
   /**
@@ -82,6 +84,9 @@ export class Builder {
     const kc = new Float32Array((p.length / 3) * 4), c = this.core;
     if (c) for (let i = 0; i < kc.length; i += 4) { kc[i] = c[0]; kc[i + 1] = c[1] / radius; kc[i + 2] = (c[2] * top) / radius; kc[i + 3] = (c[3] * top) / radius; }
     g.setAttribute('kCore', new THREE.BufferAttribute(kc, 4));
+    const kr = new Float32Array(p.length / 3);
+    for (const i of this.root) kr[i] = 1;
+    g.setAttribute('kRoot', new THREE.BufferAttribute(kr, 1));
     g.setIndex(this.idx.concat(this.idxInner));
     g.userData.castCount = this.idx.length; // FEAT-158: the shadow pass draws this many indices
     g.computeBoundingSphere();
@@ -360,6 +365,12 @@ function makePlan(sp: Species, variant: number): Plan {
 
 // ---------------------------------------------------------------- LOD0
 
+/** BUG-177: the trunk, a tube up `trunkPath` whose base ring is marked (Builder.root) so the kit shader can sink it into a tree well */
+function trunk(b: Builder, path: Pt[], sides: number, uv: UvRect, c: THREE.Color, ao: (y: number) => number, segs = 1, close = false): void {
+  for (let i = 0, v0 = b.pos.length / 3; i <= sides; i++) b.root.push(v0 + i);
+  tube(b, path, sides, uv, c, ao, segs, close);
+}
+
 function trunkPath(plan: Plan, segs: number, top = plan.trunkTop, taperTo = 0.15): Pt[] {
   const sp = plan.sp, r = rng(plan.seed + 99);
   const pts: Pt[] = [];
@@ -391,7 +402,7 @@ function lod0(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
   const tmpO = new THREE.Vector3(), tmpD = new THREE.Vector3();
 
   if (isConifer(form)) {
-    tube(b, trunkPath(plan, 4), 7, bark, tn.bark, trunkAo, 2);
+    trunk(b, trunkPath(plan, 4), 7, bark, tn.bark, trunkAo, 2);
     plan.whorls.forEach((w, wi) => {
       const t = clamp01((w.y - sp.crownBase) / Math.max(0.1, plan.crownTop - sp.crownBase));
       const cell = cellRect(sp.cells[wi % sp.cells.length]);
@@ -467,7 +478,7 @@ function lod0(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
       }
     });
   } else if (form === 'aspen') {
-    tube(b, trunkPath(plan, 4, plan.trunkTop, 0.25), 7, bark, tn.bark, trunkAo, 3);
+    trunk(b, trunkPath(plan, 4, plan.trunkTop, 0.25), 7, bark, tn.bark, trunkAo, 3);
     const twig = [cellRect(sp.cells[0]), cellRect(sp.cells[1])];
     const twigC = tn.needle;
     for (const w of plan.whorls) {
@@ -488,7 +499,7 @@ function lod0(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
   } else if (form === 'hardwood') {
     // FEAT-233: a clear bole to the fork, limbs that hold snow on their upper side (most at the fork), and sprays of
     // bare twigs at their tips and along them
-    tube(b, trunkPath(plan, 3, plan.fork + 0.03, 0.6), 7, bark, tn.bark, trunkAo, 2);
+    trunk(b, trunkPath(plan, 3, plan.fork + 0.03, 0.6), 7, bark, tn.bark, trunkAo, 2);
     plan.limbs.forEach((l) => {
       const main = l.pts.length === 3;
       tube(b, l.pts, main ? 5 : 3, bark, tn.bark, trunkAo, 1, false, main ? (t) => 0.8 - 0.45 * t : (t) => 0.55 - 0.35 * t);
@@ -505,7 +516,7 @@ function lod0(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
     });
     b.holdK = 1;
   } else if (form === 'snag') {
-    tube(b, trunkPath(plan, 3, plan.trunkTop, plan.top === 'broken' ? 0.5 : 0.05), 6, bark, tn.bark, () => 0.85, 2, true);
+    trunk(b, trunkPath(plan, 3, plan.trunkTop, plan.top === 'broken' ? 0.5 : 0.05), 6, bark, tn.bark, () => 0.85, 2, true);
     for (const st of plan.stubs) {
       const o = { x: Math.cos(st.az) * sp.trunk * 0.8, y: st.y, z: Math.sin(st.az) * sp.trunk * 0.8 };
       tube(b, [{ ...o, r: sp.trunk * 0.3 }, { x: o.x + Math.cos(st.az) * st.len, y: o.y - st.len * 0.2, z: o.z + Math.sin(st.az) * st.len, r: sp.trunk * 0.05 }], 3, bark, tn.bark, () => 0.8);
@@ -533,7 +544,7 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
   const c = tn.needleDense.clone().multiplyScalar(0.82);
   if (isConifer(form)) {
     const lodge = form === 'lodgepole';
-    tube(b, trunkPath(plan, 1, lodge ? sp.crownBase + 0.1 : 0.3, 0.6), 5, bark, tn.bark, () => 0.7);
+    trunk(b, trunkPath(plan, 1, lodge ? sp.crownBase + 0.1 : 0.3, 0.6), 5, bark, tn.bark, () => 0.7);
     const tiers = lodge ? 2 : 4;
     const y0 = sp.crownBase, y1 = plan.crownTop;
     const ws = plan.whorls;
@@ -553,7 +564,7 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
   } else if (form === 'krummholz') {
     for (const cl of plan.clumps.slice(0, 3)) blob(b, cl.x + cl.r * 0.35, cl.y * 0.55, cl.z, cl.r * 1.2, cl.y * 0.45, cl.y * 0.55, 5, r() * 6.28, dense, c);
   } else if (form === 'aspen') {
-    tube(b, trunkPath(plan, 2, plan.trunkTop, 0.3), 5, bark, tn.bark, () => 0.9, 3);
+    trunk(b, trunkPath(plan, 2, plan.trunkTop, 0.3), 5, bark, tn.bark, () => 0.9, 3);
     const twig = cellRect(sp.cells[0]);
     for (let k = 0; k < 3; k++) {
       const az = k * Math.PI / 3 + 0.2;
@@ -562,7 +573,7 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
     }
   } else if (form === 'hardwood') {
     // FEAT-233: the bole, each main limb as one straight tube, and four crossed twig cards for the dome
-    tube(b, trunkPath(plan, 1, plan.fork + 0.03, 0.6), 5, bark, tn.bark, () => 0.85);
+    trunk(b, trunkPath(plan, 1, plan.fork + 0.03, 0.6), 5, bark, tn.bark, () => 0.85);
     for (const l of plan.limbs.filter((l) => l.pts.length === 3)) tube(b, [l.pts[0], l.pts[2]], 4, bark, tn.bark, () => 0.85, 1, false, (t) => 0.7 - 0.4 * t);
     const twig = cellRect(sp.cells[0]), base = plan.fork - 0.04;
     for (let k = 0; k < 4; k++) {
@@ -572,7 +583,7 @@ function lod1(plan: Plan, cellMean: number[], barkMean: number[]): Builder {
       b.holdK = 1;
     }
   } else if (form === 'snag') {
-    tube(b, trunkPath(plan, 2, plan.trunkTop, plan.top === 'broken' ? 0.5 : 0.05), 5, bark, tn.bark, () => 0.85, 2, true);
+    trunk(b, trunkPath(plan, 2, plan.trunkTop, plan.top === 'broken' ? 0.5 : 0.05), 5, bark, tn.bark, () => 0.85, 2, true);
     for (const st of plan.stubs.slice(0, 3)) {
       const o = { x: 0, y: st.y, z: 0 };
       tube(b, [{ ...o, r: sp.trunk * 0.35 }, { x: Math.cos(st.az) * st.len, y: st.y - st.len * 0.2, z: Math.sin(st.az) * st.len, r: sp.trunk * 0.05 }], 3, bark, tn.bark, () => 0.8);
