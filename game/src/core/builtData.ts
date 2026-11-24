@@ -57,10 +57,14 @@ function open(): Promise<IDBDatabase> {
   return db;
 }
 function request<T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>, store = STORE): Promise<T> {
+  return both(mode, (tx) => f(tx.objectStore(store))).then((r) => r.result);
+}
+/** one transaction over the entries and their `usedAt` (readwrite ones run one at a time, so a save and the expiry never interleave) */
+function both<T>(mode: IDBTransactionMode, f: (tx: IDBTransaction) => T): Promise<T> {
   return open().then((d) => new Promise<T>((resolve, reject) => {
-    const tx = d.transaction(store, mode), r = f(tx.objectStore(store));
-    tx.oncomplete = () => resolve(r.result);
-    tx.onerror = tx.onabort = () => reject(tx.error ?? r.error);
+    const tx = d.transaction([STORE, USED], mode), out = f(tx);
+    tx.oncomplete = () => resolve(out);
+    tx.onerror = tx.onabort = () => reject(tx.error);
   }));
 }
 
@@ -105,7 +109,8 @@ export async function loadBuilt<T>(k: BuiltKey): Promise<T | null> {
 export function saveBuilt(k: BuiltKey, data: unknown): void {
   if (!keep) return;
   const entry: Entry = { id: idOf(k), format: FORMAT, key: keyOf(k), bytes: bytesOf(data), data };
-  try { request('readwrite', (s) => s.put(entry)).then(() => touch(entry.id), () => { /* quota or no IndexedDB: the next load builds it again */ }); } catch { /* not cloneable */ }
+  // the entry and its usedAt in one transaction, so the expiry pass can never see one without the other
+  try { both('readwrite', (tx) => { tx.objectStore(STORE).put(entry); tx.objectStore(USED).put({ id: entry.id, usedAt: Date.now() }); }).catch(() => { /* quota or no IndexedDB: the next load builds it again */ }); } catch { /* not cloneable */ }
 }
 
 /** this entry was used now (a few bytes in USED, so a read does not rewrite the entry) */
@@ -116,14 +121,21 @@ function touch(id: string): void {
 /** Delete the entries unused for BUILT_MAX_AGE_DAYS (after the load: never in its way) */
 export async function expireBuilt(): Promise<void> {
   try {
-    const used = new Map((await request<{ id: string; usedAt: number }[]>('readonly', (s) => s.getAll(), USED)).map((u) => [u.id, u.usedAt]));
     const ids = (await request('readonly', (s) => s.getAllKeys())) as string[];
     let gone = 0;
     for (const id of ids) {
-      const at = used.get(id), days = at === undefined ? Infinity : (Date.now() - at) / DAY_MS;
+      // read usedAt and delete in the same transaction: a save or read since the listing has refreshed it, and is kept
+      const days = await both('readwrite', (tx) => {
+        const out = { days: 0 };
+        const r = tx.objectStore(USED).get(id);
+        r.onsuccess = () => {
+          const at = (r.result as { usedAt?: number } | undefined)?.usedAt;
+          out.days = at === undefined ? Infinity : (Date.now() - at) / DAY_MS;
+          if (out.days >= BUILT_MAX_AGE_DAYS) { tx.objectStore(STORE).delete(id); tx.objectStore(USED).delete(id); }
+        };
+        return out;
+      }).then((o) => o.days);
       if (days < BUILT_MAX_AGE_DAYS) continue;
-      await request('readwrite', (s) => s.delete(id));
-      await request('readwrite', (s) => s.delete(id), USED);
       console.info(`built data: expired ${id} (${Number.isFinite(days) ? Math.floor(days) : 'unknown'} days unused)`);
       gone++;
     }
@@ -165,8 +177,7 @@ function staleReason(was: string, now: string): string {
 
 /** Settings' Clear: every saved entry gone (the next load builds everything) */
 export async function clearBuiltData(): Promise<void> {
-  await request('readwrite', (s) => s.clear()).catch(() => {});
-  await request('readwrite', (s) => s.clear(), USED).catch(() => {});
+  await both('readwrite', (tx) => { tx.objectStore(STORE).clear(); tx.objectStore(USED).clear(); }).catch(() => {});
 }
 
 /** bytes saved, for Settings (0 when none or no IndexedDB): summed over the `bytes` index, so no entry's data is read */

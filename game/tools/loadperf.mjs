@@ -11,7 +11,8 @@
 //     (build with `npx vite build --sourcemap` so the bundle maps back to src/)
 //   --held: what the menu waits on between sim ready and menu live, every 500 ms
 //   --expiry: before the first warm load, plants three small entries (used 20 days ago, used now, and one with no
-//     `usedAt`) and checks the game deletes the old two once it is up and keeps the fresh one (exit 1 if not)
+//     `usedAt`) and checks the game deletes the old two once it is up and keeps the fresh one; then saves over an expired
+//     entry while an expiry pass runs and checks the save survives (exit 1 if not)
 //   --stale-build: the warm loads get the pack's meta.json with another `build` (as after a rebuild of the pack), so
 //     what the cold load kept must be thrown away; nothing on disk changes
 //   SHOT_QUERY: more URL parameters, as for the other tools. A build without the load marks (main before FEAT-377)
@@ -133,6 +134,19 @@ for (let i = 1; i <= warm; i++) {
     const ok = left === 'test/fresh';
     console.log(`${ok ? 'ok  ' : 'FAIL'} expiry: entries unused ${'>'}= 14 days (and one with no usedAt) deleted, a fresh one kept: left ${left || 'none'}`);
     if (!ok) process.exitCode = 1;
+    // a save landing while the expiry pass runs, over an entry that pass would delete
+    const raced = await page.evaluate(async () => {
+      await new Promise((resolve) => {
+        const r = indexedDB.open('built-resort-data');
+        r.onsuccess = () => { const tx = r.result.transaction(['entries', 'used'], 'readwrite'); tx.objectStore('entries').put({ id: 'test/racing', format: 0, key: '', bytes: 8, data: null }); tx.objectStore('used').put({ id: 'test/racing', usedAt: Date.now() - 20 * 86400000 }); tx.oncomplete = resolve; };
+      });
+      const s = window.__sim, pass = s.expireBuilt();
+      s.saveBuilt({ what: 'racing', slug: 'test', code: [] }, { saved: 1 });
+      await pass;
+      return new Promise((resolve) => { const r = indexedDB.open('built-resort-data'); r.onsuccess = () => { const g = r.result.transaction('entries').objectStore('entries').get('test/racing'); g.onsuccess = () => resolve(g.result?.data?.saved === 1); }; });
+    });
+    console.log(`${raced ? 'ok  ' : 'FAIL'} expiry: a save made while the expiry pass runs is kept`);
+    if (!raced) process.exitCode = 1;
   }
 }
 if (warm > 1) {
