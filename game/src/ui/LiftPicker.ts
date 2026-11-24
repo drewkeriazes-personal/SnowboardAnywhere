@@ -2,6 +2,7 @@ import { Screen, openScreen, closeScreen } from './MenuNav';
 import type { LiftRuntime } from '../world/Lifts';
 import type { KeyLabels } from './KeyLabels';
 import { PAD } from '../sim/Pad';
+import { hotSwap } from '../core/hot';
 
 /** a lift's kind in the list */
 const KIND: Record<LiftRuntime['kind'], string> = { chair: 'chairlift', gondola: 'gondola', surface: 'surface lift', carpet: 'carpet' };
@@ -99,3 +100,6 @@ export class LiftPicker {
       : `${k('lift')} <kbd>Enter</kbd> board &nbsp; <kbd>&uarr;</kbd><kbd>&darr;</kbd> choose &nbsp; <kbd>Esc</kbd> close`;
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

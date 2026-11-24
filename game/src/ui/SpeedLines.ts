@@ -4,6 +4,7 @@
  * canvas over the game, drawn only while visible.
  */
 import { Rng } from '../sim/Rng';
+import { hotSwap } from '../core/hot';
 
 const LINES_FROM = 18, LINES_FULL = 27, N = 48;
 const EDGE = 'rgb(40,52,70)', CORE = '#fff';
@@ -62,3 +63,6 @@ export class SpeedLines {
 
   dispose(): void { this.canvas.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

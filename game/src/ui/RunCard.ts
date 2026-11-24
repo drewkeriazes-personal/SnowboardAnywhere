@@ -1,5 +1,6 @@
 import type { RunSummary } from '../sim/RunStats';
 import { fmtSpeed, fmtHeight, fmtDistance } from './Units';
+import { hotSwap } from '../core/hot';
 
 /**
  * FEAT-055: the after-run card, like a ski-tracker app: the run names, the stats, the line drawn
@@ -54,3 +55,6 @@ export class RunCard {
   hide(): void { this.t = 0; this.el.style.display = 'none'; }
   dispose(): void { this.el.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

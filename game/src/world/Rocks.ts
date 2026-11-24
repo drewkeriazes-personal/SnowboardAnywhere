@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
 import { ROCK_SPAN, ROCK_STEEPEST } from '../sim/rider/tuning';
+import { hotReload } from '../core/hot';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
 
@@ -313,3 +314,6 @@ export function makeRock(seed: number): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
 }
+
+// FEAT-376: a rider tuning edit hot-updates the rider (core/hot.ts); the rocks were placed with these two, so a change to either reloads
+if (import.meta.hot) import.meta.hot.accept('../sim/rider/tuning', (t) => { if (t?.ROCK_SPAN !== ROCK_SPAN || t?.ROCK_STEEPEST !== ROCK_STEEPEST) hotReload(import.meta, 'rock tuning changed'); });

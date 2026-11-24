@@ -14,6 +14,7 @@ import { airStep } from './rider/Jumps';
 import { strapStep, walkStep } from './rider/OnFoot';
 import { groundAt, groundNormalAt, rockBumpAt } from './rider/Collision';
 import { crashStep, startCrash } from './rider/Crash';
+import { hotSwap } from '../core/hot';
 export type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
 export { EDGE_FULL, PLANE_SPEED, PRESS_MIN_REPORT, PRESS_RANGE, SKATE_PUSH, STAMINA, STRAP_TIME, UNSTRAP_TIME } from './rider/tuning';
 export { bootSink } from './rider/OnFoot';
@@ -536,3 +537,6 @@ export class Rider {
   /** BUG-056: where the press lean will be `lead` seconds from now if the input holds (visual only) */
   predictLean(lead: number): number { return leanIn(this, lead); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

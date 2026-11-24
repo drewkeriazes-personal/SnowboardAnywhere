@@ -1,4 +1,5 @@
 import type { Rider } from '../sim/Rider';
+import { hotSwap } from '../core/hot';
 
 /**
  * First-person goggle lens, drawn over the canvas as DOM:
@@ -155,3 +156,6 @@ function makeFrost(w: number, h: number): HTMLCanvasElement {
   }
   return c;
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

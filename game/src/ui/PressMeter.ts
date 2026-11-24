@@ -1,3 +1,4 @@
+import { hotSwap } from '../core/hot';
 /**
  * FEAT-140: the press balance meter, a short vertical arc with a needle drawn just above the
  * rider's head while a nose or tail press is held. Up is the heading's front end (W, the stick up),
@@ -97,3 +98,6 @@ export class PressMeter {
 
   dispose(): void { this.root.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

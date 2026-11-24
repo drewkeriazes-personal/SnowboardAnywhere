@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { TimeTrial, TrialEvent } from '../sim/TimeTrial';
 import type { Settings } from './Settings';
+import { hotSwap } from '../core/hot';
 
 /** a trial time: 42.17, or 1:02.50 past a minute */
 const fmt = (t: number) => { const m = Math.floor(t / 60), sec = t - m * 60; return m > 0 ? `${m}:${sec.toFixed(2).padStart(5, '0')}` : `${sec.toFixed(2)}`; };
@@ -68,3 +69,6 @@ export class TrialHud {
 
   hide(): void { this.el.classList.remove('show'); this.arrow.style.display = 'none'; }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

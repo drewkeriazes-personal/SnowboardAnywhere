@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { Jukebox } from './Jukebox';
+import { hotSwap } from '../core/hot';
 
 /**
  * Outrun chase sound (FEAT-098). Everything synthesised from the shared noise buffer and
@@ -203,3 +204,6 @@ export class ChaseAudio {
   /** Escaped: a little fanfare. */
   fanfare(): void { for (const [i, f] of [660, 880, 1100, 1320].entries()) this.tone(this.sfx, f, i === 3 ? 0.6 : 0.18, 0.18, 'square', undefined, i * 0.16); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

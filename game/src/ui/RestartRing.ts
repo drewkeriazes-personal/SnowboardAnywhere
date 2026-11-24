@@ -1,3 +1,4 @@
+import { hotSwap } from '../core/hot';
 /** FEAT-124: the ring that fills while restart is held (styles in hud.css). */
 export class RestartRing {
   private readonly el = document.createElement('div');
@@ -15,3 +16,6 @@ export class RestartRing {
 
   dispose(): void { this.el.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

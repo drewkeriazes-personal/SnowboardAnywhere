@@ -4,6 +4,7 @@ import type { Events } from '../core/Events';
 import type { SnowState } from '../sim/SnowConditions';
 import { Jukebox, type JukeStyle } from './Jukebox';
 import { ChaseAudio } from './ChaseAudio';
+import { hotSwap } from '../core/hot';
 
 /** playlist.json entry: a bare filename or a credited track */
 export interface TrackInfo { file: string; title: string; artist?: string; license?: string; url?: string; playlist?: string }
@@ -629,3 +630,6 @@ export function parsePlaylists(raw: unknown): Map<string, TrackInfo[]> {
   }
   return out;
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));
