@@ -103,6 +103,7 @@ export class TreeKit {
     // BUG-121: the trees end over the farFadeWidth before b3: the impostors thin out to none (THIN_GLSL), LOD2 alone dithers out
     const f3 = farFadeWidth(b3);
     kitUniforms.uFarEdge.value.set(b3 - f3, b3);
+    kitUniforms.uLeanFar.value.set(0.6 * (b1 - f1), b1 - f1); // FEAT-373: gone before the far LODs, which draw no lean
     if (impostors) {
       this.bands.lod2.value.set(b1 - f1, b1 + f1, b2 - f2, b2 + f2);
       this.bands.imp.value.set(b2 - f2, b2 + f2, 1e8, 1e8 + 1);

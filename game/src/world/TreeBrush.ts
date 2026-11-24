@@ -89,18 +89,19 @@ const smooth = (a: number, b: number, x: number): number => { const t = clamp01(
  * 0..1 how deep a rider at (x, y, z) (the board, pack metres) is in the crown of a tree of kit species
  * `sp`, base (tx, ty, tz), height h and crown radius cr; writes the contact height and the crown's radius
  * there into `out` (when it returns more than 0). The crown is the generator's profile from its base
- * (the species' crownBase) to the top.
+ * (the species' crownBase) to the top; `reach` gives the drawn radius at y m above the base from that profile's r (the
+ * glade trim, the lean over a tree line), which reaches at most `grow` m past cr.
  */
-export function crownOverlap(sp: number, tx: number, ty: number, tz: number, h: number, cr: number, x: number, y: number, z: number, out: CrownHit, reach: ((y: number) => number) | null = null): number {
+export function crownOverlap(sp: number, tx: number, ty: number, tz: number, h: number, cr: number, x: number, y: number, z: number, out: CrownHit, reach: ((y: number, r: number) => number) | null = null, grow = 0): number {
   if (!HOLDS[sp] || h <= 0) return 0;
   const d = Math.hypot(x - tx, y - ty);
-  if (d >= cr + HALF_W) return 0;
+  if (d >= cr + grow + HALF_W) return 0;
   const s = SPECIES[sp], base = s.crownBase;
   let best = 0;
   for (const b of BODY) {
     const t = ((z + b - tz) / h - base) / (1 - base);
     if (t < 0 || t > 1) continue;
-    const r = cr * crownProfile(s.form, t) * (reach ? reach(z + b - tz) : 1), o = r > 0 ? clamp01((r + HALF_W - d) / CONTACT_DEEP) : 0;
+    const r0 = cr * crownProfile(s.form, t), r = reach ? reach(z + b - tz, r0) : r0, o = r > 0 ? clamp01((r + HALF_W - d) / CONTACT_DEEP) : 0;
     if (o > best) { best = o; out.at = z + b; out.r = r; }
   }
   return best;
