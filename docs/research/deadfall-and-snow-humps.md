@@ -1,0 +1,139 @@
+# Deadfall and snow humps: logs, stumps, buried and bent small conifers
+
+Research for FEAT-353 (#812, deadfall: fallen logs, stumps and the snow pillows over them) and FEAT-358 (#819, small conifers bend into arches and humps under snow load). Both are the same mechanism: something on the ground (a log, a stump, a buried sapling, a bent crown) lifts the snow surface into a pillow or hump that the rider sees and feels, and stands out of the snow as a hazard or a feature when the snowpack is thin. Written 2026-11-23 against `main` at ec2c788 plus the two open PRs it builds on: FEAT-336 (#816, branch `issue-776-buried-trees`, `game/src/world/trees/burial.ts`) and FEAT-216 (#818, branch `issue-491-tree-wells`, `game/src/world/TreeWells.ts`).
+
+## The picks
+
+| Question | Pick | Why, in one line |
+|---|---|---|
+| Where the logs come from | Generated at load per 4 m stand cell, like the stems (`world/trees/stands.ts`), from the stand's closure, height, species, the snags nearby and the groomed mask | Vail's lidar is too sparse and too old to find logs, and we download a small part of it |
+| Burial | The FEAT-336 depth (`TreeBurial.depthAt`: `sim/Snowpack.ts` plus the shrubs' 10 % drift jitter), with the shrubs' hump fade (`Shrubs.ts`, `HUMP_FADE` 2 m) | One snowpack for trees, shrubs, wells and deadfall, so they agree on every day |
+| Surface | Share the tree wells' rider-local texture, made two channels (RG8: R wells down, G pillows up) | Zero extra texture fetches in the terrain shader, and `Pack.terrainHeight` already adds it |
+| Exposed logs | A new horizontal capsule (segment plus radius) in `sim/Collider.ts`, ridden over as a dome on Realistic the way rocks are (`rockDome`, BUG-141); stumps reuse the existing rock path | The collider has only vertical cylinders, walls, footprints and brush today |
+| Jibs | Later, on FEAT-114's (#197) grind state: an exposed log is a short round box | No grind state exists yet; a log is one more polyline for it |
+| Bent small conifers | A circular-arc bend in the kit's vertex shader (`KIT_BEGIN`, `world/trees/materials.ts`), amount and direction per instance (an 8 byte attribute), trees under 4 m only | About 25 ALU per vertex on the few instances that bend; the shadow pass shares `KIT_BEGIN`, so shadows follow |
+| Bent trees in far LODs | Not needed: under 4 m they are 2 to 8 pixels tall past the LOD0 reach | Check the LOD0 to LOD2 edge for a pop in treeshot; scale the far quad only if it shows |
+| Buried saplings | Become pillows in the same texture (FEAT-336 now drops them without a trace) | The rounded mound with a tip poking out is the FEAT-358 look and the thing the rider feels |
+
+## 1. What the game does today
+
+- **Snowpack.** `game/src/sim/Snowpack.ts` gives the day's depth from the month, elevation, aspect, new snow and the fresh layer, on the CPU (`snowpackDepth`) and in GLSL (`SNOWPACK_GLSL`). The terrain is drawn as the snow surface; anything on the ground is sunk by the depth at its spot.
+- **Shrubs (FEAT-159).** `game/src/world/Shrubs.ts` buries each shrub by that depth with a +-10 % drift jitter. A juniper, sagebrush or young conifer buried past its top still shows as a hump (`SHRUBS[k].hump`, `buryShrub`, fading out under `HUMP_FADE` = 2 m more snow). The hump is drawn only: it is not in the ground height, so the rider rides through it as brush (`Collider.addBrush`). Young conifers are the kit's spruce and fir LOD1 drawn with the shrub material (`treeMaterial(..., { shrub: true })`, the `SHRUB` define and the per-instance `aShrub` snow line, mound and drift).
+- **Buried trees (FEAT-336, PR #816).** `burial.ts` drops any tree shorter than the snowpack plus `BURY_SHOW` (0.5 m), sinks one up to `BURY_HALF` (1.5 m) taller, and eases the sink off over `BURY_EASE` (1.5 m) more. It works on the records (6 floats: x, y, z, h, crown, species) for the pack's crowns and the generated stems alike. A buried tree leaves nothing behind: no mound, no bump.
+- **Tree wells (FEAT-216, PR #818).** `TreeWells.ts` stamps the wells near the rider into a 128 m window of 512 x 512 texels (0.25 m each, `RedFormat` / `UnsignedByteType`, 1 m deepest), restamped when the window moves 16 m or its trees change. The same bytes are the physics (`TreeWells.at`, bilinear like the GPU filter, which `Pack.terrainHeight` adds) and the terrain shader's (`WELL_GLSL`: the vertex sinks by `treeWell`, the fragment tilts the normal by `treeWellSlope`, four extra lookups). Trees within `EDGE` (8 m) of the window's edge get no well, so the edge texels are 0.
+- **Rocks as ground (BUG-141).** On Realistic a rideable rock is a dome over the snow (`Collider.rockDome`: H (1 - (d / R)^2), R at least `ROCK_SPAN` 1 m), added to the ground in `sim/rider/Collision.ts` (`groundAt`, `groundNormalAt`), with a face test (`rockFace`, `ROCK_FACE`) when met square and steep. Rocks under `ROCK_MIN_TOP` (0.15 m) above the snow have no collider; over `ROCK_WALL_TOP` (1.5 m) they are walls (`world/Rocks.ts`).
+- **Collider shapes.** `sim/Collider.ts` holds vertical cylinders (trunks and rocks, `CYLINDER` = 7 floats), wall segments, building footprints and brush, in 8 m cells. There is no horizontal capsule or box. Nothing in `sim/rider/` grinds or slides on a feature: FEAT-114 (#197) is the open card for the grind state, and `docs/research/trick-system-roadmap.md` section 4.7 its design (snap within 0.4 m with velocity within 35 degrees of the tangent, a 1D balance pendulum, exits that keep angular momentum).
+- **Snags.** The pipeline already classes standing dead crowns as species 7 (`snag`: lidar crowns over 6 m that NAIP sees grey, capped at 3 % of the drawn trees; MapPacker `pipeline/build_pack.py` near "snags (DATA-020, species 7)", `pipeline/species.py` `cap_snags`). They are in every Gold pack's tree records and are the only beetle-kill cue the game has.
+
+## 2. Data: find the logs in the lidar, or generate them
+
+**Pick: generate them at load per stand cell.** Reasons:
+
+1. **Point density.** The best airborne lidar study of downed logs (Joyce, Erb, Sampson and Moen 2019, Forest Ecology and Management 433: 678-689, [UMN record](https://experts.umn.edu/en/publications/detection-of-coarse-woody-debris-using-airborne-light-detection-a/)) flew about 24 first returns per m2 and found only 23 % of the 1,679 pieces measured on 144 plots; detection rose with density up to 16 pulses per m2 and was flat from 16 to 24; most pieces 30 cm or more across, or 13.9 m or longer, were found. Vail's dataset, `USGS_LPC_CO_Central_Western_2016_LAS_2018` (MapPacker `resorts/vail/vail.json`), is QL2 at 6.1 points per m2 over the whole box (the same dataset's row in `resorts/beaver-creek-resort-arrowhead-mountain/beaver-creek-resort-arrowhead-mountain-plan.md` and the Copper plan). That is under the low end of the range where the study still found the big logs.
+2. **What we download.** The pipeline reads the EPT only to depth 9 in the ski area (`max_depth_resort`: 2.9 m node spacing on this dataset), about one point per 8 m2, chosen for crowns. Logs need the full density, two to three more octree levels: tens of times the current lidar download and processing, for a feature the player sees within 300 m.
+3. **Method and age.** The point-cloud methods ([dos Santos et al. 2025](https://mdpi.com/2072-4292/17/4/651), the [fallen tree ALS study](https://mdpi.com/2072-4292/15/2/382)) need a height floor above the ground and a shrub filter, and still miss small pieces. The flight is May to October 2016; a beetle-killed stand drops most of its snags over the 15 to 20 years after the outbreak (half of them, at the Fraser Experimental Forest in Colorado: [RMRS, Still standing](https://research.fs.usda.gov/rmrs/articles/still-standing-snagfall-first-decade-after-severe-bark-beetle-infestation); less than 20 % of beetle-killed pines fell in the first decade), so a 2016 log map would be out of date where it matters most.
+4. **Every resort.** A rule on the stand image works on any pack with `stands` (Gold and Silver alike), not only on QL1 lidar.
+
+So no pipeline card is needed for the first build. The rule, `world/trees/deadfall.ts` (pure, testable like `generateStems`):
+
+- **Where.** Only on 4 m stand cells (R above 0); never on a groomed cell (the mask's groomed share, as `TreeWells.depthAt` reads it, `pack.mask.sample(...)[2]`); on a glade run's corridor (the FEAT-333 / FEAT-303 tree lines and glade trim, `pack/treeLines.ts`) at `GLADE_K` of the stand's rate, since resorts clear glades, with stumps there instead (glading cuts leave stumps).
+- **How many.** Expected pieces per 4 m cell = `LOGS_PER_HA` / 625 x closure (R / 255) x age (stand height G over `AGE_H`, clamped 0.3..1: taller stands are older and have shed more) x beetle (1 + `SNAG_K` x the snags within 15 m, from the cell's own tree records, species 7). Every draw is a hash of the cell's centre with its own salts, like the stems, so a cell makes the same logs every load. Not scaled by the Forest setting: physics must not change with graphics. **The starting value is a guess:** I found no sourced count of logs per hectare for Colorado spruce-fir (the fuel studies give tons per acre: [Klutsch et al. 2009](https://research.fs.usda.gov/treesearch/34115) found no difference in downed wood loads between uninfested plots and plots 3 to 7 years after infestation, and projected a fourfold rise once 80 % of the killed trees fall). Start at `LOGS_PER_HA` 30 and tune by eye in a Vail glade.
+- **Shape.** Length 0.5 to 0.9 of the stand height (logs break), diameter from the species' trunk share of the height (`SPECIES[s]`), clamped 0.15..0.6 m; yaw from a hash with a pull toward the fall line (a design choice, not a sourced fact; the fall line comes from the stand image's own heights as the clump field does, `groundAt` in `stands.ts`); `LIFT` 0 to 0.3 m off the ground on its branches for a share of them (a suspended log makes a taller pillow). The log's pitch follows the ground between its two ends. Stumps: height 0.3 to 0.9 m, diameter 0.25 to 0.6 m, near snags (snapped) and on glade corridors (cut).
+
+Possible later pipeline cue, not needed now: the USFS and Colorado State Forest Service annual aerial detection survey maps beetle mortality by year as polygons ([Colorado forest health highlights 2020](https://fs.usda.gov/foresthealth/docs/fhh/CO_FHH_2020.pdf)); a per-stand "dead share" layer from it would be a MapPacker card. The snags carry the cue well enough to start.
+
+## 3. Burial: one rule with the shrubs and the buried trees
+
+A piece's top above the bare ground is T (a log's diameter plus its lift; a stump's height). The depth d is `TreeBurial.depthAt(x, y, z)` from FEAT-336, the same snowpack and jitter the trees and shrubs use; the layer rebuilds when `TreeBurial.epoch` moves, as the trees do. With e = d - T:
+
+| State | When | Drawn | Ground height | Collider |
+|---|---|---|---|---|
+| Buried | e >= 0 | nothing | pillow of height A = min(T, d) x max(0, 1 - e / `HUMP_FADE`) | none: it is snow |
+| Capped | -`ROCK_MIN_TOP` < e < 0 | sunk by d, shrub material snow line and cap | pillow at A = d over the buried part | none (under 0.15 m showing, as rocks) |
+| Exposed | e <= -`ROCK_MIN_TOP` | sunk by d, snow cap and side drift (`aShrub` drift) | pillow at A = d round it (the drift) | capsule, top T - d over the snow |
+
+If FEAT-367 (#828, less snow under closed stands) lands, the depth under a closed canopy is lower and these rules pick it up through the same `depthAt`. So a log in a thin November pack is a bare log with a snow line to hop or hit, the same log in March is a smooth pillow to pop off, and a deep fresh day softens the pillow out. Stumps follow the same table with a round stamp.
+
+**Buried saplings (FEAT-358).** FEAT-336 drops a tree shorter than d + 0.5 m. Instead of nothing, a tree it drops with h within `HUMP_FADE` of d becomes a round pillow: height min(0.35 h, 0.4 m) (the young conifer's `SHRUBS[3].hump` rule from `buryShrub`) x the same fade, radius its crown radius plus 0.3 m. The young conifers in the shrub layer get the same stamp, so the drawn hump `Shrubs.ts` already shows is finally felt. No new data: the dropped trees are the records `buryTrees` filters out.
+
+## 4. Surface and physics: share the tree wells' texture
+
+**Pick: one rider-local relief texture, two channels.** Change the wells' `DataTexture` from `RedFormat` to `RGFormat` (RG8, filterable in WebGL2): R the well depth (0..`WELL_MAX` 1 m, as now), G the pillow height (0..`PILLOW_MAX` 1 m, 4 mm steps). The relief is G x `PILLOW_MAX` - R x `WELL_MAX`.
+
+- **Shader cost.** `treeWell` already does one `textureLod`; reading `.rg` instead of `.r` is the same fetch, and `treeWellSlope`'s four lookups serve both. No new uniform, no new sampler, no new branch: `uWellWin.w` switches both.
+- **Physics.** `TreeWells.at` reads two bytes instead of one and returns the signed sum; `Pack.terrainHeight` already adds it, so the board, tracks, prints, jumps (`sim/rider/Jumps.ts` reads `groundAt`) and the deform sag all see pillows with no new call site. A 0.5 m pillow 2 m across has 27 degree flanks: a natural pop off its top, which the FEAT-277 takeoff redirect (`docs/research/takeoff-physics.md`) already handles as terrain.
+- **Why two channels, not one signed byte.** The stamps combine differently (the deepest well wins, the highest pillow wins, and a pillow next to a well should keep both); one byte biased at 128 would halve the precision and make the window's clear value 128, which breaks the edge rule that the border texels are neutral and the GPU's filter past them reads 0.
+- **Stamping.** A log is a capsule stamp: across it a (1 - (u / w)^2)^2 profile, the wells' own falloff, with half-width w = D / 2 + 0.4 + 0.3 e (more snow on top spreads it), rounded ends along it, `max` into G. A 10 m log is about 40 x 8 texels. The texture's sources become a small list (trees for wells; deadfall, dropped saplings and young conifer shrubs for pillows), each with its own `forEach` over the window, and the restamp signature takes all of them.
+- **Window edge.** The window reaches 56 m round the rider (64 m less `EDGE`). A 0.5 m pillow appearing at 56 m is a few pixels tall but could pop on a shallow view; fade both channels over the outer 16 m of the window in the stamp (a weight per texel) so wells and pillows grow in. If it still shows from the chair or the eye camera, a 256 m window at the same 0.25 m texels costs 2 MB (RG8) per restamp upload and 4 x the stamping: a tuning call, not a design change.
+
+**Exposed logs: a capsule in the collider.** `sim/Collider.ts` gains `addLog(ax, ay, bx, by, radius, zTop, ground)`, held in its 8 m cells like walls, and three uses:
+
+- `logDome(x, y, span, out)`: the BUG-141 dome over the snow, H (1 - (d / R)^2) with d the distance to the segment and R = max(radius, `ROCK_SPAN`); `rockBumpAt` in `sim/rider/Collision.ts` takes the higher of the rock and log domes, so Realistic rides over a low log and meets the `rockFace` test (square on and steep: bounced off) exactly as a rock does.
+- `resolve`: on Arcade (where `rockBumpAt` is null) an exposed log pushes out like a rideable rock (kind 1, top T - d), so it launches you as a ramp, and the body still stops on it on foot or crashed.
+- `segmentHit` for the chase camera, as trunks.
+
+Stumps need nothing new: a vertical cylinder of kind 1 with a ground (`Collider.add`) is already a rideable rock dome. Colliders exist only in the cells round the rider, as the trunks are (`Vegetation.ts`, FEAT-074 note).
+
+**Jibs.** A log 0.3 to 0.6 m across with its top 0.15 to 0.8 m over the snow is a natural box: FEAT-114's grind state (snap, balance, exit) takes it as a polyline with a round profile and a bark friction. It waits on FEAT-114; the deadfall card only has to store logs so a later grind query can find them (`Collider.logsNear`).
+
+## 5. Bent small conifers (FEAT-358)
+
+What real ones do: young conifers bend under heavy snow and creeping snowpack rather than break, and many recover: sugar and ponderosa pine seedlings bent flat by snow showed no permanent crook 10 years later ([Oliver 1970](https://research.fs.usda.gov/treesearch/30852)); on slopes the snowpack's creep and glide push stems downhill and leave a curved base (sabre growth, "Säbelwuchs", the sign of snow glide in past years, in an Annals of Forest Science study of larch and stone pine in the Stubai valley, Austria: [figure 2](https://annforsci.biomedcentral.com/articles/10.1007/s13595-013-0333-5/figures/2), caption read through a search index since the page sits behind a login), and a USFS field guide to snow damage in ponderosa pine plantations puts lateral snow movement and pressure against the stem first among the causes ([Megahan, field guide](https://www.archive.org/download/fieldguideforpre385mega/fieldguideforpre385mega.pdf)). In tree runs that is the arch with its tip in the snow, and the rounded mound over a fully pressed-down sapling. I could not find a licence-clear photo of a snow arch to embed; the treeshot `--only=snow` still of the built bend is the card's picture.
+
+**The model.** Per tree, a bend b in 0..1 and an azimuth:
+
+- b = `BEND_SHARE` hash gate (not every sapling bends; start 0.5) x smoothstep(0.3, 0.8, d / h) x (0.4 + 0.6 x the day's load, `treeSnowState().load`) x (1 - smoothstep(2.5, 4, h)), for spruce, fir and lodgepole (the flexible ones), 0 for krummholz, snags and aspen.
+- The azimuth is downhill (the fall line from `pack.fallAt`, as `TreeWells.depthAt` uses it) plus a hash spread of +-40 degrees, since creep pushes downhill.
+- The shape is a circular arc: the stem, of unit length in the kit's local frame, turns through theta = b x 150 degrees over its height, so b near 1 brings the tip back down into the snow (the arch). A vertex at height s (`position.y`, 0..1) moves to the arc's point C(s) = (R (1 - cos(theta s)), R sin(theta s)) with R = 1 / theta, and its offset from the axis turns by theta s about the bend axis so the branches follow the curve. The kit's local frame is scaled (x and z by the crown radius, y by the height), so the shader converts with the two lengths it already has (`length(ktm[0].xyz)`, `length(ktm[1].xyz)` in `KIT_BEGIN`).
+
+**Where it goes.** In `KIT_BEGIN` (`world/trees/materials.ts`), after the FEAT-298 core and FEAT-303 trim and before the wind sway, behind `if (aBend.x > 0.0)`: a per-instance `aBend` (vec2: amount, azimuth) on the near sets (filled where `aTrim` is, `Vegetation.ts` near set rebuild) and on the shrub layer's young conifers (`Shrubs.ts` staging, beside `aShrub`). The CPU computes b where it already has the depth: `buryTrees` and `buryShrub`. The shadow pass (`treeDepthMaterial`) includes `KIT_BEGIN`, so the shadow bends too; the snow (`world/trees/snow.ts`) is per fragment from the surface's facing, so the bent crown's new upper side collects it without change.
+
+**Also bend the physics.** A bent tree's top is lower: the arc's highest point, h sin(theta) / theta for theta up to 90 degrees, else h / theta. Its trunk cylinder's `zTop` takes that, and under `TRUNK_H` (1.5 m, `Shrubs.ts`) above the snow it is brush, not a trunk. With b over 0.7 the crown lies on the snow: stamp an elongated pillow along the azimuth (0.2 to 0.4 m, the crown's length) into the relief texture, the FEAT-358 "hump the rider feels".
+
+**Far LODs.** None. LOD0 reaches 800 m on High, 400 on Medium and 200 on Low (`lod0ForDensity`, `Vegetation.ts`), and LOD1 (Low's cones, the young conifers' geometry) runs `KIT_BEGIN` too, so the bend draws in every near LOD. Past that, at 1920 x 1080 and the chase camera's 70 degree vertical field of view (`ChaseCamera.ts`) a pixel is about 0.5 m at 400 m and 1 m at 800 m: a 3 m tree is 3 to 6 pixels, and its bend changes it by a pixel or two. No bent bake in the impostor atlas. If the LOD0 to LOD2 edge pops in the treeshot `distance` set, scale the far instance's height by the bent top on the CPU (one multiply where the far meshes pack `iScale`), still no new bake.
+
+## 6. Cost against the budgets
+
+Budgets (the `perf-check` skill): under 16 ms a frame, under 1,500 draw calls, under 2 M triangles on screen, under 150 k visible near tree instances, heap under 600 MB. `docs/research/perf-log.md` has Vail on `main` at 6.5 to 13.6 ms, 813 to 1,489 calls and 3.5 to 4.8 M triangles in the worst views, so the triangle line is already over and anything added must be small.
+
+| Item | Estimate | Note |
+|---|---|---|
+| Deadfall instances | about 500 within 300 m in a glade (28 ha of reach, half of it stand, 30 logs per ha, plus stumps) | a third of the shrubs' worst case (about 1,500, `Shrubs.ts` header) |
+| Triangles | 30 to 50 per log (8-sided, broken ends, two stubs), 20 per stump: 15 to 25 k | under 1 % of today's frame |
+| Draw calls | 2 to 4 (log and stump variants, one material) plus their shadow casts | the shrubs' 20 meshes for comparison |
+| Generation | one hash per 4 m stand cell, in the same pass as `generateStems`: under 2 ms per 1 km cell, on cell load only | not per frame |
+| Collider | capsules only in the cells round the rider, a few hundred entries | `rockDome`'s 3 x 3 cell scan gains a second list |
+| Relief texture | RG8 512 x 512: 512 KB on the GPU, the upload doubles to 512 KB per restamp (one per 16 m of travel); stamping about 50 logs in the window is under 20 k texel writes | no new shader fetch |
+| Bend | about 25 ALU per vertex on bending instances only; a vec2 per near instance (8 bytes x at most 150 k = 1.2 MB worst case, far less in practice) | under 0.1 ms expected; measure |
+
+Measure each build with `cd game && npx vite build && node tools/gpu_ab.mjs vail --gpu --presets high` against `main` (GPU timer queries, `docs/research/perf-log.md` FEAT-236), at a glade spot and the start, and log the row.
+
+## 7. Build cards (smallest first)
+
+1. **FEAT-364 (#826) Snow pillows: the tree wells texture goes signed, and buried saplings become pillows** (after #816 and #818 merge). The wells' texture becomes RG8 (R wells, G pillows); `TreeWells.at` and `WELL_GLSL` return the signed relief; the outer 16 m of the window fades in; the trees FEAT-336 drops with h within 2 m of the snowpack, and the shrub layer's young conifers, juniper and sagebrush buried past their tops, stamp a round pillow (the `buryShrub` hump height). Checks: typecheck; `wellcheck.mjs` extended (a pillow's height under a buried sapling, the sum where a well and a pillow overlap, edge texels neutral); synth-pack physics check rides over a pillow; real-pack stills on Vail on Drew's GPU at a glade on a 1.6 m March pack; `gpu_ab.mjs` frame cost against `main`.
+2. **FEAT-365 (#827) Small conifers bend into arches under snow load** (after #816). `aBend` (amount, downhill azimuth) on the near sets and the shrub layer's young conifers, the arc bend in `KIT_BEGIN` (shadows included), the bent top lowering the trunk collider (brush under 1.5 m), and a pillow along the azimuth for b over 0.7 (needs card 1). Checks: typecheck; treeshot `--only=snow,lineup` at three loads and depths (bend 0, half, arch) as the card's pictures; `--only=distance` for a pop at the LOD0 edge; a headless check that a fully bent tree's collider top equals the arc's top; `gpu_ab.mjs` frame cost.
+3. **FEAT-366 (#829) Deadfall: fallen logs and stumps in the stands** (after card 1). `world/trees/deadfall.ts` generates logs and stumps per stand cell (closure, stand height, snags within 15 m, no groomed cells, few on glade corridors, stumps there), deterministic by hash; a layer drawn within the shrubs' reach with the shrub material (bark from the kit atlas, snow line, cap, drift); buried by the FEAT-336 depth into the three states of section 3; buried and capped pieces stamp capsule pillows; exposed logs become `Collider.addLog` capsules (dome and face on Realistic, rampable on Arcade) and stumps rideable-rock cylinders. `LOGS_PER_HA` and `GLADE_K` tuned with Drew in a Vail glade. Checks: typecheck; `standcheck.mjs` gains counts per cell and determinism across loads; a headless check that the same log is exposed at 0.3 m snowpack, a pillow at 1.6 m and gone at 3 m (`?snowdepth=`); synth physics check rides over a pillow and into an exposed log; Vail stills on Drew's GPU (November and March); `gpu_ab.mjs`; README if a setting is added (none planned); developer guide (the layer, the URL parameters).
+4. **FEAT-368 (#830) Log jibs** (after card 3 and FEAT-114 #197). Exposed logs with their top 0.15 to 0.8 m over the snow join FEAT-114's grind features: a round box profile, bark friction, snap and exit as rails, a wood sound. Checks: the FEAT-114 grind tests on a synth log; a Vail ride onto a log in a thin November pack.
+
+No MapPacker card: the generation needs only what packs already carry (stands, snags, the mask, the tree lines). A beetle mortality layer from the aerial survey is a possible later one (section 2).
+
+## Sources
+
+- Joyce, M. J., Erb, J. D., Sampson, B. A., Moen, R. A. (2019). Detection of coarse woody debris using airborne light detection and ranging (LiDAR). Forest Ecology and Management 433: 678-689. [UMN Experts](https://experts.umn.edu/en/publications/detection-of-coarse-woody-debris-using-airborne-light-detection-a/)
+- dos Santos et al. (2025), Remote Sensing 17(4): 651, point-cloud detection of downed wood. [MDPI](https://mdpi.com/2072-4292/17/4/651)
+- Fallen tree detection from ALS, Remote Sensing 15(2): 382. [MDPI](https://mdpi.com/2072-4292/15/2/382)
+- Rhoades et al., snagfall in the first decade after a severe bark beetle outbreak, Fraser Experimental Forest, Colorado. [USDA RMRS](https://research.fs.usda.gov/rmrs/articles/still-standing-snagfall-first-decade-after-severe-bark-beetle-infestation)
+- Klutsch, J. G. et al. (2009). Stand characteristics and downed woody debris accumulations associated with a mountain pine beetle outbreak in Colorado. Forest Ecology and Management 258: 641-649. [Treesearch](https://research.fs.usda.gov/treesearch/34115)
+- Oliver, W. W. (1970). Snow bending of sugar pine and ponderosa seedlings: injury not permanent. [Treesearch](https://research.fs.usda.gov/treesearch/30852)
+- Snow glide and sabre growth in larch and stone pine, Stubai valley, Annals of Forest Science, doi 10.1007/s13595-013-0333-5. [Figure 2](https://annforsci.biomedcentral.com/articles/10.1007/s13595-013-0333-5/figures/2)
+- Megahan, field guide to snow damage in pine plantations. [Internet Archive](https://www.archive.org/download/fieldguideforpre385mega/fieldguideforpre385mega.pdf)
+- Veitinger, J., Sovilla, B., Purves, R. S. (2014). Influence of snow depth distribution on surface roughness in alpine terrain. The Cryosphere 8: 547-569 (snow smooths the ground under it as it deepens; the reason pillows fade with depth). [The Cryosphere](https://tc.copernicus.org/articles/8/547/2014/)
+- Colorado forest health highlights 2020 (the aerial detection survey). [USFS](https://fs.usda.gov/foresthealth/docs/fhh/CO_FHH_2020.pdf)
+- Riding pillows and hidden stumps: [BCA, how to ski pillow lines](https://backcountryaccess.com/en-ch/blog/p/backcountry-ski-tricks-101-how-to-ski-pillow-lines) (about 2 feet of fresh snow before a pillow line is skiable), [REI, how to ski or snowboard in trees](https://www.rei.com/learn/expert-advice/how-to-ski-or-snowboard-in-trees.html) (wait for a base that buries the underbrush; scan for trees, rocks and stumps).
+
+## Open questions for Drew
+
+1. `LOGS_PER_HA` has no sourced number for Colorado spruce-fir; start at 30 and tune by eye in a glade you know?
+2. Glades: few logs and some cut stumps (as resorts clear them), or leave glades clean?
+3. Arcade: exposed logs as ramps (like rocks there), or only on Realistic?
+4. Pillow reach: is a 56 m window (the wells') enough from the chase camera, or should the relief window grow to 256 m?
