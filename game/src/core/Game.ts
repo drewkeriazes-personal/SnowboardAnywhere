@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Pack } from '../pack/Pack';
+import { setPackCache } from '../pack/fetch';
 import { GameAudio } from '../audio/Audio';
 import { availableResorts } from '../resorts';
 import { LENSES, type LensSetting } from '../world/Lens';
@@ -59,6 +60,7 @@ export class Game {
     }
     status.textContent = `Loading ${packSlug}...`;
     let pack: Pack;
+    setPackCache(loadSettings().cachePacks); // FEAT-375
     try {
       pack = await Pack.load(`${import.meta.env.BASE_URL}packs/${packSlug}`, { treeLines: !params.notreelines, bakedTreeLines: !params.treelinesFromRuns }); // FEAT-333, FEAT-334
     } catch (e) {

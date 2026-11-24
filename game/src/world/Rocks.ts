@@ -4,6 +4,7 @@ import type { Collider } from '../sim/Collider';
 import { ROCK_SPAN, ROCK_STEEPEST } from '../sim/rider/tuning';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
+import { packFetch } from '../pack/fetch';
 
 const RADIUS = 2500;
 export const VARIANTS = 4;
@@ -225,7 +226,7 @@ export class Rocks {
     const listed = this.pack.meta.instances?.rockCells;
     if (listed && !listed.includes(`${cell.cx}_${cell.cy}`)) { cell.missing = true; cell.loading = false; return; } // empty cell, no request
     try {
-      const resp = await fetch(`${this.pack.baseUrl}/rocks/${cell.cx}_${cell.cy}.bin`);
+      const resp = await packFetch(`${this.pack.baseUrl}/rocks/${cell.cx}_${cell.cy}.bin`);
       if (!resp.ok) { cell.missing = true; return; }
       const d = new Float32Array(await resp.arrayBuffer());
       if (cell.dropped) return; // BUG-082: the rider left before it arrived; a later visit loads a new cell
