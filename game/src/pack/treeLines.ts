@@ -148,24 +148,30 @@ const smooth = (e0: number, e1: number, v: number): number => {
   return t * t * (3 - 2 * t);
 };
 
-/** squared distance from (px, py) to segment a-b */
-function segD2(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+/** `segClosest`'s answer: how far along a-b the closest point is (0..1) and (px, py) less that point (scratch, no allocation) */
+const SEG = { f: 0, ex: 0, ey: 0 };
+/** the point of segment a-b closest to (px, py) into SEG; returns the squared distance */
+function segClosest(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
   let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
   t = t < 0 ? 0 : t > 1 ? 1 : t;
-  const ex = ax + dx * t - px, ey = ay + dy * t - py;
+  const ex = px - (ax + dx * t), ey = py - (ay + dy * t);
+  SEG.f = t; SEG.ex = ex; SEG.ey = ey;
   return ex * ex + ey * ey;
 }
+/** squared distance from (px, py) to segment a-b */
+const segD2 = segClosest;
 
 /** a run's centreline, downhill first to last, with its cumulative length */
-interface Line { x: Float64Array; y: Float64Array; z: Float64Array; s: Float64Array; len: number }
+interface Line { x: Float64Array; y: Float64Array; z: Float64Array; s: Float64Array; len: number; /** the run's points were reversed */ rev: boolean }
 function runLine(r: RunFeature): Line | null {
   let p = r.points;
   if (p.length < 2) return null;
-  if (p[0][2] < p[p.length - 1][2]) p = p.slice().reverse();
+  const rev = p[0][2] < p[p.length - 1][2];
+  if (rev) p = p.slice().reverse();
   const n = p.length, x = new Float64Array(n), y = new Float64Array(n), z = new Float64Array(n), s = new Float64Array(n);
   for (let i = 0; i < n; i++) { x[i] = p[i][0]; y[i] = p[i][1]; z[i] = p[i][2]; if (i) s[i] = s[i - 1] + Math.hypot(x[i] - x[i - 1], y[i] - y[i - 1]); }
-  return s[n - 1] > 20 ? { x, y, z, s, len: s[n - 1] } : null;
+  return s[n - 1] > 20 ? { x, y, z, s, len: s[n - 1], rev } : null;
 }
 
 /** the run's pitch (rise over run, downhill positive) round arc length s, over PITCH_SPAN m of its points */
@@ -310,11 +316,11 @@ export class TreeLines {
     runs.forEach((r, ri) => {
       const p = r.points;
       const g = r.gladed ? 1 : GLADE_LEVEL[r.difficulty ?? ''] ?? 0;
-      // FEAT-381: where riders brake, from the run's own pitch (downhill order: runLine reverses an uphill-drawn run)
-      const l = runLine(r), rev = p.length > 1 && p[0][2] < p[p.length - 1][2];
+      // FEAT-381: where riders brake, from the run's own pitch (in runLine's downhill order)
+      const l = runLine(r);
       for (let i = 0; i + 1 < p.length; i++) {
         rs.push(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], ri, g);
-        const j = rev ? p.length - 2 - i : i, s = l ? (l.s[j] + l.s[j + 1]) / 2 : 0, p1 = l ? pitchAt(l, s + PILE_AHEAD) : 0;
+        const j = l?.rev ? p.length - 2 - i : i, s = l ? (l.s[j] + l.s[j + 1]) / 2 : 0, p1 = l ? pitchAt(l, s + PILE_AHEAD) : 0;
         brake.push(l ? smooth(PILE_DROP0, PILE_DROP1, pitchAt(l, s) - p1) * (1 - smooth(FLAT_TAN, STEEP_TAN, p1)) : 0);
       }
     });
@@ -674,11 +680,9 @@ export class TreeLines {
       const i = ids[q];
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
       const rim = hw + TRENCH_WALL, r = rim + this.reach[i];
-      const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
-      let f = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
-      f = f < 0 ? 0 : f > 1 ? 1 : f;
-      const ex = x - ax - dx * f, ey = y - ay - dy * f, d2 = ex * ex + ey * ey;
+      const d2 = segClosest(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
       if (d2 >= r * r) continue;
+      const { f, ex, ey } = SEG, dx = s[o + 2] - s[o], dy = s[o + 3] - s[o + 1], l2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2);
       const t = -TRENCH_DEPTH * str * Math.min(1, (hw + 0.2) / 1.2) * (1 - smooth(0.3 * rim, rim, d));
       // FEAT-381: the side hit, on its side of the line only (+ left), raises the berm and widens it
