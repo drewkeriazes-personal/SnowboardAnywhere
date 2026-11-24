@@ -275,7 +275,9 @@ board sits down in the snow, tail low and nose up, the deeper the snow and the s
 deeper, and the nose floats up out of it as you pick up speed.
 A tail press (Z) lifts the nose out and keeps your speed, and is easier to hold; a nose press (Q)
 buries the nose, slows you and pulls you over it. Open off-piste
-gets tracked out into chop as the day goes on and rattles the board. High exposed ridges are
+gets tracked out into chop as the day goes on and rattles the board. In the trees beside the black and
+gladed runs, riders have worn narrow lines down like bobsled runs, with the snow they scraped off piled up
+on the outside of the bends: side hits to bank into or pop off. High exposed ridges are
 wind-scoured ice, and spring mornings leave the groomers icy: the edge holds less and skids sooner.
 Low sunny faces turn to slush in the afternoon, heavy and slow. Settings > Conditions (Snow conditions:
 Fresh, Mid-season or Spring; New snow; Weather; Time of day) all change it. The HUD says

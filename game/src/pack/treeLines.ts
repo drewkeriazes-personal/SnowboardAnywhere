@@ -93,6 +93,23 @@ export const TRENCH_DEPTH = 1.0;
  *  beside a forest's edge */
 const CANOPY_LO = 0.3, CANOPY_HI = 0.55;
 const TRENCH_WALL = 1.1, BERM_H = 0.15, BERM_W = 1.2;
+/**
+ * FEAT-381: side hits. Riders scrape the loose snow off a narrow line and throw it to the outside of each turn, most where
+ * they brake before a flat, so the berm piles up on the outside of the bends (`linePiles`). A pile starts at a bend of
+ * PILE_K0 rad per m (a 67 m radius, read over CURV_SPAN m either side) and is full size from PILE_K1 (15 m): PILE_H m on a
+ * full-strength line, times its own size (PILE_SIZE + PILE_SIZE_RANGE u), up to PILE_BRAKE more where the run ahead
+ * flattens, and never more than PILE_CAP m with the berm under it. The bend is cut into piles PILE_LEN + PILE_LEN_RANGE u m
+ * long, each easing in and out along the line, PILE_GAP of them left out and PILE_NONE of the bends with none at all. A pile
+ * is PILE_W m per m of height wider than the berm, so its face stays under about 30 degrees: a lip to pop off or bank into.
+ * Past a segment's ends a pile fades out by the sine of the angle off the line's direction (to PILE_END_SIN), so the next
+ * segment round a bend takes over smoothly, and a pile sinks into a trench dug as deep as it is high, up to PILE_FADE m.
+ */
+const PILE_K0 = 0.015, PILE_K1 = 0.065, CURV_SPAN = 9, PILE_END_SIN = 0.3, PILE_FADE = 0.3;
+export const PILE_H = 0.45, PILE_CAP = 0.6;
+const PILE_SIZE = 0.6, PILE_SIZE_RANGE = 0.7, PILE_LEN = 8, PILE_LEN_RANGE = 14, PILE_GAP = 0.2, PILE_NONE = 0.15, PILE_W = 4.5;
+/** braking: the run's pitch PILE_AHEAD m on falls by PILE_DROP0 to PILE_DROP1 (to a flat: FLAT_TAN), within PILE_RUN_NEAR m
+ *  of the run (none past PILE_RUN_FAR) */
+const PILE_BRAKE = 0.35, PILE_AHEAD = 40, PILE_DROP0 = 0.05, PILE_DROP1 = 0.2, PILE_RUN_NEAR = 60, PILE_RUN_FAR = 170;
 const LINE_SEG = 6; // floats per segment: ax, ay, bx, by, half-width, strength
 const GRID = 16; // m: the segment grid
 /** trim: a glade's level within GLADE_FULL m of its run's centreline, none past GLADE_NONE */
@@ -266,6 +283,12 @@ export class TreeLines {
   private readonly grid = new SegGrid();
   /** every run's centreline segments, for the trim: ax, ay, bx, by, run index, glade level (GLADE_LEVEL) */
   private readonly runSeg: Float32Array;
+  /** FEAT-381: per run segment, 0..1 how hard riders brake there (the pitch falling to a flat ahead) */
+  private readonly runBrake: Float32Array;
+  /** FEAT-381: per segment, the side hit's height at its two ends, m, + on the left of the line's direction, - on the right */
+  pile = new Float32Array(0);
+  /** FEAT-381: per segment, how far its berm (and any pile) reaches past the rim, m */
+  private reach = new Float32Array(0);
   private readonly runGrid = new Map<number, number[]>();
   private readonly trimTiles = new Map<number, Float32Array>();
   private canopy: CanopyAt | null = null;
@@ -283,13 +306,20 @@ export class TreeLines {
     this.baked = !!baked;
     if (baked) this.takeBaked(baked); else this.planRuns(runs);
     // the runs for the trim (all of them: a strip between any two runs is ridden)
-    const rs: number[] = [];
+    const rs: number[] = [], brake: number[] = [];
     runs.forEach((r, ri) => {
       const p = r.points;
       const g = r.gladed ? 1 : GLADE_LEVEL[r.difficulty ?? ''] ?? 0;
-      for (let i = 0; i + 1 < p.length; i++) rs.push(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], ri, g);
+      // FEAT-381: where riders brake, from the run's own pitch (downhill order: runLine reverses an uphill-drawn run)
+      const l = runLine(r), rev = p.length > 1 && p[0][2] < p[p.length - 1][2];
+      for (let i = 0; i + 1 < p.length; i++) {
+        rs.push(p[i][0], p[i][1], p[i + 1][0], p[i + 1][1], ri, g);
+        const j = rev ? p.length - 2 - i : i, s = l ? (l.s[j] + l.s[j + 1]) / 2 : 0, p1 = l ? pitchAt(l, s + PILE_AHEAD) : 0;
+        brake.push(l ? smooth(PILE_DROP0, PILE_DROP1, pitchAt(l, s) - p1) * (1 - smooth(FLAT_TAN, STEEP_TAN, p1)) : 0);
+      }
     });
     this.runSeg = new Float32Array(rs);
+    this.runBrake = Float32Array.from(brake);
     const T = TRIM_TILE;
     for (let i = 0; i < rs.length / 6; i++) {
       const o = i * 6, pad = STRIP_NONE;
@@ -440,22 +470,73 @@ export class TreeLines {
 
   /** makes the planned lines count: their segments and the grid the queries use */
   finish(): void {
-    const out: number[] = [], open: number[] = [];
-    for (const p of this.plans) {
-      for (let i = 0; i + 1 < p.x.length; i++) if (p.str[i] > 0.02) { out.push(p.x[i], p.y[i], p.x[i + 1], p.y[i + 1], p.w[i], p.str[i]); open.push(p.open[i]); }
-    }
+    const out: number[] = [], open: number[] = [], pile: number[] = [];
+    this.plans.forEach((p, li) => {
+      const h = this.linePiles(p, li);
+      for (let i = 0; i + 1 < p.x.length; i++) if (p.str[i] > 0.02) { out.push(p.x[i], p.y[i], p.x[i + 1], p.y[i + 1], p.w[i], p.str[i]); open.push(p.open[i]); pile.push(h[i], h[i + 1]); }
+    });
     this.plans = [];
     this.seg = new Float32Array(out);
     this.open = Uint8Array.from(open);
+    this.pile = Float32Array.from(pile);
     this.count = out.length / LINE_SEG;
+    this.reach = new Float32Array(this.count);
     let len = 0;
     for (let i = 0; i < this.count; i++) {
       const o = i * LINE_SEG;
       len += Math.hypot(this.seg[o + 2] - this.seg[o], this.seg[o + 3] - this.seg[o + 1]);
-      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + TRENCH_WALL + BERM_W);
+      this.reach[i] = BERM_W + PILE_W * Math.max(Math.abs(this.pile[i * 2]), Math.abs(this.pile[i * 2 + 1]));
+      this.grid.add(i, this.seg[o], this.seg[o + 1], this.seg[o + 2], this.seg[o + 3], this.seg[o + 4] + EDGE + TRENCH_WALL + this.reach[i]);
     }
     this.length = len;
     this.trimTiles.clear(); this.subs.clear(); this.lastKey = NaN;
+  }
+
+  /** FEAT-381: plan `p`'s side hit at each point (signed as `pile`); `li` seeds its piles */
+  private linePiles(p: Plan, li: number): Float32Array {
+    const n = p.x.length, h = new Float32Array(n);
+    if (n < 3) return h;
+    let len = 0;
+    for (let i = 1; i < n; i++) len += Math.hypot(p.x[i] - p.x[i - 1], p.y[i] - p.y[i - 1]);
+    const k = Math.max(1, Math.round(CURV_SPAN * (n - 1) / Math.max(1, len)));
+    let s = 0, cell = -1, c0 = 0, cLen = 0, size = 0, bend = 0, bendSign = 0, skip = false;
+    for (let i = 0; i < n; i++) {
+      if (i) s += Math.hypot(p.x[i] - p.x[i - 1], p.y[i] - p.y[i - 1]);
+      // the turn over CURV_SPAN m either side, rad per m (+ to the left)
+      const a = Math.max(0, i - k), b = Math.min(n - 1, i + k);
+      if (a === i || b === i) continue;
+      const l0 = Math.hypot(p.x[i] - p.x[a], p.y[i] - p.y[a]), l1 = Math.hypot(p.x[b] - p.x[i], p.y[b] - p.y[i]);
+      const turn = Math.atan2((p.x[i] - p.x[a]) * (p.y[b] - p.y[i]) - (p.y[i] - p.y[a]) * (p.x[b] - p.x[i]), (p.x[i] - p.x[a]) * (p.x[b] - p.x[i]) + (p.y[i] - p.y[a]) * (p.y[b] - p.y[i]));
+      const kappa = l0 + l1 > 0 ? turn / ((l0 + l1) / 2) : 0, sign = kappa > 0 ? 1 : -1;
+      // a bend: a stretch turning one way past PILE_K0; some bends get none
+      if (Math.abs(kappa) <= PILE_K0) { bendSign = 0; continue; }
+      if (sign !== bendSign) { bendSign = sign; bend++; skip = h01(li, bend, 31) < PILE_NONE; }
+      if (skip) continue;
+      // the piles along it: random lengths, sizes and gaps, each easing in and out along the line
+      while (s >= c0 + cLen) {
+        c0 += cLen; cell++;
+        cLen = PILE_LEN + PILE_LEN_RANGE * h01(li, cell, 32);
+        size = h01(li, cell, 33) < PILE_GAP ? 0 : PILE_SIZE + PILE_SIZE_RANGE * h01(li, cell, 34);
+      }
+      if (!size) continue;
+      const v = PILE_H * size * Math.sin(Math.PI * (s - c0) / cLen) * p.str[i] * smooth(PILE_K0, PILE_K1, Math.abs(kappa)) * (1 + PILE_BRAKE * this.brakeAt(p.x[i], p.y[i]));
+      // the outside of the bend: the right of a left turn
+      h[i] = -sign * Math.min(PILE_CAP - BERM_H * p.str[i], v);
+    }
+    return h;
+  }
+
+  /** FEAT-381: 0..1 how hard riders brake at (x, y): the nearest run's, fading with the distance to it */
+  private brakeAt(x: number, y: number): number {
+    const ids = this.runGrid.get(Math.floor(y / TRIM_TILE) * 100003 + Math.floor(x / TRIM_TILE));
+    if (!ids) return 0;
+    const rs = this.runSeg;
+    let best = PILE_RUN_FAR * PILE_RUN_FAR, br = 0;
+    for (const q of ids) {
+      const o = q * 6, d2 = segD2(x, y, rs[o], rs[o + 1], rs[o + 2], rs[o + 3]);
+      if (d2 < best) { best = d2; br = this.runBrake[q]; }
+    }
+    return br * (1 - smooth(PILE_RUN_NEAR, PILE_RUN_FAR, Math.sqrt(best)));
   }
 
   /** the forest the lines are gated by (`Pack.forestGate`); without one they count everywhere */
@@ -496,7 +577,7 @@ export class TreeLines {
     // (sub-cell, segment) pairs into the scratch, counted per sub-cell, then laid out by sub-cell
     let pairs = this.pairBuf, np = 0;
     for (const i of ids) {
-      const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL + BERM_W + SUB_PAD;
+      const o = i * LINE_SEG, r = s[o + 4] + TRENCH_WALL + this.reach[i] + SUB_PAD;
       const i0 = Math.max(0, Math.floor((Math.min(s[o], s[o + 2]) - r - gx * GRID) / SUB)), i1 = Math.min(SUBS - 1, Math.floor((Math.max(s[o], s[o + 2]) + r - gx * GRID) / SUB));
       const j0 = Math.max(0, Math.floor((Math.min(s[o + 1], s[o + 3]) - r - gy * GRID) / SUB)), j1 = Math.min(SUBS - 1, Math.floor((Math.max(s[o + 1], s[o + 3]) + r - gy * GRID) / SUB));
       for (let j = j0; j <= j1; j++) for (let k = i0; k <= i1; k++) {
@@ -579,9 +660,9 @@ export class TreeLines {
    * Off the lines the snow lies as it fell; on one it is ridden down like a bobsled run: TRENCH_DEPTH at full strength,
    * a flat floor over the middle 0.3 of the way to the rim (TRENCH_WALL m past the corridor's half-width), then walls
    * that curve up steeply (about 45 degrees at their steepest on a full-width line) and round over at the rim, and just
-   * past the rim the snow the riders pushed aside, a berm BERM_H high and BERM_W wide. A line squeezed narrow past a trunk
-   * is shallower, so its walls stay rideable. Where lines meet, the deepest trench wins and a berm never fills another
-   * line's trench. The canopy gate scales the forest's part; an open segment's trench (`open`) counts as it is.
+   * past the rim the snow the riders pushed aside, a berm BERM_H high and BERM_W wide, piled up on the outside of the bends
+   * (FEAT-381, `linePiles`). A line squeezed narrow past a trunk is shallower, so its walls stay rideable. Where lines meet,
+   * the deepest trench wins and a berm or pile sinks into another line's trench within its own height (PILE_FADE at most). The canopy gate scales the forest's part; an open segment's trench (`open`) counts as it is.
    */
   private trenchRaw(x: number, y: number, gate: (x: number, y: number) => number): number {
     this.near(x, y);
@@ -592,18 +673,26 @@ export class TreeLines {
     for (let q = a; q < e; q++) {
       const i = ids[q];
       const o = i * LINE_SEG, hw = s[o + 4], str = s[o + 5];
-      const rim = hw + TRENCH_WALL, r = rim + BERM_W;
-      const d2 = segD2(x, y, s[o], s[o + 1], s[o + 2], s[o + 3]);
+      const rim = hw + TRENCH_WALL, r = rim + this.reach[i];
+      const ax = s[o], ay = s[o + 1], dx = s[o + 2] - ax, dy = s[o + 3] - ay, l2 = dx * dx + dy * dy;
+      let f = l2 > 0 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+      f = f < 0 ? 0 : f > 1 ? 1 : f;
+      const ex = x - ax - dx * f, ey = y - ay - dy * f, d2 = ex * ex + ey * ey;
       if (d2 >= r * r) continue;
       const d = Math.sqrt(d2);
       const t = -TRENCH_DEPTH * str * Math.min(1, (hw + 0.2) / 1.2) * (1 - smooth(0.3 * rim, rim, d));
-      const u = (d - rim + 0.3) / (BERM_W + 0.3), b = u > 0 && u < 1 ? BERM_H * str * Math.sin(Math.PI * u) ** 2 : 0;
+      // FEAT-381: the side hit, on its side of the line only (+ left), raises the berm and widens it
+      const pl = this.pile[i * 2] + (this.pile[i * 2 + 1] - this.pile[i * 2]) * f;
+      const ph = pl !== 0 && d > 0 && l2 > 0 ? Math.abs(pl) * smooth(0, PILE_END_SIN, Math.sign(pl) * (dx * ey - dy * ex) / (Math.sqrt(l2) * d)) : 0;
+      const bw = BERM_W + PILE_W * ph;
+      const u = (d - rim + 0.3) / (bw + 0.3), b = u > 0 && u < 1 ? (BERM_H * str + ph) * Math.sin(Math.PI * u) ** 2 : 0;
       if (this.open[i]) { if (t < digOpen) digOpen = t; if (b > bermOpen) bermOpen = b; } else { if (t < dig) dig = t; if (b > berm) berm = b; }
     }
     if (dig === 0 && berm === 0 && digOpen === 0 && bermOpen === 0) return 0;
     const g = dig !== 0 || berm !== 0 ? gate(x, y) : 0;
     const dd = Math.min(dig * g, digOpen), bb = Math.max(berm * g, bermOpen);
-    return dd + bb * Math.max(0, 1 + dd / 0.15);
+    // a berm or pile sinks into a trench (this line's walls, another line crossing) dug as deep as it is high, PILE_FADE at most
+    return dd + bb * Math.max(0, 1 + dd / Math.min(PILE_FADE, Math.max(BERM_H, bb)));
   }
 
   /** FEAT-333: the height the snow is dug down (or banked up) by a tree line here, m, under the forest only (and on an

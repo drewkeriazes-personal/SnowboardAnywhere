@@ -111,6 +111,75 @@ for (let i = 0; i < tl.count && segs < 2000; i += 37) {
 check('a full line is dug into the snow', deepN > 100 && deep / deepN < -0.5 && shallow / deepN < 0.1, `mean ${(deep / deepN).toFixed(2)} m at the centre of ${deepN} full-strength segments, ${shallow} shallower than 0.5 m (lines crossing at an angle)`);
 check('the pushed-aside snow banks up on the rim', bermN / deepN > 0.8, `${bermN} of ${deepN} with a berm over 5 cm 2.5 to 5 m out`);
 
+// FEAT-381: the side hits, against the second build with its piles taken out (the uniform berm). Each segment's bend is read
+// over the 3 segments either side (where they join up), as the game reads it over 9 m.
+{
+  const flat = b.tl, s = tl.seg, P = tl.pile;
+  // the lines planned from the runs (--runs) braid, a branch 4 to 10 m off its parent, so more of their piles meet another line
+  const braids = !baked;
+  flat.pile.fill(0);
+  const joined = (i, j) => j >= 0 && j < tl.count && s[j * 6] === s[(j - 1) * 6 + 2] && s[j * 6 + 1] === s[(j - 1) * 6 + 3];
+  const bins = [[0, 0.015], [0.015, 0.03], [0.03, 0.045], [0.045, 0.065], [0.065, 1]].map(([lo, hi]) => ({ lo, hi, n: 0, sum: 0, max: 0, any: 0 }));
+  const faces = [];
+  let capMax = 0, outN = 0, outUp = 0, inN = 0, inSame = 0, floorN = 0, floorSame = 0, busyMax = 0, sharpN = 0, sharpNone = 0;
+  for (let i = 3; i + 4 < tl.count; i++) {
+    if (![-2, -1, 0, 1, 2, 3].every((k) => joined(i, i + k))) continue;
+    const o = i * 6, a = (i - 3) * 6, c = (i + 3) * 6;
+    const ux = s[o] - s[a], uy = s[o + 1] - s[a + 1], vx = s[c] - s[o], vy = s[c + 1] - s[o + 1];
+    const kappa = Math.abs(Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)) / ((Math.hypot(ux, uy) + Math.hypot(vx, vy)) / 2);
+    const h = Math.abs(P[i * 2]), hw = s[o + 4], str = s[o + 5], rim = hw + 1.1;
+    capMax = Math.max(capMax, h + 0.15 * str);
+    const bin = bins.find((q) => kappa >= q.lo && kappa < q.hi);
+    if (!bin) continue; // a zero-length step
+    if (str > 0.5) { bin.n++; bin.sum += h; bin.max = Math.max(bin.max, h); if (h > 0.05) bin.any++; }
+    if (str > 0.9) busyMax = Math.max(busyMax, h);
+    if (kappa > 0.05 && str > 0.5) { sharpN++; if (h < 0.01) sharpNone++; }
+    // across the segment's start: the pile's side and the other, and the floor
+    const l = Math.hypot(s[o + 2] - s[o], s[o + 3] - s[o + 1]) || 1, nx = -(s[o + 3] - s[o + 1]) / l, ny = (s[o + 2] - s[o]) / l;
+    const side = Math.sign(P[i * 2]) || 1, at = (d) => [s[o] + nx * d, s[o + 1] + ny * d];
+    if (h > 0.2) {
+      const peak = rim - 0.3 + (1.2 + 4.5 * h + 0.3) / 2;
+      const [ox, oy] = at(side * peak), [ix, iy] = at(-side * peak);
+      outN++; if (tl.trenchAt(ox, oy) - flat.trenchAt(ox, oy) > 0.05) outUp++;
+      inN++; if (tl.trenchAt(ix, iy) === flat.trenchAt(ix, iy)) inSame++;
+      // the pile's faces, from past the walls of the line's widest segment either side, where no other line's trench crosses them
+      const zs = [], wall = Math.max(...[-3, -2, -1, 0, 1, 2, 3].map((k) => s[(i + k) * 6 + 4])) + 1.1;
+      for (let d = wall + 0.1; d < rim + 1.2 + 4.5 * h + 0.5; d += 0.1) { const q = at(side * d); zs.push([tl.trenchAt(...q), flat.trenchAt(...q)]); }
+      let g = 0;
+      for (let j = 1; j < zs.length; j++) g = Math.max(g, Math.abs(zs[j][0] - zs[j - 1][0]) / 0.1);
+      if (zs.every(([, f]) => f >= 0)) faces.push(g);
+    }
+    if (str > 0.5) for (const d of [-0.25, 0, 0.25]) { const [fx, fy] = at(d * rim); floorN++; if (tl.trenchAt(fx, fy) === flat.trenchAt(fx, fy)) floorSame++; }
+  }
+  console.log(`  side hits by the bend (rad/m over 9 m), lines over half strength: ${bins.map((q) => `${q.lo}-${q.hi}: ${q.n} segments, mean ${(q.sum / Math.max(1, q.n)).toFixed(2)} m, max ${q.max.toFixed(2)} m, ${((q.any / Math.max(1, q.n)) * 100).toFixed(0)} % over 5 cm`).join('; ')}`);
+  const means = bins.map((q) => q.sum / Math.max(1, q.n));
+  check('the side hits grow with the bend', means.every((m, j) => !j || m > means[j - 1]) && means[0] < 0.01 && means[4] > 0.06, `mean ${means.map((m) => m.toFixed(3)).join(' < ')} m from straight to sharp`);
+  check('the busy sharp bends get lips, not walls', busyMax >= 0.4 && capMax <= 0.6 + 1e-6, `the biggest pile on a full-strength line ${busyMax.toFixed(2)} m, the biggest with its berm ${capMax.toFixed(2)} m (cap 0.6)`);
+  check('some sharp bends get none', sharpNone > 0.05 * sharpN && sharpNone < 0.6 * sharpN, `${sharpNone} of ${sharpN} sharp bends (over 0.05 rad/m) without a pile`);
+  check('a pile is on the outside of the bend only', outN > 50 && outUp > (braids ? 0.75 : 0.9) * outN && inSame > (braids ? 0.92 : 0.97) * inN, `${outUp} of ${outN} piles over 20 cm raise the outside, ${inSame} of ${inN} leave the inside as it was`);
+  // the steepest few are where another line's trench wall, hidden under its berm, meets the pile
+  faces.sort((p, q) => p - q);
+  const deg = (v) => (Math.atan(v) * 180 / Math.PI).toFixed(0), f99 = faces[Math.floor(faces.length * 0.99)] ?? 0, fMax = faces[faces.length - 1] ?? 0;
+  check('the piles ease up, never a wall', faces.length > 50 && f99 < Math.tan((braids ? 36 : 30) * Math.PI / 180) && fMax < Math.tan((braids ? 50 : 40) * Math.PI / 180), `steepest face ${deg(f99)} degrees on 99 % of ${faces.length} piles, ${deg(fMax)} at most`);
+  check('nothing changes on the corridor floor', floorN > 1000 && floorSame === floorN, `${floorSame} of ${floorN} floor points the same`);
+  // a line cutting back and forth (MapPacker FEAT-378): a 10 m sine over 60 m, full strength; each bend's pile on its outside
+  const W = [];
+  for (let x = 0; x <= 600; x += 3) W.push(x, 10 * Math.sin(2 * Math.PI * x / 60), 1.7, 1);
+  const zig = new TreeLines([], { version: 1, step: 3, lines: [{ p: W }] });
+  zig.finish();
+  let zigMax = 0, wrong = 0, bends = 0, piled = 0;
+  for (let k = 1; k < 19; k++) {
+    // the apex of bend k at x = 15 + 30 (k - 1): its outside is away from the bend's centre (+y at a crest, -y in a trough)
+    const x = 15 + 30 * (k - 1), out = Math.sin(2 * Math.PI * x / 60) > 0 ? 1 : -1;
+    let hi = 0, lo = 0;
+    const yc = 10 * Math.sin(2 * Math.PI * x / 60);
+    for (let d = 2.5; d < 6; d += 0.1) { hi = Math.max(hi, zig.trenchAt(x, yc + out * d)); lo = Math.max(lo, zig.trenchAt(x, yc - out * d)); }
+    bends++; if (hi > 0.25) piled++; if (lo > 0.15 + 1e-6) wrong++;
+    zigMax = Math.max(zigMax, hi);
+  }
+  check('a line cutting back and forth piles each bend on its outside', piled > bends / 2 && wrong === 0 && zigMax <= 0.6 + 1e-6, `${piled} of ${bends} bends with a pile over 25 cm on the outside, ${wrong} with more than the berm inside, the biggest ${zigMax.toFixed(2)} m`);
+}
+
 // FEAT-335: the near index (2 m sub-cells of the segment grid) gives the same answers as every segment in the grid cell
 {
   let seed = 7, diffT = 0, diffW = 0, n = 0;
