@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES, MOGUL_SHADE_MAX_RES } from '../pack/Pack';
-import { exposure, finestChunkRes, gridOrigin } from './exposure';
+import { exposure, finestChunkRes, gridOrigin, RIDGE_D } from './exposure';
+import { packChunks, unpackChunks, type ChunkArrays, type SavedTerrain } from './chunkSave';
 import { treelineOf } from '../pack/treeline';
 import { MOGUL_FALL_D, WORN_K } from './Moguls';
 import { TRENCH_DEPTH } from '../pack/treeLines';
@@ -77,6 +78,10 @@ interface Chunk {
   /** BUG-088: built before the height tiles under it arrived, so parts of it are the flat floor of the range, not the ground */
   blank: boolean;
   lastUsed: number;
+  /** FEAT-377: restored from a saved load (built from every tile that load had), not built here; false once rebuilt or the warm-up ends */
+  saved?: boolean;
+  /** FEAT-377: restored, and the height tiles under it not all in yet (so the props on it wait, BUG-088) */
+  awaitTiles?: boolean;
 }
 
 /** BUG-088: the drawn terrain, asked whether the ground over a rect (pack metres) has its real heights yet */
@@ -98,6 +103,7 @@ export class Terrain implements Ground {
   private frame = 0;
   private readonly maskSample = [0, 0, 0, 0];
   private readonly exposureTmp = { rock: 0, scree: 0 };
+  private readonly around = [0, 0, 0, 0];
   private readonly coverSample = [0, 0, 0, 0];
   /** FEAT-168: the material's placeholder tree map, put back when no loaded cover level has crowns */
   private readonly blankTreeMap: THREE.Texture;
@@ -266,6 +272,8 @@ export class Terrain implements Ground {
         // tile under a 4 or 8 m chunk does not count where the coarse set carries it (Pack.height skips fine there)
         const co = this.pack.coarse;
         const unused = !!co && res > 0 && res < co.meta.res && c.res >= co.meta.res;
+        // FEAT-377: a restored chunk was built from every tile its load had, the ones this warm-up asks for (the same view)
+        if (c.saved) continue;
         if (res === 0 || (res < c.dataRes && !unused)) this.dirty.add(c.key);
       }
     }
@@ -286,10 +294,12 @@ export class Terrain implements Ground {
       want.add(c.key);
       c.lastUsed = this.frame;
       // FEAT-229: the 4 and 8 m chunks read the coarse (4 m) set where the pack has one, so only 1 and 2 m chunks load fine
-      if (c.res <= 8 && this.pack.coarse && c.res >= this.pack.coarse.meta.res) this.pack.coarse.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
-      else if (c.res <= 8 && this.pack.fine) this.pack.fine.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
-      else if (c.res <= 64 && this.pack.mid) this.pack.mid.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
-      else if (this.pack.far) this.pack.far.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      let tilesIn = true;
+      if (c.res <= 8 && this.pack.coarse && c.res >= this.pack.coarse.meta.res) tilesIn = this.pack.coarse.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      else if (c.res <= 8 && this.pack.fine) tilesIn = this.pack.fine.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      else if (c.res <= 64 && this.pack.mid) tilesIn = this.pack.mid.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      else if (this.pack.far) tilesIn = this.pack.far.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
+      if (tilesIn) c.awaitTiles = false;
       if (c.res <= 8 && this.pack.mask) this.pack.mask.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
       if (c.res <= 8 && this.pack.dir) this.pack.dir.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
       if (c.res <= AO_MAX_RES && this.pack.ao) this.pack.ao.request(c.minX, c.minY, c.minX + c.size, c.minY + c.size);
@@ -302,7 +312,7 @@ export class Terrain implements Ground {
           builds++;
         } else pending++;
       }
-      if (!c.mesh || c.blank) held.push(c.minX, c.minY, c.size); // BUG-088: a hole or a coarse stand-in, or the flat floor
+      if (!c.mesh || c.blank || c.awaitTiles) held.push(c.minX, c.minY, c.size); // BUG-088: a hole or a coarse stand-in, or the flat floor
     }
     this.stats.builds = builds;
     this.pending = pending;
@@ -352,6 +362,36 @@ export class Terrain implements Ground {
       if (b[i] < maxX && b[i] + b[i + 2] > minX && b[i + 1] < maxY && b[i + 1] + b[i + 2] > minY) return false;
     }
     return true;
+  }
+
+  /**
+   * FEAT-377: the grid of every built chunk that is the ground (session/warmUp.ts saves it once the loading screen's
+   * streaming has settled, before the first frame uploads and frees the arrays); one built before its tiles or waiting on
+   * a rebuild (only ever one the view no longer selects) is left out, and builds afresh if it is wanted again.
+   */
+  snapshot(): SavedTerrain {
+    const list = [...this.chunks.values()].filter((c) => c.mesh && !c.blank && !this.dirty.has(c.key) && c.mesh.geometry.attributes.position.array);
+    return packChunks(N + 1, list.map((c) => {
+      const at = (name: string) => c.mesh!.geometry.attributes[name].array as Float32Array;
+      return { c, a: { pos: at('position'), nor: at('normal'), col: at('color'), forest: at('forest'), lift: at('lift'), ao: at('ao'), fall: at('fall'), mogul: at('mogul'), mogLine: at('mogLine') } };
+    }));
+  }
+
+  /** FEAT-377: the warm-up is over: from now on a tile that lands rebuilds a restored chunk as it would any other */
+  endRestore(): void { for (const c of this.chunks.values()) c.saved = false; }
+
+  /** FEAT-377: put back the chunks of a saved load (its key matched: the same pack build, view, moguls and code) */
+  restore(saved: SavedTerrain): void {
+    unpackChunks(N + 1, saved, (meta, a) => {
+      const c: Chunk = { ...meta, key: `${meta.level}/${meta.x}/${meta.y}`, mesh: null, blank: false, lastUsed: this.frame, saved: true, awaitTiles: true };
+      const n = N + 1;
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const v = j * n + i; // as build() writes them
+        a.pos[v * 3] = c.minX + i * c.res; a.pos[v * 3 + 2] = -(c.minY + j * c.res);
+      }
+      this.finish(c, a);
+      this.chunks.set(c.key, c);
+    });
   }
 
   /**
@@ -409,7 +449,6 @@ export class Terrain implements Ground {
     const n = N + 1;
     const res = c.res;
     const pack = this.pack;
-    const skirt = Math.max(2, res * 3);
     const vertCount = n * n + 4 * n; // grid + skirt ring
     const pos = new Float32Array(vertCount * 3);
     const nor = new Float32Array(vertCount * 3);
@@ -465,6 +504,9 @@ export class Terrain implements Ground {
     const cover = !useMask && pack.cover ? pack.cover : null;
     let v = 0;
     const H = (i: number, j: number) => heights[(j + 1) * (n + 2) + (i + 1)];
+    // FEAT-377: on chunks this coarse the ridge test's four heights are the grid's own neighbours (the same height() calls,
+    // when the grid's corner and spacing are whole metres so x + res is exactly the next column)
+    const gridAround = res >= RIDGE_D && Number.isInteger(c.minX) && Number.isInteger(c.minY) && Number.isInteger(res);
     const fv = this.fallSample;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
@@ -517,7 +559,9 @@ export class Terrain implements Ground {
         ao[v] = a;
         // exposure (FEAT-020): rock and talus where snow cannot stay, unioned with the imagery mask
         // (exposure.ts; the rider reads the same weights, BUG-035)
-        const ex = exposure(pack, x, y, h, nxp, nyp, res, fo, rock, scree, this.exposureTmp);
+        let around: number[] | undefined;
+        if (gridAround) { around = this.around; around[0] = H(i + 1, j); around[1] = H(i - 1, j); around[2] = H(i, j + 1); around[3] = H(i, j - 1); }
+        const ex = exposure(pack, x, y, h, nxp, nyp, res, fo, rock, scree, this.exposureTmp, around);
         rock = ex.rock;
         col[v * 3] = rock; col[v * 3 + 1] = ex.scree; col[v * 3 + 2] = groom * (1 - rock);
         const mog = amp * (1 - rock);
@@ -558,6 +602,17 @@ export class Terrain implements Ground {
         v++;
       }
     }
+    this.finish(c, { pos, nor, col, forest, lift, ao, fall, mogul, mogLine });
+    c.dataRes = dataRes;
+    c.saved = false;
+  }
+
+  /** the skirt, the index and the mesh round a chunk's grid vertices (build, or FEAT-377's restore from a saved load) */
+  private finish(c: Chunk, a: ChunkArrays): void {
+    const n = N + 1;
+    const { pos, nor, col, forest, lift, ao, fall, mogul, mogLine } = a;
+    const skirt = Math.max(2, c.res * 3);
+    let v = n * n;
     // skirt vertices: copies of the edge vertices dropped by `skirt`
     const edge: number[] = [];
     for (let i = 0; i < n; i++) edge.push(i); // south edge (j = 0)
@@ -615,6 +670,5 @@ export class Terrain implements Ground {
       c.mesh = mesh;
       this.group.add(mesh);
     }
-    c.dataRes = dataRes;
   }
 }

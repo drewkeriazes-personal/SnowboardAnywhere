@@ -20,6 +20,8 @@ import { startPadNav } from '../ui/PadNav';
 import { createSession } from '../session/Session';
 import type { Params } from './params';
 import { Events } from './Events';
+import { loadStep } from './loadSteps';
+import { prefetchBuilt, setKeepBuiltData } from './builtData';
 
 /**
  * FEAT-160: boot. Picks and loads the pack, applies the URL overrides to the saved settings, creates the
@@ -34,7 +36,9 @@ export class Game {
     const { headless } = params;
     const status = document.getElementById('status')!;
     // no ?pack: last resort played if it is built, else the first built real resort, else the synthetic mountain
+    let t = performance.now();
     const resorts = await availableResorts(import.meta.env.BASE_URL);
+    loadStep('resort list', t);
     // FEAT-273: not awaited: the menu's account line starts hidden and fills in when the account settles. Made before
     // the pack loads, so the first-run screen's resort picker has it too (FEAT-246: Build it for a maintainer)
     const account = createAccount({ env: import.meta.env, fake: params.account, hosted: params.hosted, headless });
@@ -59,6 +63,9 @@ export class Game {
       if (!resorts.length && !headless) { startPadNav(); showFirstRun({ resorts, account, builds }); return; }
     }
     status.textContent = `Loading ${packSlug}...`;
+    // FEAT-377: what the last load kept (Settings > Graphics), read while the pack and the world load (session/warmUp.ts)
+    setKeepBuiltData(loadSettings().keepBuiltData !== false);
+    prefetchBuilt(packSlug, ['terrain', 'tree stems']);
     let pack: Pack;
     setPackCache(loadSettings().cachePacks); // FEAT-375
     try {
@@ -100,13 +107,16 @@ export class Game {
     const skipMenu = params.cam === 'eye';
     // FEAT-181: the shots are data (attract/<slug>/shots.json, when the manifest lists them), headless too
     // (tools/shoot_attract.mjs renders the shot); headless loads no ghosts or stills (attractFiles stays empty)
+    t = performance.now();
     const manifest = await loadAttractManifest(import.meta.env.BASE_URL, pack); // FEAT-175: and the pack's own menu
     const shots = await loadAttractShots(import.meta.env.BASE_URL, pack.meta.slug, manifest);
     const shot = attractShot(pack, pack.meta.start, shots);
     const attractFiles = headless ? {} : manifest;
+    loadStep('menu shots', t); t = performance.now();
     // FEAT-177: the still is the frame this browser kept at its last crossfade (same build, pack and quality), else
     // the shipped one when it was rendered from this shot (BUG-085: any build of the pack), else none (the menu over the loading bar)
     const still = headless || skipMenu ? '' : (await cachedMenuStill(pack, shot, settings)) || shippedStill(import.meta.env.BASE_URL, attractFiles, pack, shot);
+    loadStep('menu still', t); t = performance.now();
     // dev build only: the account as the page sees it and as the dev server verifies it (Drew's setup check)
     if (import.meta.env.DEV) (window as any).__account = { state: () => account.state(), server: () => serverAccount(account) };
     const menu = headless ? null : new MainMenu({
@@ -118,6 +128,7 @@ export class Game {
     if (headless) status.textContent = `Loading ${packSlug}...`;
     else if (menu && !skipMenu) { status.textContent = ''; menu.show(); await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))); }
     else { status.textContent = ''; loading = new LoadingScreen(pack.meta.name); await loading.painted(); }
+    loadStep('menu or loading screen', t);
     const scene = new THREE.Scene();
     const events = new Events();
     const session = createSession({ params, canvas, renderer, scene, pack, settings, audio, events }, { menu, attract: !!menu && !skipMenu, loading, attractFiles, shots });

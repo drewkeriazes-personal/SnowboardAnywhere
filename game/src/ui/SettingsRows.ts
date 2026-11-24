@@ -179,6 +179,8 @@ export const SECTIONS: Section[] = [
   ] },
   { cat: 'graphics', title: 'Loading', rows: [
     toggle('cachePacks', 'Cache resort files', 'Keeps the files of the resort in the browser, so loading it again only checks they are current instead of downloading them. A new version of the resort still loads fresh. Off downloads every file each time. It applies on the next load.'),
+    toggle('keepBuiltData', 'Keep built resort data', 'Keeps what loading a resort builds (its terrain, the stems between the trees, the cloud noise) in the browser, so loading it again from the same start skips that work. Anything a newer game or a newer build of the resort would build differently is built again, never reused. Off builds everything each load.'),
+    { kind: 'action', id: 'built-clear', label: 'Built resort data', button: 'Clear', action: 'built-clear', desc: 'Deletes the kept built data (the size shows beside the button). The next load builds it all again.' },
   ] },
   { cat: 'graphics', title: 'Advanced', rows: [
     { ...seg('quality', 'Detail', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'The base detail level: shadow map size, snowflake count and the tree budget. Changing it moves Shadows, Trees, Forest and Resolution with it.', held), set: (s: Settings, v: V) => applyQuality(s, v as Settings['quality']) } as Row,

@@ -72,8 +72,10 @@ export class Roads {
         }
       }
     }
-    this.major = this.build((k) => !KINDS[k]?.minor);
-    this.minor = this.build((k) => !!KINDS[k]?.minor);
+    // FEAT-377: empty until the first rebuild (a fine tile lands) or the first frame (update), whichever is first: the
+    // network built here, before any tile, was rebuilt before anything drew it
+    this.major = this.build(() => false);
+    this.minor = this.build(() => false);
     this.major.name = 'roads major'; this.minor.name = 'roads minor';
     this.group.add(this.major, this.minor);
     // rebuild once the fine tiles near the start are in so ribbons drape on the 1 m surface
@@ -92,20 +94,24 @@ export class Roads {
   }
 
   private rebuildTimer: number | null = null;
+  private built = false;
   private scheduleRebuild(delay = 1500): void {
     if (this.rebuildTimer !== null) return;
-    this.rebuildTimer = window.setTimeout(() => {
-      this.rebuildTimer = null;
-      for (const [mesh, pred] of [[this.major, (k: string) => !KINDS[k]?.minor], [this.minor, (k: string) => !!KINDS[k]?.minor]] as const) {
-        const fresh = this.build(pred);
-        mesh.geometry.dispose();
-        mesh.geometry = fresh.geometry;
-      }
-    }, delay);
+    this.rebuildTimer = window.setTimeout(() => { this.rebuildTimer = null; this.rebuild(); }, delay);
+  }
+
+  private rebuild(): void {
+    this.built = true;
+    for (const [mesh, pred] of [[this.major, (k: string) => !KINDS[k]?.minor], [this.minor, (k: string) => !!KINDS[k]?.minor]] as const) {
+      const fresh = this.build(pred);
+      mesh.geometry.dispose();
+      mesh.geometry = fresh.geometry;
+    }
   }
 
   /** Hide the minor network beyond a distance (called per frame with the camera position). */
   update(x: number, y: number): void {
+    if (!this.built) this.rebuild();
     const b = this.pack.meta.bounds;
     const inside = x > b.minX - 2000 && x < b.maxX + 2000 && y > b.minY - 2000 && y < b.maxY + 2000;
     this.minor.visible = inside;

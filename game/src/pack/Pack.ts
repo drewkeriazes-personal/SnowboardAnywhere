@@ -6,6 +6,7 @@ import type { BakedTreeLines, Features, PackMeta } from './types';
 import { downhillFrom, mogulHeight, MOGUL_FALL_D } from '../terrain/Moguls';
 import { TreeLines, TrunkIndex, LINE_MOGUL } from './treeLines';
 import { packFetch } from './fetch';
+import { loadStep } from '../core/loadSteps';
 
 /** FEAT-333: tree cells fetched at once while the tree lines load */
 const TRUNK_FETCHES = 8;
@@ -75,16 +76,20 @@ export class Pack {
   /** `treeLines` false: no FEAT-333 tree lines or FEAT-303 trim (`?notreelines`); `bakedTreeLines` false: plan them from
    *  the runs even when the pack has its own (FEAT-334, `?treelines=runs`) */
   static async load(baseUrl: string, opts: { treeLines?: boolean; bakedTreeLines?: boolean } = {}): Promise<Pack> {
+    let t = performance.now();
     const resp = await packFetch(`${baseUrl}/meta.json`);
     if (!resp.ok) throw new Error(`Pack not found at ${baseUrl}/ (HTTP ${resp.status}). Run the Vite dev server (cd game && npm run dev) and open http://localhost:5173/?pack=<slug>; the pack folder must exist at packs/<slug>/ next to game/.`);
     const meta = (await resp.json()) as PackMeta;
     const pack = new Pack(baseUrl, meta);
+    loadStep('pack meta', t); t = performance.now();
     try {
       pack.features = (await (await packFetch(`${baseUrl}/features.json`)).json()) as Features;
     } catch (e) {
       console.warn('no features.json', e);
     }
+    loadStep('pack features', t); t = performance.now();
     if (opts.treeLines !== false) await pack.setTreeLines(true, opts.bakedTreeLines !== false);
+    loadStep('tree lines', t);
     return pack;
   }
 

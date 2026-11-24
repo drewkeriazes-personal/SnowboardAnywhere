@@ -1,6 +1,7 @@
 import type { MaskMeta } from './types';
 import { TileStats } from './tileStats';
 import { packFetch } from './fetch';
+import { loadTile } from './tileDecode';
 
 /**
  * Surface class mask: R rock, G scree, B groomed piste, A canopy cover. Values 0..1. Also the
@@ -63,6 +64,14 @@ export class MaskSet {
   private async load(tx: number, ty: number): Promise<void> {
     const k = this.key(tx, ty);
     try {
+      if (this.opaque) { // FEAT-377: in a worker (pack/tileDecode.ts)
+        const d = await loadTile(`${this.baseUrl}/${tx}_${ty}.png`, this.meta.tileSize, 'grey');
+        if (!d.data) { this.missing.add(k); return; }
+        this.tiles.set(k, d.data as Uint8Array);
+        this.stats.add({ tx, ty, t: performance.now(), bytes: d.bytes, fetchMs: d.fetchMs, bitmapMs: d.bitmapMs, decodeMs: d.decodeMs });
+        this.onTileLoaded?.(tx, ty);
+        return;
+      }
       const t0 = performance.now();
       const resp = await packFetch(`${this.baseUrl}/${tx}_${ty}.png`);
       if (!resp.ok) {
@@ -75,8 +84,7 @@ export class MaskSet {
       const t2 = performance.now();
       // main-thread time only: the async readback's fence wait is idle
       const timing = { mainMs: 0 };
-      if (this.opaque) { this.tiles.set(k, firstChannel(decodeOpaque(bmp, this.meta.tileSize))); timing.mainMs = performance.now() - t2; }
-      else this.tiles.set(k, await decodeRGBAAsync(bmp, this.meta.tileSize, this.meta.tileSize, timing));
+      this.tiles.set(k, await decodeRGBAAsync(bmp, this.meta.tileSize, this.meta.tileSize, timing));
       bmp.close();
       const t3 = performance.now();
       this.stats.add({ tx, ty, t: t3, bytes: blob.size, fetchMs: t1 - t0, bitmapMs: t2 - t1, decodeMs: timing.mainMs });
@@ -149,34 +157,10 @@ function decoderGL(): WebGL2RenderingContext | null {
   if (gl === undefined) gl = new OffscreenCanvas(1, 1).getContext('webgl2', { premultipliedAlpha: false, antialias: false });
   return gl;
 }
-export function decodeRGBA(bmp: ImageBitmap, n: number, h = n): Uint8ClampedArray {
-  const gl = decoderGL();
-  if (gl) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    const px = new Uint8Array(n * h * 4);
-    // texture row 0 is the image's top row and readPixels starts at framebuffer row 0, so rows keep image order
-    gl.readPixels(0, 0, n, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    const out = new Uint8ClampedArray(px.buffer);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.deleteFramebuffer(fb); gl.deleteTexture(tex);
-    return out;
-  }
-  // fallback: 2D canvas (loses RGB where alpha is 0)
-  return decodeOpaque(bmp, n, h);
-}
-
 /**
- * BUG-087: decodeRGBA without the stall, for tiles that stream in while riding. The pixels are read into a
- * buffer on the GPU and copied out once a fence says the copy is done, polled between tasks, so the main
- * thread never waits on the frame's GPU work. Same bytes as decodeRGBA.
+ * BUG-087: the WebGL decode without the stall: the pixels are read into a buffer on the GPU and copied out once a
+ * fence says the copy is done, polled between tasks, so the main thread never waits on the frame's GPU work
+ * (FEAT-377: the cover levels and the stand images too, which read synchronously before).
  */
 export async function decodeRGBAAsync(bmp: ImageBitmap, n: number, h = n, timing?: { mainMs: number }): Promise<Uint8ClampedArray> {
   let t = performance.now();
@@ -226,11 +210,4 @@ export function decodeOpaque(bmp: ImageBitmap, n: number, h = n): Uint8ClampedAr
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.drawImage(bmp, 0, 0);
   return ctx.getImageData(0, 0, n, h).data;
-}
-
-/** BUG-090: the first channel of RGBA bytes, one byte per pixel (the greyscale sets' value) */
-function firstChannel(rgba: Uint8ClampedArray): Uint8Array {
-  const out = new Uint8Array(rgba.length >> 2);
-  for (let i = 0, j = 0; i < out.length; i++, j += 4) out[i] = rgba[j];
-  return out;
 }

@@ -8,6 +8,7 @@ import { refuseForeignOrigin } from './tools/same_origin.mjs';
 import { packDownloads, packFiles } from './tools/pack_routes.mjs';
 import { resortBuildRoutes } from './tools/resort_build_routes.mjs';
 import { devHot } from './tools/dev_hot.mjs';
+import { sourceHashesPlugin } from './tools/source_hashes.mjs';
 
 /**
  * Serve ../packs at /packs/ so resort packs stay out of the game bundle (they are gitignored), and FEAT-222's
@@ -138,7 +139,8 @@ function accountRoutes(): Plugin {
 
 export default defineConfig({
   base: './',
-  plugins: [packRoutes(), saveCompareShots(), saveAttractTakes(), accountRoutes(), devHot(path.resolve(__dirname, 'src'))], // FEAT-376: devHot, which edits hot-update
+  // FEAT-376: devHot, which edits hot-update; FEAT-377: virtual:source-hashes
+  plugins: [packRoutes(), saveCompareShots(), saveAttractTakes(), accountRoutes(), devHot(path.resolve(__dirname, 'src')), sourceHashesPlugin(path.resolve(__dirname, 'src'))],
   // FEAT-128: a saved take (public/attract) must not reload the page you are recording in
   server: { host: 'localhost', port: 5173, watch: { ignored: ['**/public/attract/**'] } },
   build: { target: 'es2022', sourcemap: false, chunkSizeWarningLimit: 1500 },
