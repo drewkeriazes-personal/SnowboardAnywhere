@@ -186,7 +186,7 @@ export class RideFrame {
 
   /** The render, then the frame closed: the P-key shot, the input frame, the replayed pose undone, the frame rate, the HUD line. */
   draw(): void {
-    const { canvas, controls, replay, rider, fps, settings, runStats, terrain, veg, cam, params } = this.p;
+    const { canvas, controls, replay, rider, fps, settings, runStats, terrain, veg, cam, params, pack } = this.p;
     this.p.draw();
     // the drawing buffer is only readable in the same task as the render
     if (this.shotPending) { this.shotPending = false; this.p.saveShot(canvas.toDataURL('image/png'), canvas.toDataURL('image/jpeg', 0.9)); }
@@ -195,7 +195,7 @@ export class RideFrame {
     fps.tick(this.dt);
     this.hud.innerHTML = hudLine({
       rider, runStats, metric: settings.units === 'metric', fps: fps.fps, chunks: terrain.stats.chunks, triangles: terrain.stats.triangles, trees: veg.stats.instances,
-      camMode: cam.mode, debug: params.debugHud,
+      camMode: cam.mode, debug: params.debugHud, plannedTreeLines: !!pack.treeLines && !pack.treeLines.baked,
     });
   }
 

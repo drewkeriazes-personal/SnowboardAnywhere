@@ -4,7 +4,7 @@
 // src/ui/BuildWatch.ts), fake pack routes, fake sleeps and a fake localStorage: one download and one toast per
 // build, Ride's URL, the same run again doing nothing (in the page and after a reload), a format mismatch with no
 // Ride, Preview, No change and Failed toasts, a build that ended before the page loaded, a new release of the resort
-// being ridden, a catalog that lags. Part 2 puts the toasts in a browser page (setContent, no server, no WebGL) over
+// being ridden, a catalog that lags, BUG-175's stale local pack at load. Part 2 puts the toasts in a browser page (setContent, no server, no WebGL) over
 // a stand-in main menu: on top, clickable, no tab stops, and a click that leaves the focus where it was.
 // No network, no gh, no real download: nothing here can start a build. Exits 1 on a failure.
 //   node tools/releasecheck.mjs [pack] [--gpu | --headed | --cpu] [--no-page]   (the pack is ignored: CI passes synth)
@@ -232,6 +232,40 @@ for (const [fv, want] of [[F + 1, /needs a newer game/], [F - 1, /needs rebuild/
   d.final()[1].action.run(); await settle();
   ok(r4.bodies[1]?.replace === true && d.navs[0] === 'http://localhost:5173/?pack=bigsky&account=maintainer', `Download and ride, then Replace: reloads into it (${d.navs[0]})`);
   p.off(); q.off(); again.off(); c.off(); d.off();
+}
+
+// ---------------------------------------------------------------- BUG-175: a local pack older than the published one, at load
+{
+  const cat = { resorts: [{ slug: 'vail', name: 'Vail', status: 'playable', pack: { formatVersion: F, version: 9, build: '20261121T043434Z-ab12cd' } }] };
+  const stale = { vail: { name: 'Vail', formatVersion: F, build: '20261117T212451Z' } };
+  const r = routes({ jobs: [[{ phase: 'done', received: 1, total: 1 }]], catalog: cat, local: stale });
+  const s = store();
+  const p = page(r, { storage: s });
+  await p.t.checkStale();
+  const t = p.final()[0];
+  ok(p.final().length === 1 && t.kind === 'local' && t.detail === 'Local Vail build from Nov 17; v9 from Nov 21 is published. Replace it? Your local build is deleted.', `stale local build: the toast names both dates (${t?.detail})`);
+  ok(t?.action?.label === 'Replace' && t?.alt?.label === 'Keep mine' && r.posts() === 0, 'stale local build: Replace and Keep mine, nothing downloaded yet');
+  t.action.run(); await settle();
+  ok(r.bodies[0]?.slug === 'vail' && r.bodies[0]?.replace === true && p.navs[0] === 'http://localhost:5173/?pack=vail&account=maintainer', `stale pack being ridden, Replace: replace: true, then the reload (${p.navs[0]})`);
+  // Keep mine: not again for the same published build (after a reload), but again for a newer one
+  const q = page(routes({ catalog: cat, local: stale }), { storage: s });
+  await q.t.checkStale();
+  const newer = { resorts: [{ ...cat.resorts[0], pack: { ...cat.resorts[0].pack, version: 10, build: '20261125T000000Z' } }] };
+  const n = page(routes({ catalog: newer, local: stale }), { storage: s });
+  await n.t.checkStale();
+  ok(q.puts.length === 0 && n.final()[0]?.detail?.startsWith('Local Vail build from Nov 17; v10 from Nov 25'), 'announced once per published build; a newer release asks again');
+  // a current or newer local build, a pack from the catalog (version), a --from copy
+  for (const [local, want, what] of [
+    [{ vail: { name: 'Vail', formatVersion: F, build: '20261121T043434Z' } }, null, 'the same build'],
+    [{ vail: { name: 'Vail', formatVersion: F, build: '20261123T000000Z' } }, null, 'a newer local build'],
+    [{ vail: { name: 'Vail', formatVersion: F, build: '20261117T212451Z', version: 8 } }, null, 'a pack from the catalog (it updates itself)'],
+    [{ vail: { name: 'Vail', formatVersion: F, build: '20261117T212451Z', copy: true } }, /^Local Vail copy from Nov 17; v9 .* The copy is deleted/, 'a get --from copy'],
+  ]) {
+    const c = page(routes({ catalog: cat, local }), { storage: null });
+    await c.t.checkStale();
+    ok(want ? want.test(c.final()[0]?.detail ?? '') : c.puts.length === 0, `stale check, ${what}: ${want ? 'the toast' : 'nothing'} (${c.final()[0]?.detail ?? 'none'})`);
+  }
+  p.off(); q.off(); n.off();
 }
 
 // ---------------------------------------------------------------- blocked storage: still one toast per build in the page

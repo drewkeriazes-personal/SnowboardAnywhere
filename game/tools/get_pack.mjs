@@ -104,8 +104,10 @@ export function localPacks(packsDir = PACKS) {
     const meta = readJson(path.join(packsDir, n, 'meta.json'));
     if (!meta) continue;
     const mark = readJson(path.join(packsDir, n, MARKER));
-    // FEAT-248: status is the catalog's ('preview' did not pass the DATA-022 gate), in a marker written since then
-    out[n] = { name: meta.name ?? n, formatVersion: meta.formatVersion ?? 0, build: meta.build ?? null, ...(mark ? { version: mark.version } : {}), ...(typeof mark?.status === 'string' ? { status: mark.status } : {}) };
+    // FEAT-248: status is the catalog's ('preview' did not pass the DATA-022 gate), in a marker written since then.
+    // BUG-175: copy, a get --from copy (no version either), so the stale-pack toast can say which kind it is
+    out[n] = { name: meta.name ?? n, formatVersion: meta.formatVersion ?? 0, build: meta.build ?? null, ...(mark ? { version: mark.version } : {}), ...(typeof mark?.status === 'string' ? { status: mark.status } : {}),
+      ...(fs.existsSync(path.join(packsDir, n, FROM_MARKER)) ? { copy: true } : {}) };
   }
   return out;
 }
