@@ -25,6 +25,7 @@ import { Roads } from '../world/Roads';
 import { Tracks } from '../world/Tracks';
 import { Bootprints } from '../world/Bootprints';
 import { Deform } from '../world/Deform';
+import { TreeWells } from '../world/TreeWells';
 import { Monsters } from '../world/Monster';
 import { Puffs } from '../world/Puffs';
 import { ParticleLight } from '../world/ParticleLight';
@@ -60,6 +61,8 @@ export function buildWorld(ctx: GameContext) {
   setStemClumps(!params.evenstems); // FEAT-337
   const treeFade = new TreeFade();
   add('trees', veg.group);
+  const wells = new TreeWells(pack, veg); // FEAT-216: the snow dips round the conifers' trunks near the rider
+  pack.wells = wells;
   const shrubs = new Shrubs(pack, collider, veg.kit); // FEAT-159: willow, juniper, sagebrush, oak and young conifers, buried by the snowpack
   add('shrubs', shrubs.group);
   const rocks = new Rocks(pack, collider);
@@ -144,7 +147,7 @@ export function buildWorld(ctx: GameContext) {
   terrain.setTreeShade(veg.shade); // FEAT-171: the drawn trees' shadows past the shadow map
   return {
     zr, env, clouds, snow, terrain, collider, veg, shrubs, treeFade, rocks, lifts, liftLines, resortTop, runs, buildings, roads, landmarks, slowSigns, bridges, people,
-    tracks, bootprints, riderChair, puffs, particleLight, bigprints, deform, monsters, eat, courses, trialWorld, riderView, treeBrush,
+    tracks, bootprints, riderChair, puffs, particleLight, bigprints, deform, wells, monsters, eat, courses, trialWorld, riderView, treeBrush,
     boundary, boundaryRope,
   };
 }

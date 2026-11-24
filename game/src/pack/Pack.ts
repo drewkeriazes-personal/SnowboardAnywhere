@@ -48,6 +48,8 @@ export class Pack {
   /** FEAT-333 / FEAT-303: the worn tree lines beside the black and glade runs and the glade trim, from the runs
    *  (pack/treeLines.ts); null without them (`?notreelines`) */
   treeLines: TreeLines | null = null;
+  /** FEAT-216: the tree wells near the rider (world/TreeWells.ts), m <= 0; null: none */
+  wells: { at(x: number, y: number): number } | null = null;
 
   private constructor(baseUrl: string, meta: PackMeta) {
     this.baseUrl = baseUrl;
@@ -152,9 +154,10 @@ export class Pack {
   /** BUG-100: true while Rider.update runs its physics steps, so fallbacks count to `coarseFallbacks` */
   physicsSampling = false;
 
-  /** Terrain height from the finest loaded set plus the tree lines' trench (FEAT-333) and the mogul bumps, ignoring bridges. Independent of render LOD. */
+  /** Terrain height from the finest loaded set plus the tree lines' trench (FEAT-333), the mogul bumps and the tree wells
+   *  (FEAT-216), ignoring bridges. Independent of render LOD. */
   terrainHeight(x: number, y: number): number {
-    return this.baseHeight(x, y) + this.trenchAt(x, y) + this.bumpAt(x, y);
+    return this.baseHeight(x, y) + this.trenchAt(x, y) + this.bumpAt(x, y) + (this.wells ? this.wells.at(x, y) : 0);
   }
 
   setMoguls(scale: number, creepM: number): void {

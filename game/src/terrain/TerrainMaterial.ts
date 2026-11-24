@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MOGUL_GLSL, WORN_K } from './Moguls';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from './rockShader';
 import { DEFORM_GLSL, deformUniforms } from '../world/Deform';
+import { WELL_GLSL, wellUniforms } from '../world/TreeWells';
 import { SNOW_SHADE_TINT } from '../world/snowLook';
 import { SNOWPACK_GLSL, snowpackState, snowpackUniform } from '../sim/Snowpack';
 
@@ -43,7 +44,8 @@ import { SNOWPACK_GLSL, snowpackState, snowpackUniform } from '../sim/Snowpack';
  * Snow sag (FEAT-044, `world/Deform.ts`): inside the rider-local window the vertex shader sinks each
  * vertex by the soft sag around the tracks and prints (the stamp averaged over about 1 m, fading out
  * over the window's last metres) and the fragment shader tilts the normal by its slope; the sharp
- * trench itself is the ribbon (`Tracks.ts`). `uDeformWin.w` = 0 turns it off (a uniform branch).
+ * trench itself is the ribbon (`Tracks.ts`). `uDeformWin.w` = 0 turns it off (a uniform branch). The tree wells
+ * (FEAT-216, `world/TreeWells.ts`) sink and tilt the snow the same way from their own window (`uWellWin.w`).
  *
  * Distant forest (FEAT-153): past a few hundred metres the forest share comes per pixel from the pack's
  * cover levels (`uCov0..2`, mipmapped, so trails narrower than a far chunk's vertices still show as white
@@ -167,6 +169,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
     uTreeRect: { value: EMPTY_RECT.clone() },
     ...rockUniforms(),
     ...deformUniforms,
+    ...wellUniforms,
     ...coverUniforms(),
   };
   mat.userData.uniforms = uniforms;
@@ -188,7 +191,8 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         varying vec4 vMogul;
         varying vec3 vWorldPos;
         varying vec3 vWorldNormal;
-        ${DEFORM_GLSL}`)
+        ${DEFORM_GLSL}
+        ${WELL_GLSL}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         // FEAT-153: forested ground stands up by its canopy past the instanced trees, so ridges read as treed
         if (lift > 0.0) {
@@ -200,7 +204,9 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           vec2 duv = deformUV((modelMatrix * vec4(transformed, 1.0)).xz);
           float df = deformFade(duv);
           if (df > 0.0) transformed.y += deformSag(duv) * df;
-        }`)
+        }
+        // FEAT-216: the tree wells round the conifers near the rider
+        if (uWellWin.w > 0.0) transformed.y += treeWell((modelMatrix * vec4(transformed, 1.0)).xz);`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
@@ -343,6 +349,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         float gMogK; // 0..1 mask of the field's strength for the colouring and the lighting tweaks
         float gWorn; // FEAT-333: 0..1 how deep in a tree line's trench (0 rim .. 1 floor; the mogul attribute's y fraction)
         ${DEFORM_GLSL}
+        ${WELL_GLSL}
         ${NOISE_GLSL}
         ${ROCK_GLSL}
         ${MOGUL_GLSL}
@@ -663,6 +670,11 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
           // FEAT-044: the sag's slope tilts the normal (the vertex normals do not see the displacement)
           if (dFade > 0.0) {
             vec2 slope = deformSagSlope(dUV) * dFade * snowW;
+            nn = normalize(vec3(nn.x - slope.x, nn.y, nn.z - slope.y));
+          }
+          // FEAT-216: and so does a tree well's
+          if (uWellWin.w > 0.0) {
+            vec2 slope = treeWellSlope(wpn.xz) * snowW;
             nn = normalize(vec3(nn.x - slope.x, nn.y, nn.z - slope.y));
           }
           // FEAT-059 / BUG-062: the mogul bump normal from the colour pass, on every shaded chunk (the

@@ -319,7 +319,7 @@ export class RideFrame {
 
   /** 11. Streaming around the rider (or the camera when detached), the snow on the ground, lifts and landmarks, the live sun */
   private streaming(dt: number): void {
-    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, buildings, sky, snow, settings, sun, params, zr, resortTop, roads, riderChair, lifts, bridges, liftLines, landmarks, slowSigns, people, map, boundaryRope } = this.p;
+    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, buildings, sky, snow, settings, sun, params, zr, resortTop, roads, riderChair, lifts, bridges, liftLines, landmarks, slowSigns, people, map, boundaryRope, wells } = this.p;
     const onLift = this.onLift, detached = this.detached;
     const cond = this.p.conditions();
     const cp = cam.camera.position;
@@ -332,6 +332,7 @@ export class RideFrame {
     rocks.update(fx, fy, prefetch.ax, prefetch.ay);
     buildings.update(); // BUG-088
     shrubs.update(fx, fy, prefetch.ax, prefetch.ay, cp);
+    wells.update(fx, fy); // FEAT-216
     if (sky.weather === 'storm') sky.snowCover = Math.min(1, sky.snowCover + dt / 600);
     else if (sky.weather === 'flurries') sky.snowCover = Math.min(1, sky.snowCover + dt / 3000);
     const snowCover = sky.snowCover;
@@ -364,6 +365,7 @@ export class RideFrame {
       const sp = snowpackState(d.getUTCMonth() + 1, cond.snowDay ?? 'mid', snowCover, params.snowdepth);
       shrubs.setSnowpack(sp);
       terrain.setSnowpack(sp);
+      wells.setSnow(sp, cond.snowDay ?? 'mid');
     }
     rocks.setSnow(Math.min(1, snowCover * 3), snow.wind.x, snow.wind.y); // boulder tops fill three times faster than the slopes
     roads.update(fx, fy);
