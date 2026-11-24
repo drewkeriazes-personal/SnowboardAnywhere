@@ -167,22 +167,21 @@ export class Pack {
 
   private readonly mogTmp = [0, 0, 0, 0];
   private readonly fallTmp = [1, 0];
+  private readonly lineTmp = [0];
 
   /**
    * FEAT-059: mogul amplitude (m) at a point from the pack's moguls set; 0 without the set or its tile. FEAT-333: a
-   * worn tree line is a mogul line too, as strong as it is worn (LINE_MOGUL at full), wherever the set is weaker; it sets
-   * `mogulLine` to how much of the line's irregular pattern applies here (1 where the set has none, 0 off the lines).
+   * worn tree line is a mogul line too, as strong as it is worn (LINE_MOGUL at full), wherever the set is weaker.
+   * FEAT-268: `line[0]` gets how much of the line's irregular pattern applies here (1 where the set has none, 0 off the
+   * lines), for `bumpWith` and the terrain shader; pass it with the amplitude, never read it from a later call.
    */
-  mogulAmp(x: number, y: number, raw = false): number {
-    this.mogulLine = 0;
+  mogulAmp(x: number, y: number, raw = false, line: number[] = this.lineTmp): number {
+    line[0] = 0;
     if (!raw && this.mogulScale <= 0) return 0;
     let a = this.moguls ? this.moguls.sampleBilinear(x, y, this.mogTmp)[0] : 0;
-    if (this.treeLines) { const l = this.treeLines.wornAt(x, y) * LINE_MOGUL; if (l > a) { this.mogulLine = 1 - a / l; a = l; } }
+    if (this.treeLines) { const l = this.treeLines.wornAt(x, y) * LINE_MOGUL; if (l > a) { line[0] = 1 - a / l; a = l; } }
     return a * (raw ? 1 : this.mogulScale);
   }
-
-  /** FEAT-268: the tree line pattern weight (0..1) the last `mogulAmp` call found, for `bumpWith` and the terrain shader */
-  mogulLine = 0;
 
   /** the shader and bump geometry carry moguls: the pack has a moguls set, or tree lines (FEAT-333) */
   get hasMoguls(): boolean { return !!this.moguls || !!this.treeLines; }
@@ -277,14 +276,14 @@ export class Pack {
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and
    *  sized by its slope (FEAT-147). */
   bumpAt(x: number, y: number): number {
-    const a = this.mogulAmp(x, y, true);
-    return this.bumpWith(x, y, a, null, this.mogulLine);
+    const a = this.mogulAmp(x, y, true, this.lineTmp);
+    return this.bumpWith(x, y, a, null, this.lineTmp[0]);
   }
 
   /**
    * FEAT-339: `bumpAt` from the raw amplitude (`mogulAmp(x, y, true)`) the caller already has, and the fall line from
    * `fallAt` when it has that too (else null), so the chunk builder reads each once per vertex and gets the very numbers
-   * the physics does. `line`: the `mogulLine` that came with the amplitude (FEAT-268).
+   * the physics does. `line`: the `line[0]` that came with the amplitude (FEAT-268).
    */
   bumpWith(x: number, y: number, rawAmp: number, fall: number[] | null, line: number): number {
     if (this.mogulScale <= 0) return 0;

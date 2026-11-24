@@ -402,6 +402,7 @@ export class Terrain implements Ground {
   }
 
   private readonly fallSample = [0, 0];
+  private readonly lineSample = [0];
   private trenchBuf: Float64Array | null = null;
 
   private build(c: Chunk): void {
@@ -471,8 +472,8 @@ export class Terrain implements Ground {
         const h = H(i, j);
         // FEAT-339: the field's amplitude and fall line once per vertex, for the bumps and the shading both (Pack.bumpWith
         // gives Pack.bumpAt's very numbers, so the mesh stays on the physics' ground)
-        const amp = shadeMoguls ? pack.mogulAmp(x, y, true) : 0;
-        const line = shadeMoguls ? pack.mogulLine : 0;
+        const amp = shadeMoguls ? pack.mogulAmp(x, y, true, this.lineSample) : 0;
+        const line = shadeMoguls ? this.lineSample[0] : 0;
         const hasFall = geoMoguls && amp >= 0.005;
         if (hasFall) pack.fallAt(x, y, fv);
         pos[v * 3] = x; pos[v * 3 + 1] = hasFall ? h + pack.bumpWith(x, y, amp, fv, line) : h; pos[v * 3 + 2] = -y;
