@@ -1,4 +1,5 @@
 import type { SurfaceInfo } from './Rider';
+import { CANOPY_SUN } from '../world/Sky';
 
 /**
  * FEAT-053: what the snow is like under the board, from data the pack already has (the surface
@@ -15,6 +16,8 @@ import type { SurfaceInfo } from './Rider';
  *  - rock: bare rock and scree (the grip and sound for it are FEAT-103's; it is here for the readout)
  * FEAT-333: a worn tree line through the forest (`worn`) is ridden all season: packed and tracked (chop) on the line,
  * whatever the day, while the trees either side keep their powder.
+ * FEAT-360: under a closed stand (`stand`, the 10 m canopy grid) the snow gets the sun the light gets (CANOPY_SUN less)
+ * and half the spring refreeze, so it stays softer in the trees: less slush in the afternoon, less ice first thing.
  * Shifts with the weather and the time of day: a storm adds powder everywhere, the afternoon sun
  * softens the south faces and the morning refreezes them in spring, and open off-piste gets tracked
  * out as the day goes on.
@@ -76,6 +79,8 @@ const K: Record<SnowKind, [number, number, number, number, number, number]> = {
 const JOLT_FROM = 0.3, JOLT_RANGE = 0.5;
 /** FEAT-333: the share of the off-piste snow a fully worn tree line has tracked out */
 const WORN_CHOP = 0.75;
+/** FEAT-360: the share of the spring refreeze a closed stand (score 1) keeps off the snow under it */
+const STAND_REFREEZE = 0.5;
 const KINDS: SnowKind[] = ['groomed', 'powder', 'chop', 'ice', 'slush', 'rock'];
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -97,7 +102,8 @@ export function snowAt(s: SurfaceInfo, n: ArrayLike<number>, z: number, w: SnowW
   const afternoon = clamp01((w.hour - 12) / 4);
   const morning = clamp01((9.5 - w.hour) / 2.5);
   const skiedDay = clamp01((w.hour - 8.5) / 6.5);
-  const sunny = (1 - w.storm) * (1 - shade);
+  const stand = s.stand ?? 0;
+  const sunny = (1 - w.storm) * (1 - shade) * (1 - CANOPY_SUN * stand);
   const fresh = clamp01(w.newSnow + w.storm * 0.5);
   // warmth: spring softens everything the sun reaches by the afternoon, mid-season only the low
   // sunny faces late on; higher is colder
@@ -106,7 +112,7 @@ export function snowAt(s: SurfaceInfo, n: ArrayLike<number>, z: number, w: SnowW
   const slushShare = clamp01(warmth * 1.4 - 0.25);
   // ice: spring refreeze first thing (the groomers scraped firm, the off-piste crusted), and wind
   // scouring on high open ground, steeper exposed faces most; new snow softens both
-  const refreeze = (w.day === 'spring' ? 0.7 : w.day === 'mid' ? 0.2 : 0.05) * morning;
+  const refreeze = (w.day === 'spring' ? 0.7 : w.day === 'mid' ? 0.2 : 0.05) * morning * (1 - STAND_REFREEZE * stand);
   const scoured = e * e * (1 - trees) * (0.6 + 0.4 * steep) * (1 - 0.6 * shade) * (1 - 0.7 * groomedRaw); // flat high ridgetops scour hardest
   const iceShare = clamp01(Math.max(refreeze, 0.8 * scoured) * (1 - fresh)) * (1 - slushShare);
   // off-piste: untracked powder keeps in the shade, high up, under the trees and after a storm; open

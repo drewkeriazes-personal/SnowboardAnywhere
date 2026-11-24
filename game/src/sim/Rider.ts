@@ -503,6 +503,7 @@ export class Rider {
     this.surface.moguls = pack.mogulAmp?.(this.x, this.y) ?? 0; // FEAT-059 (test planes may lack the method)
     this.surface.shrub = this.collider?.brushAt?.(this.x, this.y, this.z, 0.35) ?? 0; // FEAT-159
     this.surface.worn = pack.wornAt?.(this.x, this.y) ?? 0; // FEAT-333
+    this.surface.stand = pack.canopyAt?.(this.x, this.y) ?? 0; // FEAT-360
     snowAt(this.surface, n, this.z, this.snowWorld, this.snow); // FEAT-053
     this.chop *= Math.exp(-dt * 6);
     if (this.strapState !== 'none') { strapStep(this, dt, ground); return; }
