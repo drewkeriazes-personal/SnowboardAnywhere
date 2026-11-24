@@ -43,6 +43,8 @@ export interface Settings {
   fov: number; // base chase FOV, 50 .. 100
   /** the frame cap (30, 60 or 0 = the display's rate; FEAT-284) */
   targetFps: number;
+  /** FEAT-375: the browser keeps pack files and revalidates them each load (off: every file downloads again); applies on the next load */
+  cachePacks: boolean;
   /** FEAT-045 speed feel, each can be turned off: FOV widening with speed, camera rumble and landing shake, speed lines */
   speedFov: boolean; camShake: boolean; speedLines: boolean;
   invertSteer: boolean;
@@ -180,7 +182,7 @@ export function addStrapDefaults(keys: Record<string, string[]>, padKeys: Record
 
 const DEFAULTS: Settings = {
   v: 1, strapKeyDefault: 2, sfx: 0.8, music: 0.5, mute: false, musicSource: 'files', playlist: 'Lofi hip-hop', playlistDefault: 2, quality: 'medium', shadows: true, csmExperimental: false, clouds: 'scattered', valleyFog: false, newSnow: 'none', snowDay: 'mid', snowDeform: true, treeDensity: 0.6, forestDensity: 0.6, pixelRatio: 1, // FEAT-374: the Medium preset (applyQuality); the camera extras below start off
-  fov: 68, targetFps: 60, speedFov: false, camShake: false, speedLines: false, invertSteer: false, camera: 'chase', seeThroughTrees: true, fpVignette: true, goggleStrength: 0.05, goggleLens: 'rose', lensStrength: 1, fpShake: 0, showMarkers: true, showLabels: true, roadsOnSnow: false, liftLines: true, timeTrials: false, pressBalance: 'on', outfit: { ...OUTFIT_PRESETS['Classic red'] }, discipline: 'board', stance: 'regular', fallLine: 'real', jumpMode: 'real', timeOfDay: 'pack', month: 2, units: 'imperial', keys: migrateKeys(undefined).keys,
+  fov: 68, targetFps: 60, cachePacks: true, speedFov: false, camShake: false, speedLines: false, invertSteer: false, camera: 'chase', seeThroughTrees: true, fpVignette: true, goggleStrength: 0.05, goggleLens: 'rose', lensStrength: 1, fpShake: 0, showMarkers: true, showLabels: true, roadsOnSnow: false, liftLines: true, timeTrials: false, pressBalance: 'on', outfit: { ...OUTFIT_PRESETS['Classic red'] }, discipline: 'board', stance: 'regular', fallLine: 'real', jumpMode: 'real', timeOfDay: 'pack', month: 2, units: 'imperial', keys: migrateKeys(undefined).keys,
   outrun: { difficulty: 'normal', escape: 'base', gentle: false },
   padKeys: migratePadKeys(undefined), inputView: false, rumble: true, vibration: 0.8, padDead: 0.18, padTrigDead: 0.3, lookSens: 1, invertLookY: false,
   padTriggers: false, padLightbar: true, padGyro: false, gyroSens: 1,

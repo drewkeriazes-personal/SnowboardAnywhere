@@ -10,6 +10,7 @@ import { crownOverlap, type CrownHit } from './TreeBrush';
 import { ClumpCanopy } from './trees/clumps';
 import { standGate, treeTrim, trimReach } from './trees/trim';
 import type { Ground } from '../terrain/Terrain';
+import { packFetch } from '../pack/fetch';
 
 /**
  * Streams tree instances per 1 km cell around the rider and draws them with the FEAT-156 tree kit
@@ -573,7 +574,7 @@ export class Vegetation {
     try {
       const get = async (dir: string, want: boolean): Promise<Float32Array | null> => {
         if (!want) return null;
-        const resp = await fetch(`${this.pack.baseUrl}/${dir}/${cell.key}.bin`);
+        const resp = await packFetch(`${this.pack.baseUrl}/${dir}/${cell.key}.bin`);
         return resp.ok ? new Float32Array(await resp.arrayBuffer()) : null;
       };
       const [own, far] = await Promise.all([get('trees', ownListed), get('farTrees', farListed)]);
@@ -606,7 +607,7 @@ export class Vegetation {
     const none = (): void => { cell.standState = 3; cell.stemArea ??= new Float32Array(0); };
     if (!this.standCells.has(cell.key)) { none(); return; }
     try {
-      const resp = await fetch(`${this.pack.baseUrl}/stands/${cell.key}.png`);
+      const resp = await packFetch(`${this.pack.baseUrl}/stands/${cell.key}.png`);
       if (!resp.ok) { none(); return; }
       const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
       const px = decodeRGBA(bmp, st.size, st.size * 2);
