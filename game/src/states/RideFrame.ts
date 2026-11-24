@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { MOGUL_CREEP_M_PER_DAY } from '../terrain/Moguls';
 import { LENSES, resolveLens, type GoggleLens, type LensId } from '../world/Lens';
 import { setDeformHold } from '../world/Deform';
-import { treeSnowState } from '../world/trees';
+import { treeSnowState, StormClock } from '../world/trees';
 import { snowpackState } from '../sim/Snowpack';
 import type { Conditions, Settings } from '../ui/Settings';
 import { contextPrompt } from '../ui/ContextPrompt';
@@ -119,6 +119,7 @@ export class RideFrame {
   private boardMsg = '';
   private boardMsgT = 0;
   private elapsed = 0;
+  private readonly stormClock = new StormClock(); // FEAT-363
   private lensWorn: LensId | null = null;
   private promptShown = '';
   private helpShown = '';
@@ -358,7 +359,9 @@ export class RideFrame {
       terrain.setMoguls(pack.mogulScale, pack.mogulCreep);
       // FEAT-157: snow on the trees: heavy after a storm and mid-winter, melting back on the sun side
       // late on a clear day, snow ghosts high up in deep winter
-      veg.kit.setSnow(treeSnowState(snowCover, cond.snowDay ?? 'mid', d.getUTCMonth() + 1, hour, CLEAR[sky.weather] ?? 0.5));
+      // FEAT-363: and shedding the storm's part through the day, or since the snow stopped in this session
+      const since = this.stormClock.step(sky.weather === 'storm' || sky.weather === 'flurries', dt);
+      veg.kit.setSnow(treeSnowState(snowCover, cond.snowDay ?? 'mid', d.getUTCMonth() + 1, hour, CLEAR[sky.weather] ?? 0.5, since));
       // FEAT-159: the shrubs sink into the season's snowpack (?snowdepth= sets one depth everywhere)
       // BUG-081: and the open ground far off shows through where that snowpack is thin
       const sp = snowpackState(d.getUTCMonth() + 1, cond.snowDay ?? 'mid', snowCover, params.snowdepth);

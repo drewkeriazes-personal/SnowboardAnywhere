@@ -7,6 +7,8 @@ import { SNOW_ALBEDO, SNOW_SHADE_TINT } from '../snowLook';
  * Load. `setTreeSnow` sets one load for the day (0 bare .. 1 just after a storm, from the new snow,
  * the snow conditions and the month: `treeSnowState`). Each tree varies it by +-15% and a tree above
  * the snow-ghost band (treeline, 3,450 to 3,560 m) in deep winter goes to a full load with rime (`ghost`).
+ * FEAT-363: the storm's part of the load sheds through the day (`keep`, wind and cold from 7 am, faster in
+ * warm sun), each tree at its own rate from the same hash, so some go bare first; the rime stays.
  *
  * Where it sits (LOD0 and LOD1, per fragment): on the upper side of what you see, from the surface's
  * own facing (screen derivatives, so the top of a card collects snow and its underside stays green),
@@ -29,8 +31,11 @@ import { SNOW_ALBEDO, SNOW_SHADE_TINT } from '../snowLook';
 export const TREE_SHED_MAX = 8;
 
 export interface TreeSnowState {
-  /** 0 bare .. 1 heavy */
+  /** 0 bare .. 1 heavy: what holds all day (the season's base) */
   load: number;
+  /** FEAT-363: the storm's part on top of `load`, and the share of it still on the trees (1 just after the storm) */
+  storm: number;
+  keep: number;
   /** 0..1: how much the sun side has melted back */
   melt: number;
   /** 0..1: how strongly trees above the ghost line turn into snow ghosts (deep winter) */
@@ -39,6 +44,7 @@ export interface TreeSnowState {
 
 export const treeSnowUniforms = {
   uTreeSnow: { value: new THREE.Vector3(0.4, 0, 0) }, // load, melt, ghost
+  uTreeStorm: { value: new THREE.Vector2(0, 1) }, // FEAT-363: storm, keep
   /** the snow-ghost band (world y, m): none below x, full from y. 30 m under to 80 m over the treeline (FEAT-070,
    * 3,450 to 3,560 m on Vail; the pack's own treeline since DATA-021, setGhostBand): below it the forest is flocked,
    * not rimed (Hornsilver at 3,380 m in the Feb 2014 photo), krummholz and the top stands are ghosts */
@@ -57,6 +63,7 @@ export const treeSnowUniforms = {
 
 export function setTreeSnow(s: TreeSnowState): void {
   treeSnowUniforms.uTreeSnow.value.set(s.load, s.melt, s.ghost);
+  treeSnowUniforms.uTreeStorm.value.set(s.storm, s.keep);
 }
 
 /** FEAT-234: the band's floor (m) for a resort with no treeline: above any ground, so no tree is a ghost */
@@ -79,38 +86,54 @@ export function winterDepth(month: number): number {
 /** the load on the trees at the base of the season, before any new snow */
 const BASE_LOAD = { fresh: 0.55, mid: 0.35, spring: 0.12 } as const;
 
+/** FEAT-363: the night's storm ends at 7 am; wind and cold shed its snow at 0.03 + 0.06 an hour (about 2 a day), warm sun at 1.5 an hour */
+const STORM_END = 7, K_STILL = 0.09, K_WARM = 1.5;
+/** hours of sun on the boughs by `h`: the integral of the `melt` ramp smooth(10.5, 15, h) */
+const sunHours = (h: number): number => { const t = clamp01((h - 10.5) / 4.5); return 4.5 * (t ** 3 - t ** 4 / 2) + Math.max(0, h - 15); };
+
+/** FEAT-363: a storm that ends in the session starts its own clock: hours since the snow stopped, at real seconds x 12 (Infinity until it snows) */
+export class StormClock {
+  hours = Infinity;
+  step(snowing: boolean, dt: number): number { return (this.hours = snowing ? 0 : this.hours + dt / 300); }
+}
+
 /**
  * The day's snow on the trees. `newSnow` is the shared snowCover (FEAT-105: 0 .. 1 after a storm),
- * `day` the snow conditions, `month` 1..12, `hour` local, `clear` 0..1 how much sun gets through.
+ * `day` the snow conditions, `month` 1..12, `hour` local, `clear` 0..1 how much sun gets through,
+ * `since` the session's hours since it stopped snowing (StormClock), if less than since 7 am.
  */
-export function treeSnowState(newSnow: number, day: 'fresh' | 'mid' | 'spring', month: number, hour: number, clear: number): TreeSnowState {
+export function treeSnowState(newSnow: number, day: 'fresh' | 'mid' | 'spring', month: number, hour: number, clear: number, since = Infinity): TreeSnowState {
   const w = winterDepth(month) * (day === 'spring' ? 0.6 : 1);
-  const base = BASE_LOAD[day] * (0.4 + 0.6 * w);
-  const load = base + (1 - base) * clamp01(newSnow * 1.5);
+  const load = BASE_LOAD[day] * (0.4 + 0.6 * w);
+  const storm = (1 - load) * clamp01(newSnow * 1.5);
   // the sun side melts back from late morning, most by mid-afternoon; much more in spring
   const warm = day === 'spring' ? 0.9 : day === 'mid' ? 0.45 : 0.2;
   const melt = clamp01(warm * smooth(10.5, 15, hour) * (1 - smooth(17, 19, hour) * 0.3) * clear * (1 - newSnow));
   const ghost = day === 'spring' ? 0 : smooth(0.55, 0.95, w);
-  return { load, melt, ghost };
+  // FEAT-363: the storm's part sheds with the hours since it ended, faster in warm sun (canopy-snow.md section 4)
+  const shed = Math.min(Math.max(0, hour - STORM_END), since);
+  const keep = Math.exp(-(K_STILL * shed + K_WARM * warm * clear * (sunHours(hour) - sunHours(hour - shed))));
+  return { load, storm, keep, melt, ghost };
 }
 
 /**
  * FEAT-217: the load on one tree (0..1) as `TREE_SNOW_VERT` gives it, for a tree whose base is at (x, y, z)
- * (pack metres: x east, y north, z up): the day's load +-15 % by the tree, or the snow-ghost load in the
- * ghost band. The hash is the shader's in double precision, so a tree may land a few percent off the
- * one drawn; the share of it that has melted off the sun side is `uTreeSnow.y`.
+ * (pack metres: x east, y north, z up): the day's load +-15 % by the tree, its storm part shed at the tree's
+ * own rate (FEAT-363), or the snow-ghost load in the ghost band. The hash is the shader's in double precision,
+ * so a tree may land a few percent off the one drawn; the share of it that has melted off the sun side is `uTreeSnow.y`.
  */
 export function treeSnowLoadAt(x: number, y: number, z: number): number {
-  const u = treeSnowUniforms.uTreeSnow.value, gz = treeSnowUniforms.uGhostZ.value;
+  const u = treeSnowUniforms.uTreeSnow.value, st = treeSnowUniforms.uTreeStorm.value, gz = treeSnowUniforms.uGhostZ.value;
   const m = (v: number): number => ((v % 4096) + 4096) % 4096; // GLSL mod of the three.js x and z (= -north)
   const s = Math.sin(m(x) * 12.9898 + m(-y) * 78.233) * 43758.5453, h = s - Math.floor(s);
   const g = u.z * smooth(gz.x, gz.y, z + (h - 0.5) * 50);
-  return Math.max(clamp01(u.x * (0.85 + 0.3 * h)), g);
+  const rate = 0.7 + 0.6 * ((h * 13) % 1);
+  return Math.max(clamp01((u.x + st.x * st.y ** rate) * (0.85 + 0.3 * h)), g);
 }
 
 /** the per-tree load and ghost share (vertex shaders; `o` is the tree's base, world) */
 export const TREE_SNOW_VERT = /* glsl */ `
-  uniform vec3 uTreeSnow; uniform vec2 uGhostZ;
+  uniform vec3 uTreeSnow; uniform vec2 uTreeStorm; uniform vec2 uGhostZ;
   uniform vec4 uTreeShed[${2 * TREE_SHED_MAX}]; uniform int uTreeShedN;
   varying float vSnowLoad; varying float vSnowGhost;
   // FEAT-217 (the mesh LODs): the near side's direction (xy), the share of its snow gone and the contact height above the
@@ -130,7 +153,9 @@ export const TREE_SNOW_VERT = /* glsl */ `
     float g = uTreeSnow.z * smoothstep(uGhostZ.x, uGhostZ.y, o.y + (h - 0.5) * 50.0);
     vSnowGhost = g;
     vSnowShed = vec4(0.0); vSnowShedAll = 0.0;
-    vSnowLoad = max(clamp(uTreeSnow.x * (0.85 + 0.3 * h), 0.0, 1.0), g);
+    // FEAT-363: the storm's part sheds at the tree's own rate (a second draw off the hash, so it is not the +-15 %
+    // that cancels it), and some trees go bare first
+    vSnowLoad = max(clamp((uTreeSnow.x + uTreeStorm.x * pow(uTreeStorm.y, 0.7 + 0.6 * fract(h * 13.0))) * (0.85 + 0.3 * h), 0.0, 1.0), g);
   }
 `;
 

@@ -56,7 +56,7 @@ type SnowLevel = number | 'ghost';
 const GHOST_Z = treeSnowUniforms.uGhostZ.value.clone();
 function snowLevel(l: SnowLevel): void {
   const ghost = l === 'ghost';
-  kit.setSnow({ load: ghost ? 1 : l, melt: 0, ghost: ghost ? 1 : 0 });
+  kit.setSnow({ load: ghost ? 1 : l, storm: 0, keep: 1, melt: 0, ghost: ghost ? 1 : 0 });
   // the lineup stands at 0 m, so a ghost moves the ghost line below it
   if (ghost) treeSnowUniforms.uGhostZ.value.set(-200, -100); else treeSnowUniforms.uGhostZ.value.copy(GHOST_Z);
 }
@@ -358,7 +358,7 @@ function shrubs(): string {
   const depths = [0, 0.5, 1.5], stripH = 300, slot = 3.4, x0 = -slot * (SHRUB_LINE.length - 1) / 2;
   const out = document.createElement('canvas'); out.width = W; out.height = stripH * depths.length * 2;
   const ctx = out.getContext('2d')!;
-  kit.setSnow({ load: 0.45, melt: 0, ghost: 0 });
+  kit.setSnow({ load: 0.45, storm: 0, keep: 1, melt: 0, ghost: 0 });
   gridBack.position.set(0, 0, -4); gridGround.visible = true; gridBack.visible = true;
   const halfW = slot * SHRUB_LINE.length / 2 + 1.5, tall = 2 * halfW * stripH / W;
   const side = new THREE.OrthographicCamera(-halfW, halfW, tall - 0.8, -0.8, 1, 1000);

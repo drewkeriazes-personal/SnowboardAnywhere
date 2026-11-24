@@ -12,6 +12,9 @@
 //   - a slam into the trunk (8 m/s) shakes the whole tree: many times a brush, from the whole crown all
 //     round, spread over frames under the cap, drawn bare all round; a second slam has nothing left; a bump
 //     drops nothing; half the speed shakes part of it; a lodgepole's crown out of reach still comes down
+//   - FEAT-363: the storm's part of the load sheds through the day (the table in canopy-snow.md section 4 within
+//     2 %), not while it snows, from its own clock after a storm in the session, at each tree's own rate (the
+//     shader's formula), the rime stays, and an afternoon brush drops less than a morning one
 // node tools/treepuffcheck.mjs        (exit code 1 if a check fails)
 import { build } from 'esbuild';
 import path from 'node:path';
@@ -31,10 +34,10 @@ const SEED = Number(process.env.TREEPUFF_SEED ?? 1);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'treepuffcheck-'));
 const entry = path.join(dir, 'entry.ts');
 const src = (m) => JSON.stringify(path.join(GAME, 'src', 'world', `${m}.ts`).replace(/\\/g, '/'));
-fs.writeFileSync(entry, [`export * from ${src('TreeBrush')};`, `export { treeSnowState, setTreeSnow, treeSnowUniforms, TREE_SHED_MAX } from ${src('trees/snow')};`].join('\n'));
+fs.writeFileSync(entry, [`export * from ${src('TreeBrush')};`, `export { treeSnowState, setTreeSnow, treeSnowUniforms, treeSnowLoadAt, StormClock, TREE_SNOW_VERT, TREE_SHED_MAX } from ${src('trees/snow')};`].join('\n'));
 const out = path.join(dir, 'brush.mjs');
 await build({ entryPoints: [entry], bundle: true, format: 'esm', platform: 'node', outfile: out, logLevel: 'error' });
-const { TreeBrush, crownOverlap, treeSnowState, setTreeSnow, treeSnowUniforms, TREE_SHED_MAX } = await import(pathToFileURL(out).href);
+const { TreeBrush, crownOverlap, treeSnowState, setTreeSnow, treeSnowUniforms, treeSnowLoadAt, StormClock, TREE_SNOW_VERT, TREE_SHED_MAX } = await import(pathToFileURL(out).href);
 
 let fails = 0;
 function check(label, ok, detail) { console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}: ${detail}`); if (!ok) fails++; }
@@ -80,7 +83,7 @@ function pass(brush, off, speed = 10, z = 0) {
   while (r.y < 12) { thump = Math.max(thump, brush.update(r, DT)); n += brush.released; most = Math.max(most, brush.released); r.y += speed * DT; }
   return { n, most, thump };
 }
-const day = (newSnow, kind, month = 2) => setTreeSnow(treeSnowState(newSnow, kind, month, 9, 1));
+const day = (newSnow, kind, month = 2, hour = 9) => setTreeSnow(treeSnowState(newSnow, kind, month, hour, 1));
 
 // ---- after a storm: a puff off the edge of a spruce (crown 1.95 m; the rider's side 1.8 m from the trunk)
 day(1, 'fresh');
@@ -197,6 +200,34 @@ day(1, 'fresh');
   const first = s2.n;
   for (let i = 0; i < 120; i++) b2.update(r, DT);
   check('standing still drops nothing more', s2.n === first, `${first} on the touch, ${s2.n - first} over 2 s after`);
+}
+
+// ---- FEAT-363: the storm's snow sheds through the day
+{
+  const table = [['fresh', 0.1, [0.84, 0.57, 0.40]], ['mid', 1, [0.84, 0.40, 0.05]], ['spring', 1, [0.84, 0.27, 0.01]]];
+  for (const [kind, clear, want] of table) {
+    const got = [9, 13, 16].map((h) => treeSnowState(1, kind, 2, h, clear).keep);
+    check(`${kind} day (clear ${clear}) keeps the doc's share`, got.every((g, i) => Math.abs(g - want[i]) <= 0.02), `${got.map((g) => (g * 100).toFixed(0)).join(' / ')} % at 9 / 13 / 16 h (doc ${want.map((w) => Math.round(w * 100)).join(' / ')})`);
+  }
+  check('full while it snows', treeSnowState(1, 'mid', 2, 16, 1, 0).keep === 1, 'the session clock at 0 at 4 pm');
+  const clock = new StormClock();
+  clock.step(true, 1); for (let t = 0; t < 300; t++) clock.step(false, 1);
+  const k1 = treeSnowState(1, 'mid', 2, 16, 1, clock.hours).keep, kDay = treeSnowState(1, 'mid', 2, 16, 1).keep;
+  check('a storm that ends in the session starts its own clock', Math.abs(clock.hours - 1) < 1e-9 && k1 > 5 * kDay && k1 < 0.9, `${clock.hours.toFixed(2)} h after 5 min, keeps ${(k1 * 100).toFixed(0)} % at 4 pm (${(kDay * 100).toFixed(0)} % after a night storm)`);
+  check('no storm, the hour rule', new StormClock().step(false, 1) === Infinity, 'Infinity');
+  // treeSnowLoadAt mirrors the shader's per-tree rate (TreeBrush drops what is drawn)
+  check('treeSnowLoadAt is the shader formula', TREE_SNOW_VERT.includes('pow(uTreeStorm.y, 0.7 + 0.6 * fract(h * 13.0))'), 'the same rate in TREE_SNOW_VERT');
+  const trees = Array.from({ length: 200 }, (_, i) => [i * 7.3 - 700, (i % 13) * 11.1 + 40]);
+  const spread = (hour) => { day(1, 'mid', 2, hour); return trees.map(([x, y]) => treeSnowLoadAt(x, y, 2800)); };
+  const range = (a) => Math.max(...a) - Math.min(...a);
+  const r7 = range(spread(7)), r13 = range(spread(13));
+  check('some trees go bare first', r13 > r7 + 0.1, `load range ${r7.toFixed(2)} at 7 am, ${r13.toFixed(2)} at 1 pm`);
+  day(1, 'fresh', 2, 9); const g9 = treeSnowLoadAt(0, 0, 3600);
+  day(1, 'fresh', 2, 16); const g16 = treeSnowLoadAt(0, 0, 3600);
+  check('the rime stays', g9 === g16 && g16 > 0.99, `ghost ${g9.toFixed(2)} at 9 am, ${g16.toFixed(2)} at 4 pm`);
+  day(1, 'mid', 2, 9); const am = pass(new TreeBrush(forest(spruce), sink()), 1.8);
+  day(1, 'mid', 2, 15); const pm = pass(new TreeBrush(forest(spruce), sink()), 1.8);
+  check('an afternoon brush drops less than a morning one', pm.n < 0.8 * am.n, `${pm.n} at 3 pm vs ${am.n} at 9 am`);
 }
 
 fs.rmSync(dir, { recursive: true, force: true });
