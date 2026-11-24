@@ -52,6 +52,15 @@ const shot = async (name) => { if (shots) { await page.screenshot({ path: path.j
 const f = (v) => v.toFixed(1);
 
 for (let i = 0; i < 10; i++) { await step(5); await page.waitForTimeout(200); }
+/** wall-clock time of 120 frames (__step renders each; a pixel read waits for the GPU), turning the mountain view if `orbit` */
+const frameTimes = (orbit) => page.evaluate((orbit) => {
+  const s = window.__sim, gl = s.renderer.getContext(), px = new Uint8Array(4), t = [];
+  for (let i = 0; i < 120; i++) { if (orbit) s.mountain.yaw += 0.01; const t0 = performance.now(); window.__step(1); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); t.push(performance.now() - t0); }
+  t.sort((a, b) => a - b);
+  return { p50: t[60], p90: t[108], max: t[119] };
+}, orbit);
+const onGpu = !!shots && !/swiftshader/i.test(await page.evaluate(() => window.__sim.renderer.getContext().getParameter(0x1F01)));
+const riding = onGpu ? await frameTimes(false) : null;
 const start = await st();
 check('starts riding', start.state === 'riding', start.state);
 const camBefore = start.cam;
@@ -92,16 +101,9 @@ const yaw0 = (await st()).yaw;
 await page.keyboard.down('ArrowRight'); await step(30); await page.keyboard.up('ArrowRight'); await step(1);
 check('the arrow keys turn round the resort', (await st()).yaw - yaw0 > 0.3, `${f(((await st()).yaw - yaw0) * 180 / Math.PI)} deg`);
 
-if (shots && !/swiftshader/i.test(await page.evaluate(() => window.__sim.renderer.getContext().getParameter(0x1F01)))) {
-  // wall-clock frame time while orbiting (__step renders each frame; the GPU work is waited on with a pixel read)
-  const ms = await page.evaluate(() => {
-    const s = window.__sim, gl = s.renderer.getContext(), px = new Uint8Array(4), t = [];
-    const m = s.mountain;
-    for (let i = 0; i < 120; i++) { m.yaw += 0.01; const t0 = performance.now(); window.__step(1); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); t.push(performance.now() - t0); }
-    t.sort((a, b) => a - b);
-    return { p50: t[60], p90: t[108], max: t[119] };
-  });
-  console.log(`     orbiting frame time (wall clock, ${W}x${H}): median ${f(ms.p50)} ms, p90 ${f(ms.p90)} ms, max ${f(ms.max)} ms`);
+if (onGpu) {
+  const ms = await frameTimes(true);
+  console.log(`     orbiting frame time (wall clock, ${W}x${H}): median ${f(ms.p50)} ms, p90 ${f(ms.p90)} ms, max ${f(ms.max)} ms (riding at the start: median ${f(riding.p50)} ms, p90 ${f(riding.p90)} ms)`);
 }
 
 // ---- pick a zone with a real click on its marker
