@@ -94,9 +94,15 @@ const BAYER = /* glsl */ `
   float treeBayer2(vec2 a) { a = floor(a); return fract(dot(a, vec2(0.5, a.y * 0.75))); }
   float treeBayer8(vec2 a) { return treeBayer2(0.25 * a) * 0.0625 + treeBayer2(0.5 * a) * 0.25 + treeBayer2(a); }
 `;
+/**
+ * BUG-178: the crossfade's Bayer thresholds sit mid-cell (this is added to the cell's value), so a tree fully in its band
+ * keeps every pixel: the interpolated vLodVis of 1.0 can come out a hair under 1, and against the cell at 0 that dropped
+ * up to one pixel in 64 on solid trunks and crowns, a scatter of see-through dots. The two LODs at an edge still cover once.
+ */
+export const BAYER_HALF_CELL = (0.5 / 64).toFixed(7);
 /** needs treeBayer8 (TREE_FADE_FRAG_HEAD) */
 const LOD_FRAG_BODY = /* glsl */ `
-  { float lb = treeBayer8(gl_FragCoord.xy); if (vLodIn > 0.5 ? lb < 1.0 - vLodVis : lb >= vLodVis) discard; }
+  { float lb = treeBayer8(gl_FragCoord.xy) + ${BAYER_HALF_CELL}; if (vLodIn > 0.5 ? lb < 1.0 - vLodVis : lb >= vLodVis) discard; }
 `;
 const COLLAPSE = /* glsl */ `if (vLodVis <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);`;
 

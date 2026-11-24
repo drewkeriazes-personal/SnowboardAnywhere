@@ -5,7 +5,7 @@ import type { HeightSet } from '../../pack/HeightSet';
 import { SPECIES, SPECIES_COUNT, VARIANTS, hash01 } from './species';
 import { rng } from './generate';
 import { crownWidthsOf, openness, openFactor, type CrownWidthsMeta } from './widths';
-import { kitUniforms, farLight } from './materials';
+import { kitUniforms, farLight, BAYER_HALF_CELL } from './materials';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 
 /**
@@ -719,7 +719,9 @@ export class ClumpCanopy {
         }
         void main() {
           float lb = cBayer8(gl_FragCoord.xy);
-          if (vLodIn > 0.5 ? lb < 1.0 - vLodVis : lb >= vLodVis) discard;
+          // BUG-178: mid-cell thresholds (as the kit's LOD_FRAG_BODY), so a stand fully in its band keeps every pixel
+          float lc = lb + ${BAYER_HALF_CELL};
+          if (vLodIn > 0.5 ? lc < 1.0 - vLodVis : lc >= vLodVis) discard;
           int i = int(vTile.x + 0.5);
           float t = vTile.y, row = vTile.z;
           vec2 fA = uFrames[i], fB = uFrames[i + 1];
