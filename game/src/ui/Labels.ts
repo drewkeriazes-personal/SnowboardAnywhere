@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
+import { hotSwap } from '../core/hot';
 
 /**
  * Peak and town names projected onto the screen as DOM labels. Peaks are shown when the camera
@@ -104,3 +105,6 @@ export class Labels {
     }
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));
