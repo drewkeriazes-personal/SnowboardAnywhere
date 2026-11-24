@@ -1,5 +1,6 @@
 import type { CanopyMeta } from './types';
 import { decodeOpaque } from './MaskSet';
+import { packFetch } from './fetch';
 
 /**
  * FEAT-330: the pack's canopy score, `canopy.png` at the pack root (MapPacker FEAT-331): an 8-bit greyscale image,
@@ -25,7 +26,7 @@ export class CanopyGrid {
   private async load(baseUrl: string): Promise<void> {
     const { w, h, file } = this.meta;
     if (!(w > 0 && h > 0)) throw new Error(`bad size ${w} x ${h}`);
-    const resp = await fetch(`${baseUrl}/${file}`);
+    const resp = await packFetch(`${baseUrl}/${file}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     if (bmp.width !== w || bmp.height !== h) { bmp.close(); throw new Error(`image is ${bmp.width} x ${bmp.height}, meta says ${w} x ${h}`); }

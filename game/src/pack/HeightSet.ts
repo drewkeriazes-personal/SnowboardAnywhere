@@ -1,5 +1,6 @@
 import type { HeightSetMeta } from './types';
 import { TileStats } from './tileStats';
+import { packFetch } from './fetch';
 
 /**
  * One tiled height set (fine / mid / far). Tiles are Terrarium-encoded PNGs decoded on the
@@ -76,7 +77,7 @@ export class HeightSet {
     const k = this.key(tx, ty);
     try {
       const t0 = performance.now();
-      const resp = await fetch(`${this.baseUrl}/${tx}_${ty}.png`);
+      const resp = await packFetch(`${this.baseUrl}/${tx}_${ty}.png`);
       if (!resp.ok) {
         this.missing.add(k);
         return;

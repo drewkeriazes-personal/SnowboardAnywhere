@@ -25,7 +25,7 @@ import { pipeline } from 'node:stream';
 import { DIST, LAUNCHER, LAUNCHER_CONFIG, PACKS } from './paths.mjs';
 import { LAUNCHER_META, browserRoutes, chooseBrowser, launch } from './launcher_browser.mjs';
 import { getPack, localPacks, PACK_FORMAT } from './get_pack.mjs';
-import { packDownloads, packFiles } from './pack_routes.mjs';
+import { notModified, packDownloads, packFiles } from './pack_routes.mjs';
 
 /* global SBA_LAUNCHER */
 export const VERSION = LAUNCHER ? SBA_LAUNCHER.version : 'dev';
@@ -52,7 +52,8 @@ function gameFiles(dir) {
     try { rel = decodeURIComponent(req.url.split('?')[0]); } catch { res.statusCode = 400; res.end(); return; }
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(dir, rel);
-    if (!file.startsWith(dir + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.statusCode = 404; res.end(); return; }
+    const stat = file.startsWith(dir + path.sep) && fs.existsSync(file) ? fs.statSync(file) : null;
+    if (!stat || stat.isDirectory()) { res.statusCode = 404; res.end(); return; }
     if (path.basename(file) === 'index.html') { // FEAT-318: tell the page it runs from the launcher (src/ui/LauncherBrowser.ts)
       const html = fs.readFileSync(file, 'utf8').replace(/<head>/i, `<head>\n<meta name="${LAUNCHER_META}" content="1">`);
       res.setHeader('content-type', TYPES['.html']); res.setHeader('cache-control', 'no-cache');
@@ -60,10 +61,13 @@ function gameFiles(dir) {
       res.end(req.method === 'HEAD' ? undefined : html);
       return;
     }
-    const size = fs.statSync(file).size;
+    const size = stat.size;
     res.setHeader('content-type', TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
-    res.setHeader('cache-control', 'no-cache');
+    // FEAT-375: Vite names what it builds into assets/ by a hash of its content, so a cached copy is never stale;
+    // the rest (public/ copies: music, textures, attract) is revalidated each load like the packs
+    res.setHeader('cache-control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
     res.setHeader('accept-ranges', 'bytes');
+    if (notModified(req, res, stat)) return;
     const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '');
     let start = 0, end = size - 1;
     if (m && (m[1] || m[2])) {

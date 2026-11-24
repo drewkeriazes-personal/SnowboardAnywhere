@@ -3,6 +3,7 @@ import type { Rider } from '../sim/Rider';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
 import type { BumpAbsorb } from './BumpAbsorb';
+import { hotSwap } from '../core/hot';
 
 /** BUG-032: clearance kept from a trunk, and the closest the chase camera gets to the rider's head when pulled in */
 const CAM_PAD = 1.0;
@@ -480,3 +481,6 @@ export class ChaseCamera {
     return new THREE.Vector3(ax, p.y + Math.tan(pitch) * hd, az);
   }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

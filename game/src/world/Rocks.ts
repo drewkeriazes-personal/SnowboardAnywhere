@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { Collider } from '../sim/Collider';
 import { ROCK_SPAN, ROCK_STEEPEST } from '../sim/rider/tuning';
+import { hotReload } from '../core/hot';
 import { NOISE_GLSL, ROCK_GLSL, rockUniforms } from '../terrain/rockShader';
 import type { Ground } from '../terrain/Terrain';
+import { packFetch } from '../pack/fetch';
 
 const RADIUS = 2500;
 export const VARIANTS = 4;
@@ -225,7 +227,7 @@ export class Rocks {
     const listed = this.pack.meta.instances?.rockCells;
     if (listed && !listed.includes(`${cell.cx}_${cell.cy}`)) { cell.missing = true; cell.loading = false; return; } // empty cell, no request
     try {
-      const resp = await fetch(`${this.pack.baseUrl}/rocks/${cell.cx}_${cell.cy}.bin`);
+      const resp = await packFetch(`${this.pack.baseUrl}/rocks/${cell.cx}_${cell.cy}.bin`);
       if (!resp.ok) { cell.missing = true; return; }
       const d = new Float32Array(await resp.arrayBuffer());
       if (cell.dropped) return; // BUG-082: the rider left before it arrived; a later visit loads a new cell
@@ -313,3 +315,6 @@ export function makeRock(seed: number): THREE.BufferGeometry {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
 }
+
+// FEAT-376: a rider tuning edit hot-updates the rider (core/hot.ts); the rocks were placed with these two, so a change to either reloads
+if (import.meta.hot) import.meta.hot.accept('../sim/rider/tuning', (t) => { if (t?.ROCK_SPAN !== ROCK_SPAN || t?.ROCK_STEEPEST !== ROCK_STEEPEST) hotReload(import.meta, 'rock tuning changed'); });

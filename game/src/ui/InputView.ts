@@ -1,5 +1,6 @@
 import type { Controls } from '../sim/Controls';
 import { PAD, padButtonName } from '../sim/Pad';
+import { hotSwap } from '../core/hot';
 
 /**
  * FEAT-049: the on-screen input display (Settings > Controls > Input display), low in the middle of the view.
@@ -127,3 +128,6 @@ function dot(g: CanvasRenderingContext2D, x: number, y: number, r: number, on: b
 function pill(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, on: boolean): void {
   g.fillStyle = on ? '#fbbf24' : 'rgba(255, 255, 255, .25)'; round(g, x, y, w, h, Math.min(w, h) / 2); g.fill();
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));

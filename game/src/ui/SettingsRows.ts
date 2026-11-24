@@ -177,6 +177,9 @@ export const SECTIONS: Section[] = [
   { cat: 'graphics', title: 'Frame rate', rows: [
     seg('targetFps', 'Frame cap', [[30, '30'], [60, '60'], [0, 'Uncapped']], 'The most frames drawn each second. 30 saves battery; Uncapped draws as fast as the display refreshes. Nothing else changes with it: what you set is what is drawn. It applies at once.'),
   ] },
+  { cat: 'graphics', title: 'Loading', rows: [
+    toggle('cachePacks', 'Cache resort files', 'Keeps the files of the resort in the browser, so loading it again only checks they are current instead of downloading them. A new version of the resort still loads fresh. Off downloads every file each time. It applies on the next load.'),
+  ] },
   { cat: 'graphics', title: 'Advanced', rows: [
     { ...seg('quality', 'Detail', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'The base detail level: shadow map size, snowflake count and the tree budget. Changing it moves Shadows, Trees, Forest and Resolution with it.', held), set: (s: Settings, v: V) => applyQuality(s, v as Settings['quality']) } as Row,
     toggle('shadows', 'Shadows', 'Sun shadows from the rider, trees and terrain.', held),

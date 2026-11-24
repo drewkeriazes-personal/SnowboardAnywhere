@@ -218,3 +218,6 @@ function signTexture(label: string, rows: Course[], more: number, single: boolea
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
+
+// FEAT-376: the gate ghost only takes its first snow state from SnowConditions, so an edit there hot-updates the rider and leaves it be
+if (import.meta.hot) import.meta.hot.accept('../sim/SnowConditions', () => {});

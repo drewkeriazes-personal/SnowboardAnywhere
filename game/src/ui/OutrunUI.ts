@@ -1,5 +1,6 @@
 import type { Outrun } from '../sim/Outrun';
 import { BOOST_COST } from '../sim/Outrun';
+import { hotSwap } from '../core/hot';
 
 /**
  * Outrun HUD (FEAT-097): the countdown and head start, then the distance line with a bar that
@@ -80,3 +81,6 @@ export class OutrunUI {
 
   destroy(): void { this.hud.remove(); this.card.remove(); this.vignette.remove(); }
 }
+
+// FEAT-376: on the dev server an edit swaps in place (core/hot.ts)
+if (import.meta.hot) import.meta.hot.accept((m) => hotSwap(import.meta, m));
