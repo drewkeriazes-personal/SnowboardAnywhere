@@ -5,7 +5,8 @@
 // faster than a north-facing powder face, that powder turns wider, that spring-morning ice holds
 // less than the same groomer at 1 pm, and that chop rattles where powder does not. BUG-084: also
 // reloads with ?time=7 on "Resort default" and checks the snow follows the URL hour like the sun does
-// (spring-morning ice on Simba), and that "Resort default" alone still reads the 1 pm snow. FEAT-333: a worn tree line
+// (spring-morning ice on Simba), and that "Resort default" alone still reads the 1 pm snow. FEAT-360: an open face is slush on a
+// spring afternoon, the glade under a closed stand is not. FEAT-333: a worn tree line
 // beside Steep and Deep is tracked, shallower than the trees and a mogul line.
 // BUG-136: each spot waits for the trees, rocks and shrubs round it to finish loading before the rider sets off
 // (they stream in on their own, so a run used to hit a trunk or miss it depending on timing), and a crash
@@ -50,7 +51,8 @@ const SPOTS = {
     { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1814.6, y: -3510.7, h: 10, hour: 14, day: 'mid', weather: null },
     { id: 'chicken15', name: 'Chicken Yard (SE, open) 3 pm', x: -698, y: -612, h: 160, hour: 15, day: 'mid', weather: null },
     { id: 'chicken9', name: 'Chicken Yard (SE, open) 9 am', x: -698, y: -612, h: 160, hour: 9, day: 'mid', weather: null },
-    { id: 'golden15', name: 'Tea Cup Glades (S, low, open) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },
+    { id: 'chickenSpring', name: 'Chicken Yard 4:30 pm spring', x: -698, y: -612, h: 160, hour: 16.5, day: 'spring', weather: 'clear' },
+    { id: 'golden15', name: 'Tea Cup Glades (S, low, glade) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },
     { id: 'goldenSpring', name: 'Tea Cup Glades 4:30 pm spring', x: 235, y: -1831, h: 80, hour: 16.5, day: 'spring', weather: 'clear' },
     // BUG-136: the open bowl above Two Elk Connector (the connector itself is a groomed catwalk, which scours less)
     { id: 'twoElk13', name: 'Open high bowl above Two Elk 1 pm', x: 3676, y: -72, h: 180, hour: 13, day: 'mid', weather: null },
@@ -194,7 +196,9 @@ check('the open south face is Chop at 3 pm and rattles', (R.chicken15.kind === '
 check('the trees are deep powder and the slowest', R.trees14.kind === 'powder' && R.trees14.depth > 0.25, `depth ${(R.trees14.depth * 100).toFixed(0)} cm, top ${R.trees14.top.toFixed(1)}`);
 check('a stopped rider gets going again in deep powder on this pitch', R.trees14.restart > 1 || R.trees14.slope < 8, `restart ${R.trees14.restart.toFixed(1)} m/s on ${R.trees14.slope.toFixed(0)} deg, nose sink ${R.trees14.sink.toFixed(2)}`);
 if (R.line14) check('a worn tree line is tracked, shallower than the trees beside it, and a mogul line', R.line14.worn > 0.5 && R.line14.w[2] > R.line14.w[1] && R.line14.depth < R.trees14.depth * 0.6 && R.line14.mog > 0.3, `worn ${R.line14.worn.toFixed(2)}, ${R.line14.kind} c${R.line14.w[2]} p${R.line14.w[1]}, depth ${(R.line14.depth * 100).toFixed(0)} vs ${(R.trees14.depth * 100).toFixed(0)} cm, mogul amplitude ${R.line14.mog.toFixed(2)}`);
-check('spring afternoon low is Slush with more drag than the same spot mid-season', R.goldenSpring.kind === 'slush' && R.goldenSpring.drag > R.golden15.drag * 1.3, `${R.goldenSpring.kind}, drag at 10 m/s ${R.goldenSpring.drag.toFixed(2)} vs ${R.golden15.drag.toFixed(2)}`);
+check('spring afternoon on an open face is Slush with more drag than the same spot mid-season', R.chickenSpring.kind === 'slush' && R.chickenSpring.drag > R.chicken15.drag * 1.3, `${R.chickenSpring.kind}, drag at 10 m/s ${R.chickenSpring.drag.toFixed(2)} vs ${R.chicken15.drag.toFixed(2)}`);
+// FEAT-360: Tea Cup Glades sits under a closed stand on the 10 m canopy grid (score 1), so its spring afternoon keeps less slush
+check('a spring afternoon under the glade stand is not Slush, and less of it than the open face', R.goldenSpring.kind !== 'slush' && R.goldenSpring.w[4] < R.chickenSpring.w[4], `${R.goldenSpring.kind}, slush ${R.goldenSpring.w[4]} vs ${R.chickenSpring.w[4]}`);
 check('the high ridge is firmer than the north face', R.twoElk13.w[3] > 0.3, `ice ${R.twoElk13.w[3]} (${R.twoElk13.kind})`);
 // BUG-136: a trunk hit under a closed canopy is the forest a 12 s run reaches below the open face (Prima Browns Face
 // runs into the trees at about 140 m), not the snow; any other crash on these spots (an edge catch, a washout) fails
