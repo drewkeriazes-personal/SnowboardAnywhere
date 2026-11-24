@@ -51,7 +51,7 @@ const CHASE_BLEND_LO = 3, CHASE_BLEND_HI = 12;
  */
 const FP_GLANCE_UP = 0.09;
 const GLANCE_PITCH = -0.05, GLANCE_HEIGHT = 2.0, GLANCE_AIM = 25, GLANCE_AIM_UP = 2;
-const GLANCE_LOW = 0.2, GLANCE_HIGH = 0.65;
+const GLANCE_LOW = 0.2, GLANCE_HIGH = 0.72;
 
 /**
  * FEAT-122: for a target followed by `p += (target - p) * kf` each frame of `dt`, the time (s) to lead
