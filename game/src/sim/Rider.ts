@@ -2,6 +2,7 @@ import type { Pack } from '../pack/Pack';
 import type { Collider } from './Collider';
 import { Rng } from './Rng';
 import { rockCover } from '../terrain/rockCover';
+import { lineEase } from '../terrain/Moguls';
 import { ExposureSampler } from '../terrain/exposure';
 import { DEFAULT_SNOW_WORLD, newSnowState, snowAt, type SnowState, type SnowWorld } from './SnowConditions';
 import type { Input, SurfaceInfo, Discipline, PressEnd, PressMode } from './rider/types';
@@ -245,6 +246,7 @@ export class Rider {
   /** FEAT-288: the last step was a crashed one (a new crash restarts crashT) */
   private crashing = false;
   private readonly maskTmp = [0, 0, 0, 0];
+  private readonly lineTmp = [0];
   private readonly coverTmp = { rock: 0, scree: 0 };
   private readonly exposureTmp = { rock: 0, scree: 0 };
   private exposure: ExposureSampler | null = null;
@@ -501,7 +503,10 @@ export class Rider {
     // BUG-141: riding over a rock on Realistic the board is on rock: its grip, drag and the FEAT-103 rock scrape
     const rb = this.onGround ? rockBumpAt(this, this.x, this.y) : null;
     if (rb && rb.b > ROCK_ON) this.surface.rock = 1;
-    this.surface.moguls = pack.mogulAmp?.(this.x, this.y) ?? 0; // FEAT-059 (test planes may lack the method)
+    // FEAT-059 (test planes may lack the method); FEAT-268: a tree line's bumps as big as the pitch leaves them
+    const lt = this.lineTmp; lt[0] = 0;
+    const mogA = pack.mogulAmp?.(this.x, this.y, false, lt) ?? 0;
+    this.surface.moguls = mogA * lineEase(Math.tan(this.slopeDeg / 57.2958), lt[0]);
     this.surface.shrub = this.collider?.brushAt?.(this.x, this.y, this.z, 0.35) ?? 0; // FEAT-159
     this.surface.worn = pack.wornAt?.(this.x, this.y) ?? 0; // FEAT-333
     snowAt(this.surface, n, this.z, this.snowWorld, this.snow); // FEAT-053

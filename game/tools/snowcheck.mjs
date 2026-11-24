@@ -46,8 +46,9 @@ const SPOTS = {
     { id: 'wild9', name: 'Wildcard (NW) 9 am', x: -2453, y: 661, h: 315, hour: 9, day: 'mid', weather: null },
     { id: 'wild13', name: 'Wildcard (NW) 1 pm', x: -2453, y: 661, h: 315, hour: 13, day: 'mid', weather: null },
     { id: 'trees14', name: 'Steep and Deep trees 2 pm', x: 1827, y: -3506, h: 325, hour: 14, day: 'mid', weather: null },
-    // FEAT-333: on a worn tree line 13 m beside the run (pack/treeLines.ts), heading down it
-    { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1814.6, y: -3510.7, h: 10, hour: 14, day: 'mid', weather: null },
+    // FEAT-333: on a worn tree line beside the run (pack/treeLines.ts), heading down it; FEAT-268: a full-strength baked line
+    // (Vail v9, FEAT-334) 24 m beside the run, 50 m below trees14 (the old spot, 1814.6, -3510.7, is off the baked lines)
+    { id: 'line14', name: 'Steep and Deep tree line 2 pm', x: 1851, y: -3548.1, h: 3, hour: 14, day: 'mid', weather: null },
     { id: 'chicken15', name: 'Chicken Yard (SE, open) 3 pm', x: -698, y: -612, h: 160, hour: 15, day: 'mid', weather: null },
     { id: 'chicken9', name: 'Chicken Yard (SE, open) 9 am', x: -698, y: -612, h: 160, hour: 9, day: 'mid', weather: null },
     { id: 'golden15', name: 'Tea Cup Glades (S, low, open) 3 pm', x: 235, y: -1831, h: 80, hour: 15, day: 'mid', weather: null },
@@ -193,7 +194,8 @@ check('the morning has clearly less chop than the afternoon', R.wild9.w[2] < R.w
 check('the open south face is Chop at 3 pm and rattles', (R.chicken15.kind === 'chop' || R.golden15.kind === 'chop') && Math.max(R.chicken15.chopPeak, R.golden15.chopPeak) > 0.3, `${R.chicken15.kind} ${R.chicken15.chopPeak.toFixed(2)}, ${R.golden15.kind} ${R.golden15.chopPeak.toFixed(2)}`);
 check('the trees are deep powder and the slowest', R.trees14.kind === 'powder' && R.trees14.depth > 0.25, `depth ${(R.trees14.depth * 100).toFixed(0)} cm, top ${R.trees14.top.toFixed(1)}`);
 check('a stopped rider gets going again in deep powder on this pitch', R.trees14.restart > 1 || R.trees14.slope < 8, `restart ${R.trees14.restart.toFixed(1)} m/s on ${R.trees14.slope.toFixed(0)} deg, nose sink ${R.trees14.sink.toFixed(2)}`);
-if (R.line14) check('a worn tree line is tracked, shallower than the trees beside it, and a mogul line', R.line14.worn > 0.5 && R.line14.w[2] > R.line14.w[1] && R.line14.depth < R.trees14.depth * 0.6 && R.line14.mog > 0.3, `worn ${R.line14.worn.toFixed(2)}, ${R.line14.kind} c${R.line14.w[2]} p${R.line14.w[1]}, depth ${(R.line14.depth * 100).toFixed(0)} vs ${(R.trees14.depth * 100).toFixed(0)} cm, mogul amplitude ${R.line14.mog.toFixed(2)}`);
+// FEAT-268: a line's bumps ease off below 25 deg, to 0.3 of the line's 0.85 at 15 deg and gentler (this spot is about 14)
+if (R.line14) check('a worn tree line is tracked, shallower than the trees beside it, and a mogul line eased by its pitch', R.line14.worn > 0.5 && R.line14.w[2] > R.line14.w[1] && R.line14.depth < R.trees14.depth * 0.6 && R.line14.mog > 0.2, `worn ${R.line14.worn.toFixed(2)}, ${R.line14.kind} c${R.line14.w[2]} p${R.line14.w[1]}, depth ${(R.line14.depth * 100).toFixed(0)} vs ${(R.trees14.depth * 100).toFixed(0)} cm, mogul amplitude ${R.line14.mog.toFixed(2)}`);
 check('spring afternoon low is Slush with more drag than the same spot mid-season', R.goldenSpring.kind === 'slush' && R.goldenSpring.drag > R.golden15.drag * 1.3, `${R.goldenSpring.kind}, drag at 10 m/s ${R.goldenSpring.drag.toFixed(2)} vs ${R.golden15.drag.toFixed(2)}`);
 check('the high ridge is firmer than the north face', R.twoElk13.w[3] > 0.3, `ice ${R.twoElk13.w[3]} (${R.twoElk13.kind})`);
 // BUG-136: a trunk hit under a closed canopy is the forest a 12 s run reaches below the open face (Prima Browns Face

@@ -183,12 +183,14 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         attribute vec2 fall;
         attribute float ao;
         attribute vec4 mogul;
+        attribute float mogLine;
         attribute float lift;
         uniform float uLiftNear;
         varying float vAO;
         varying float vForest;
         varying vec2 vFall;
         varying vec4 vMogul;
+        varying float vMogLine;
         varying vec3 vWorldPos;
         varying vec3 vWorldNormal;
         ${DEFORM_GLSL}
@@ -212,6 +214,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         vWorldNormal = normalize(mat3(modelMatrix) * objectNormal);
         vFall = fall;
         vMogul = mogul;
+        vMogLine = mogLine;
         vAO = ao;
         vForest = forest;`);
 
@@ -224,6 +227,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         varying float vAO;
         varying vec2 vFall;
         varying vec4 vMogul;
+        varying float vMogLine;
         uniform float uMogulScale, uMogulCreep, uDebugMoguls;
         uniform vec3 uSunDir;
         uniform float uTime;
@@ -355,7 +359,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         ${MOGUL_GLSL}
         // BUG-062: the mogul field at a point as vec3(height, dh/dx, dh/dy), pack frame and metres: the
         // one place the shader samples it, height and slope in a single evaluation (FEAT-147: rider lines)
-        vec3 mogulField(vec2 pxy, vec2 fall, float amp, float creep) { return mogulHG(pxy, fall, amp, creep); }
+        vec3 mogulField(vec2 pxy, vec2 fall, float amp, float creep) { return mogulHG(pxy, fall, amp, creep, vMogLine); }
         float fbm2(vec2 p) { return 0.6 * vnoise(vec3(p, 0.0)) + 0.3 * vnoise(vec3(p * 2.1, 1.7)) + 0.1 * vnoise(vec3(p * 4.3, 3.1)); }
         // corduroy across the fall line. Returns x = ridge profile (-1..1, already faded by distance),
         // y = ridge slope for the bump, zw = the across-slope direction in world xz. Also outputs the

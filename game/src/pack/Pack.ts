@@ -167,15 +167,19 @@ export class Pack {
 
   private readonly mogTmp = [0, 0, 0, 0];
   private readonly fallTmp = [1, 0];
+  private readonly lineTmp = [0];
 
   /**
    * FEAT-059: mogul amplitude (m) at a point from the pack's moguls set; 0 without the set or its tile. FEAT-333: a
    * worn tree line is a mogul line too, as strong as it is worn (LINE_MOGUL at full), wherever the set is weaker.
+   * FEAT-268: `line[0]` gets how much of the line's irregular pattern applies here (1 where the set has none, 0 off the
+   * lines), for `bumpWith` and the terrain shader; pass it with the amplitude, never read it from a later call.
    */
-  mogulAmp(x: number, y: number, raw = false): number {
+  mogulAmp(x: number, y: number, raw = false, line: number[] = this.lineTmp): number {
+    line[0] = 0;
     if (!raw && this.mogulScale <= 0) return 0;
     let a = this.moguls ? this.moguls.sampleBilinear(x, y, this.mogTmp)[0] : 0;
-    if (this.treeLines) { const w = this.treeLines.wornAt(x, y); if (w * LINE_MOGUL > a) a = w * LINE_MOGUL; }
+    if (this.treeLines) { const l = this.treeLines.wornAt(x, y) * LINE_MOGUL; if (l > a) { line[0] = 1 - a / l; a = l; } }
     return a * (raw ? 1 : this.mogulScale);
   }
 
@@ -272,20 +276,21 @@ export class Pack {
   /** FEAT-059: the bump height at a point: the field's amplitude here, aligned to the local fall line and
    *  sized by its slope (FEAT-147). */
   bumpAt(x: number, y: number): number {
-    return this.bumpWith(x, y, this.mogulAmp(x, y, true), null);
+    const a = this.mogulAmp(x, y, true, this.lineTmp);
+    return this.bumpWith(x, y, a, null, this.lineTmp[0]);
   }
 
   /**
    * FEAT-339: `bumpAt` from the raw amplitude (`mogulAmp(x, y, true)`) the caller already has, and the fall line from
    * `fallAt` when it has that too (else null), so the chunk builder reads each once per vertex and gets the very numbers
-   * the physics does.
+   * the physics does. `line`: the `line[0]` that came with the amplitude (FEAT-268).
    */
-  bumpWith(x: number, y: number, rawAmp: number, fall: number[] | null): number {
+  bumpWith(x: number, y: number, rawAmp: number, fall: number[] | null, line: number): number {
     if (this.mogulScale <= 0) return 0;
     const amp = rawAmp * this.mogulScale;
     if (amp < 0.005) return 0;
     const f = fall ?? this.fallAt(x, y, this.fallTmp);
-    return mogulHeight(x, y, amp, f[0], f[1], this.mogulCreep);
+    return mogulHeight(x, y, amp, f[0], f[1], this.mogulCreep, line);
   }
 
   /** FEAT-339: the mogul field's downhill vector here (pack east, north; its length the slope, FEAT-147), BUG-064's wide
