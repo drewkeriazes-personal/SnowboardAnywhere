@@ -40,6 +40,8 @@ import { hotSwap } from '../core/hot';
 
 /** FEAT-077: how skied out the snow gets by late afternoon for each Snow conditions setting */
 const SKIED_BASE: Record<string, number> = { fresh: 0.15, mid: 0.9, spring: 0.7 };
+/** no keys held, for the eye camera while the map has the keys */
+const NO_KEYS: ReadonlySet<string> = new Set();
 
 /**
  * FEAT-162: who moves the rider this frame. `ride` the physics (riding); `hold` nothing, though a lift carries
@@ -212,7 +214,7 @@ export class RideFrame {
     if (!eat.active) riderView.group.visible = !eyeMode;
     riderView.sprayObject.visible = !eyeMode;
     // lift markers and piste lines are game UI, not in a photo
-    lifts.markers.visible = !eyeMode; if (eyeMode) runs.group.visible = false;
+    lifts.markers.visible = !eyeMode; if (eyeMode && !plan.fullMap) runs.group.visible = false; // FEAT-054: the mountain view (the map's 3D mode) shows them
   }
 
   /** 5. Simulation on the sim pose: lift ride, the rider (its own 1/120 s fixed steps), replay recording, run stats, rumble. */
@@ -255,7 +257,7 @@ export class RideFrame {
     const input = this.input, onLift = this.onLift, detached = this.detached;
     rider.applyRenderPose();
     if (cam.mode === 'free') { cam.updateFree(dt, controls.keys, look.dx, look.dy); look.dx = look.dy = 0; }
-    else if (eyeMode) { cam.updateEye(dt, controls.keys, look.dx, look.dy); look.dx = look.dy = 0; }
+    else if (eyeMode) { const map = plan.fullMap; cam.updateEye(dt, map ? NO_KEYS : controls.keys, map ? 0 : look.dx, map ? 0 : look.dy); look.dx = look.dy = 0; } // FEAT-054: over the map the mountain view places the eye, not the keys
     else if (cam.firstPerson) { cam.updateFirstPerson(rider, dt, input.tuck, onLift || controls.looking, look.dx, look.dy, riderView.eye(this.eye)); look.dx = look.dy = 0; }
     else if (plan.replay?.trackside) plan.replay.trackside();
     else { cam.freeLook(controls.looking, dt, look.dx, look.dy, controls.glancing); look.dx = look.dy = 0; cam.baseFov = settings.fov + modes.fovBoost + (plan.replay?.photoFov ?? 0); cam.update(rider, dt, input.tuck, onLift && liftRide.airborneRide); } // FEAT-124: look behind (G) in every mode

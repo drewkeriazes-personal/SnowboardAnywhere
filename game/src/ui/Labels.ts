@@ -16,6 +16,23 @@ const OUTSIDE_PEAKS = 120;
 const PEAK_RANGE = 90000;
 const TOWN_RANGE = 60000;
 
+/** Sight-line test: true when the far ground along the ray from (cx, cy, cz) stays below the line to the target (pack metres). FEAT-054: the mountain view's labels too. */
+export function sightClear(pack: Pack, cx: number, cy: number, cz: number, x: number, y: number, z: number): boolean {
+  const far = pack.far ?? pack.mid;
+  if (!far) return true;
+  const d = Math.hypot(x - cx, y - cy);
+  const n = Math.min(40, Math.max(6, Math.floor(d / 1500)));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const px = cx + (x - cx) * t, py = cy + (y - cy) * t;
+    const h = far.sample(px, py);
+    if (Number.isNaN(h)) continue;
+    const line = cz + (z - cz) * t;
+    if (h > line + 15) return false;
+  }
+  return true;
+}
+
 export class Labels {
   readonly el: HTMLDivElement;
   private readonly items: Item[] = [];
@@ -54,23 +71,6 @@ export class Labels {
 
   destroy(): void { this.el.remove(); }
 
-  /** Sight-line test: true when the ground along the ray stays below the line to the target. */
-  private clear(cx: number, cy: number, cz: number, x: number, y: number, z: number): boolean {
-    const far = this.pack.far ?? this.pack.mid;
-    if (!far) return true;
-    const d = Math.hypot(x - cx, y - cy);
-    const n = Math.min(40, Math.max(6, Math.floor(d / 1500)));
-    for (let i = 1; i < n; i++) {
-      const t = i / n;
-      const px = cx + (x - cx) * t, py = cy + (y - cy) * t;
-      const h = far.sample(px, py);
-      if (Number.isNaN(h)) continue;
-      const line = cz + (z - cz) * t;
-      if (h > line + 15) return false;
-    }
-    return true;
-  }
-
   update(camera: THREE.PerspectiveCamera, metric: boolean): void {
     this.frame++;
     if (!this.visible) { if (this.frame % 30 === 0) for (const it of this.items) it.el.style.display = 'none'; return; }
@@ -90,7 +90,7 @@ export class Labels {
       if (it.kind === 'peak' ? nPeaks >= MAX_PEAKS : nTowns >= MAX_TOWNS) continue;
       this.v.set(it.x, it.z + (it.kind === 'peak' ? 0 : 30), -it.y).project(camera);
       if (this.v.z > 1 || this.v.z < -1 || Math.abs(this.v.x) > 1.05 || Math.abs(this.v.y) > 1.05) continue;
-      if (!this.clear(cx, cy, cz, it.x, it.y, it.z)) continue;
+      if (!sightClear(this.pack, cx, cy, cz, it.x, it.y, it.z)) continue;
       const sx = (this.v.x + 1) / 2 * W, sy = (1 - this.v.y) / 2 * H;
       const w = 20 + it.name.length * 7, h = 22;
       const box: [number, number, number, number] = [sx - w / 2, sy - h - 10, sx + w / 2, sy + 4];

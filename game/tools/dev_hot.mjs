@@ -16,7 +16,7 @@ export const HOT = [
   'ui/HudLine.ts', 'ui/Conditions.ts', 'ui/ContextPrompt.ts', 'ui/KeyHints.ts',
   'ui/MainMenu.ts', 'ui/PauseMenu.ts', 'ui/RunCard.ts', 'ui/TrialHud.ts', 'ui/GoggleView.ts', 'ui/InputView.ts',
   'ui/PressMeter.ts', 'ui/RestartRing.ts', 'ui/SpeedLines.ts', 'ui/OutrunUI.ts', 'ui/ReplayBar.ts', 'ui/LiftPicker.ts',
-  'ui/Labels.ts', 'ui/ResortMap.ts',
+  'ui/Labels.ts', 'ui/ResortMap.ts', 'ui/MountainView.ts',
 ];
 
 /** The Vite plugin: tells the page which file changed (its toast) and reloads for a source file not on the list. */

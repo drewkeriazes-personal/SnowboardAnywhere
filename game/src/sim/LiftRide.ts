@@ -195,6 +195,9 @@ export class LiftRide<L extends LiftLine = LiftLine> {
     return this.clearSpot(x, y, Math.atan2(l.lateral[0] * side, l.lateral[1] * side), unloadKeepOut(l, this.pack.features.buildings ?? []), nx, ny);
   }
 
+  /** FEAT-054: the mountain view's drop at a peak or a run top: the nearest clear snow round (x, y) with a clear run downhill. [x, y, heading] */
+  dropSpot(x: number, y: number): [number, number, number] { return this.clearSpot(x, y, this.downhill(x, y, 0), () => false, x, y); }
+
   /** Downhill heading at (x, y), or `fallback` on flat ground. */
   private downhill(x: number, y: number, fallback: number): number {
     const n = this.pack.groundNormal(x, y) as number[];

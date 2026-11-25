@@ -448,3 +448,7 @@ body.peeking #settings, body.peeking #pause { opacity: 0; }
 #release-toasts .rt-alt:hover { background: var(--fill); }
 #release-toasts .rt-x { flex: none; align-self: flex-start; width: calc(28px * var(--ui-scale)); height: calc(28px * var(--ui-scale)); padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--dim); font: 400 var(--fs-lg) / 1 var(--font-body); }
 #release-toasts .rt-x:hover { color: var(--text); background: var(--fill); }
+
+/* FEAT-054: the map's 2D / 3D switch, top right over both views */
+.map-view-toggle { position: absolute; top: 12px; right: 16px; min-height: 36px; padding: 6px 14px; font: 700 var(--fs-sm) var(--font-display); text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--line-strong); border-radius: var(--r-md); background-color: var(--bg-deep); color: var(--text); cursor: pointer; }
+.map-view-toggle:hover { filter: brightness(1.3); }
