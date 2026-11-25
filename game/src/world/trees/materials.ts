@@ -3,7 +3,6 @@ import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_B
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 import { TRIM, TRIM_GLSL } from './trim';
 import { LEAN_GLSL } from './lineCanopy';
-import { coverUniforms, COVER_SHARE_GLSL } from './coverShare';
 import { TRUNK_ROOT } from '../TreeWells';
 
 /**
@@ -64,21 +63,12 @@ const THIN_GLSL = /* glsl */ `
 /**
  * BUG-142: the ground under the drawn trees stays snow (TerrainMaterial), so far off the impostors carry the canopy alone:
  * past FAT_NEAR they widen (not taller) up to FAT_MAX times by FAT_FULL m, and shrink back to their own width as you come
- * closer, so a stand reads as a closed forest from afar and as single trees near. Not next to an opening: the least crown
- * cover (coverShare) at the tree and FAT_EDGE m round it, mapped through FAT_OPEN, scales the widening, so the trees along a
- * run, a glade or a clearing keep their own width and the cut lines stay sharp, while any forest away from them fills in.
+ * closer, so a stand reads as a closed forest from afar and as single trees near. Drew picked this over keeping the trees
+ * along runs and glades at their own width (a crown-cover test round each tree), which thinned the forest he liked.
  */
-const FAT_NEAR = 400, FAT_FULL = 2500, FAT_MAX = 2.5, FAT_EDGE = 15, FAT_OPEN = [0.02, 0.08];
+const FAT_NEAR = 400, FAT_FULL = 2500, FAT_MAX = 2.5;
 const FAT_GLSL = /* glsl */ `
-  float fatTree(vec3 o) {
-    float k = smoothstep(${FAT_NEAR.toFixed(1)}, ${FAT_FULL.toFixed(1)}, distance(o.xz, uLodCam.xz));
-    if (k > 0.0) {
-      vec2 p = vec2(o.x, -o.z), e = vec2(${FAT_EDGE.toFixed(1)}, 0.0);
-      float c = min(coverShare(p), min(min(coverShare(p + e), coverShare(p - e)), min(coverShare(p + e.yx), coverShare(p - e.yx))));
-      k *= smoothstep(${FAT_OPEN[0]}, ${FAT_OPEN[1]}, c);
-    }
-    return 1.0 + ${(FAT_MAX - 1).toFixed(2)} * k;
-  }
+  float fatTree(vec3 o) { return 1.0 + ${(FAT_MAX - 1).toFixed(2)} * smoothstep(${FAT_NEAR.toFixed(1)}, ${FAT_FULL.toFixed(1)}, distance(o.xz, uLodCam.xz)); }
 `;
 
 /** (fade-in start, fade-in end, fade-out start, fade-out end), metres from the camera */
@@ -379,7 +369,7 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
   return new THREE.ShaderMaterial({
     defines: billboard ? { BILLBOARD: '' } : {},
     uniforms: {
-      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms, ...coverUniforms,
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms,
       ...treeSnowUniforms,
       uLodBand: band, uAlbedo: { value: albedo }, uNormal: { value: normal }, uSnowMask: { value: snow },
       uHalfW: { value: halfW }, uAngles: { value: angles }, uRows: { value: rows },
@@ -397,7 +387,6 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
       ${TREE_SNOW_VERT}
       #ifdef BILLBOARD
         ${THIN_GLSL}
-        ${COVER_SHARE_GLSL}
         ${FAT_GLSL}
       #endif
       void main() {

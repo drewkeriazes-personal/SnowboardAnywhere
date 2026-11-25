@@ -10,7 +10,6 @@ import { treelineOf } from '../pack/treeline';
 import { TreeShade } from './TreeShade';
 import { crownOverlap, type CrownHit } from './TreeBrush';
 import { ClumpCanopy } from './trees/clumps';
-import { syncCover } from './trees/coverShare';
 import { standGate, treeTrim } from './trees/trim';
 import { LEAN, lineCanopy, crownGrow, drawnRadius, stageTrim } from './trees/lineCanopy';
 import type { Ground } from '../terrain/Terrain';
@@ -374,7 +373,6 @@ export class Vegetation {
     if (cam) this.cam.copy(cam);
     else if (Number.isNaN(this.cam.x)) this.cam.set(x, 0, -y);
     this.kit.setView(this.cam, this.windTime ?? performance.now() / 1000);
-    syncCover(this.pack); // BUG-142: the impostors read the crown cover too (on High there are no clumps to sync it)
     const cpx = this.cam.x, cpy = -this.cam.z;
     // LOD bands for the current setting
     const band = this.band;
