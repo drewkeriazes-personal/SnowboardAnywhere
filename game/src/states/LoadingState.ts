@@ -3,6 +3,7 @@ import type { Pack } from '../pack/Pack';
 import type { ChaseCamera } from '../world/ChaseCamera';
 import type { Lifts } from '../world/Lifts';
 import type { GameState, GameStates } from './GameState';
+import { loadStep, timedStep } from '../core/loadSteps';
 
 export interface LoadingParts {
   pack: Pack; rider: Rider; lifts: Lifts; cam: ChaseCamera;
@@ -12,6 +13,8 @@ export interface LoadingParts {
   first: 'attract' | 'riding';
   /** compile and stream the view behind the loading screen or the menu (BUG-063), or null (headless) */
   warmUp: (() => Promise<void>) | null;
+  /** FEAT-377: what is built or read back from the last load in the background (core/builtData.ts), in before the first frame */
+  built: Promise<unknown>;
   /** false once the session is torn down */
   alive(): boolean;
   /** everything is ready: start the frame loop */
@@ -20,8 +23,8 @@ export interface LoadingParts {
 
 /**
  * FEAT-162: loading. Waits (8 s at most) for the fine tiles under the start, puts the rider there, moves to
- * the first state (whose camera the warm-up compiles for), warms up, then starts the loop. No frame runs
- * while loading: the loop starts at the end of it.
+ * the first state (whose camera the warm-up compiles for), warms up, then starts the loop (FEAT-377: with the menu
+ * first, the wait and the warm-up run together). No frame runs while loading: the loop starts at the end of it.
  */
 export class LoadingState implements GameState {
   readonly name = 'loading';
@@ -36,13 +39,22 @@ export class LoadingState implements GameState {
   private async load(): Promise<void> {
     const { pack, rider, lifts, cam } = this.p;
     const t0 = performance.now();
-    while (Number.isNaN(pack.fine?.sample(this.p.spawn().x, this.p.spawn().y) ?? 0) && performance.now() - t0 < 8000) await new Promise((r) => setTimeout(r, 50));
-    const s = this.p.spawn();
-    rider.reset(s.x, s.y, s.h);
+    const ground = (async () => {
+      while (Number.isNaN(pack.fine?.sample(this.p.spawn().x, this.p.spawn().y) ?? 0) && performance.now() - t0 < 8000) await new Promise((r) => setTimeout(r, 50));
+      loadStep('fine tiles under the start', t0);
+      const s = this.p.spawn();
+      rider.reset(s.x, s.y, s.h);
+    })();
+    // FEAT-377: the menu looks from its shot, not the rider, so its warm-up streams while the start's tiles load; the
+    // rider is on the snow before the loop starts either way (the menu's exit puts the chase camera behind it)
+    const menuFirst = this.p.first === 'attract';
+    if (!menuFirst) await ground;
     lifts.buildMarkers(pack);
-    cam.snapTo(rider);
-    this.states.go(this.p.first);
-    if (this.p.warmUp && this.p.alive()) await this.p.warmUp();
+    if (!menuFirst) cam.snapTo(rider);
+    timedStep(`enter ${this.p.first}`, () => this.states.go(this.p.first));
+    if (this.p.warmUp && this.p.alive()) { const t1 = performance.now(); await this.p.warmUp(); loadStep('warm-up', t1); }
+    await ground;
+    await this.p.built;
     if (!this.p.alive()) return;
     this.p.ready();
   }

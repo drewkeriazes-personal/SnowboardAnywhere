@@ -1,6 +1,6 @@
 import type { HeightSetMeta } from './types';
 import { TileStats } from './tileStats';
-import { packFetch } from './fetch';
+import { loadTile } from './tileDecode';
 
 /**
  * One tiled height set (fine / mid / far). Tiles are Terrarium-encoded PNGs decoded on the
@@ -76,30 +76,14 @@ export class HeightSet {
   private async load(tx: number, ty: number): Promise<void> {
     const k = this.key(tx, ty);
     try {
-      const t0 = performance.now();
-      const resp = await packFetch(`${this.baseUrl}/${tx}_${ty}.png`);
-      if (!resp.ok) {
+      // FEAT-377: fetched and decoded in a worker (pack/tileDecode.ts)
+      const d = await loadTile(`${this.baseUrl}/${tx}_${ty}.png`, this.meta.tileSize, 'height');
+      if (!d.data) {
         this.missing.add(k);
         return;
       }
-      const blob = await resp.blob();
-      const t1 = performance.now();
-      const bmp = await createImageBitmap(blob, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-      const t2 = performance.now();
-      const n = this.meta.tileSize;
-      const canvas = new OffscreenCanvas(n, n);
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-      ctx.drawImage(bmp, 0, 0);
-      const data = ctx.getImageData(0, 0, n, n).data;
-      bmp.close();
-      const out = new Float32Array(n * n);
-      for (let i = 0, j = 0; i < out.length; i++, j += 4) {
-        const h = data[j] * 256 + data[j + 1] + data[j + 2] / 256 - 32768;
-        out[i] = h <= -32767.5 ? NaN : h;
-      }
-      this.tiles.set(k, out);
-      const t3 = performance.now();
-      this.stats.add({ tx, ty, t: t3, bytes: blob.size, fetchMs: t1 - t0, bitmapMs: t2 - t1, decodeMs: t3 - t2 });
+      this.tiles.set(k, d.data as Float32Array);
+      this.stats.add({ tx, ty, t: performance.now(), bytes: d.bytes, fetchMs: d.fetchMs, bitmapMs: d.bitmapMs, decodeMs: d.decodeMs });
       this.onTileLoaded?.(tx, ty);
     } catch (e) {
       console.warn('tile load failed', tx, ty, e);

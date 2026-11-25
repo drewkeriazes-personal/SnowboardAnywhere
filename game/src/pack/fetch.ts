@@ -6,3 +6,5 @@
 let init: RequestInit = {};
 export function setPackCache(on: boolean): void { init = on ? {} : { cache: 'no-store' }; }
 export const packFetch = (url: string): Promise<Response> => fetch(url, init);
+/** FEAT-377: the same for a fetch made elsewhere (the tile workers, pack/tileDecode.ts) */
+export const packCacheMode = (): RequestCache | undefined => init.cache;

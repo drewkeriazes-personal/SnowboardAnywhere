@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import type { Pack } from '../pack/Pack';
 import type { StandsMeta } from '../pack/types';
-import { decodeRGBA } from '../pack/MaskSet';
+import { decodeRGBAAsync } from '../pack/MaskSet';
+import { StemStore, stemsKey } from './trees/savedStems';
+import type { BuiltKey } from '../core/builtData';
 import { type Collider, CYLINDER } from '../sim/Collider';
 import { TreeKit, SPECIES_COUNT, VARIANTS, speciesFor, variantFor, crownRadius, hash01, fadeWidth, farFadeWidth, farAttrs, farGeometry, generateStems, stemArea, growRatio, setGhostBand, crownWidthsOf, kitUniforms, type FarAttrs, type StandGrid, type CrownWidthsMeta } from './trees';
 import { treelineOf } from '../pack/treeline';
@@ -311,6 +313,11 @@ export class Vegetation {
   /** FEAT-292: the far forest past the drawn trees as clump impostors (trees/clumps.ts); null when off or the pack has no cover levels */
   clumps: ClumpCanopy | null = null;
   private clumpFarMin = CLUMP_FAR_MIN;
+  /** FEAT-377: the loading screen's streaming holds the near sets' regather until the cells have landed (session/warmUp.ts) */
+  holdNear = false;
+  /** FEAT-377: the cells' stems kept between loads, while the loading screen streams */
+  readonly stems = new StemStore();
+  stemsKey(): BuiltKey { return stemsKey(this.pack, STAND_K, STEM_CLUMPS); }
 
   constructor(pack: Pack, collider: Collider | null) {
     this.pack = pack;
@@ -484,8 +491,8 @@ export class Vegetation {
       this.cells.delete(key);
       for (const n of this.near) n.dirty = true;
     }
-    // the near sets: regather once the camera has moved part of their margin
-    for (const n of this.near) {
+    // the near sets: regather once the camera has moved part of their margin (FEAT-377: not while `holdNear`)
+    for (const n of this.holdNear ? [] : this.near) {
       if (n.lod === 0 && b0 <= 0) { if (n.count) this.clearNear(n); continue; } // no LOD0 on this setting
       const margin = n.lod === 0 ? MARGIN0 : MARGIN1;
       const reach = (n.lod === 0 ? b0 + fadeWidth(b0) / 2 : b1 + f1) + margin;
@@ -609,15 +616,19 @@ export class Vegetation {
     cell.standState = 1;
     const none = (): void => { cell.standState = 3; cell.stemArea ??= new Float32Array(0); };
     if (!this.standCells.has(cell.key)) { none(); return; }
+    // FEAT-377: kept from the last load: no stand image to fetch (the stems come from the store too)
+    const area = this.stems.area(cell.key);
+    if (area && (!keep || this.stems.stems(cell.key, STAND_K))) { cell.stemArea ??= area; cell.standState = keep ? 2 : 0; return; }
     try {
       const resp = await packFetch(`${this.pack.baseUrl}/stands/${cell.key}.png`);
       if (!resp.ok) { none(); return; }
       const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-      const px = decodeRGBA(bmp, st.size, st.size * 2);
+      const px = await decodeRGBAAsync(bmp, st.size, st.size * 2);
       bmp.close();
       const inst = this.pack.meta.instances!;
       const g = { px, size: st.size, res: st.res, minX: inst.minX + cell.cx * inst.cellSize, minY: inst.minY + cell.cy * inst.cellSize, zBase: st.zBase, zScale: st.zScale, hStep: st.hStep };
       cell.stemArea ??= stemArea(g, this.widths);
+      this.stems.addArea(cell.key, cell.stemArea);
       if (keep) cell.stand = g;
       cell.standState = keep ? 2 : 0;
     } catch {
@@ -630,7 +641,10 @@ export class Vegetation {
     const solid = cell.col !== null;
     if (solid) this.setSolid(cell, false);
     const tl = this.pack.treeLines;
-    const base = cell.base!, stems = k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null, STEM_CLUMPS) : null;
+    const kept = k > 0 && !cell.stand ? this.stems.stems(cell.key, k) : null;
+    if (k > 0 && !cell.stand && !kept) { cell.standState = 0; return; } // FEAT-377: kept stems at another density: fetch the stand
+    const base = cell.base!, stems = kept ?? (k > 0 && cell.stand ? generateStems(cell.stand, k, this.widths, tl ? (x, y, out) => tl.placeStem(x, y, out) : null, STEM_CLUMPS) : null);
+    if (stems && !kept) this.stems.addStems(cell.key, k, stems);
     if (stems && stems.length) { const d = new Float32Array(base.length + stems.length); d.set(base); d.set(stems, base.length); cell.data = d; }
     else cell.data = base;
     cell.gen = k;

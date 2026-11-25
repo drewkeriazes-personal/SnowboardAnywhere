@@ -59,6 +59,8 @@ import { LiftPickState } from '../states/LiftPickState';
 import { LiftPicker } from '../ui/LiftPicker';
 import { MapState } from '../states/MapState';
 import { Modes } from '../modes/Modes';
+import { timedStep } from '../core/loadSteps';
+import { expireBuilt, saveBuilt, setKeepBuiltData } from '../core/builtData';
 
 /** FEAT-105: the New snow setting as a snow cover amount */
 const NEW_SNOW: Record<string, number> = { none: 0, dusting: 0.25, '6in': 0.6, powder: 1 };
@@ -80,7 +82,21 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
   const { menu, loading } = opts;
   const quit = new Promise<void>((resolveQuit) => {
     const status = document.getElementById('status')!;
-    const world = buildWorld(ctx);
+    // ---------------------------------------------------------------- spawn point
+    const start = pack.meta.start; // FEAT-243: a landmark marked `start` or a placed start is already in it (MapPacker's pack_content.py)
+    const saveKey = spawnKey(pack.meta.slug);
+    let saved: { x: number; y: number; h: number } | null = null;
+    try { saved = JSON.parse(localStorage.getItem(saveKey) ?? 'null'); } catch { saved = null; }
+    const at = spawnFromUrl(); // re-read: the menu's "Reset to resort start" may have removed x/y/h
+    let sx = at.x ?? saved?.x ?? start.x;
+    let sy = at.y ?? saved?.y ?? start.y;
+    let sh = at.h ?? saved?.h ?? start.heading;
+    // FEAT-377: the tiles round the start download while the world builds
+    pack.fine?.request(sx - 600, sy - 600, sx + 600, sy + 600);
+    pack.mid?.request(sx - 20000, sy - 20000, sx + 20000, sy + 20000);
+    pack.far?.request(-1e9, -1e9, 1e9, 1e9);
+    pack.mask?.request(sx - 600, sy - 600, sx + 600, sy + 600);
+    const world = timedStep('world', () => buildWorld(ctx));
     const { env, clouds, snow, terrain, collider, veg, lifts, liftLines, roads, tracks, bootprints, puffs, bigprints, deform, wells, monsters, eat, trialWorld, riderView } = world;
     // FEAT-162: the session's states; the frame is the active state's update (states/RideFrame.ts has the order)
     const states = new StateMachine<GameStateName>();
@@ -202,6 +218,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       env.setShadows(s.shadows && params.shadowtype !== 'off'); // FEAT-237 ?shadowtype=off: no sun shadow pass, for an A/B
       if (s.quality === 'low') setVegetationBudget(250, 600, params.lowgfx ? 0 : 200); else setVegetationDensity(s.treeDensity); // BUG-107: Low's LOD0 cards to 200 m (none on ?lowgfx, the software-GPU runs, FEAT-158)
       setStandDensity(s.forestDensity ?? 1); // FEAT-074: only the generated stems
+      setKeepBuiltData(s.keepBuiltData !== false); // FEAT-377
       cam.baseFov = s.fov;
       controls.keymap = { ...s.keys };
       controls.invertSteer = s.invertSteer;
@@ -236,14 +253,6 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     };
 
     // ---------------------------------------------------------------- spawn point
-    const start = pack.meta.start; // FEAT-243: a landmark marked `start` or a placed start is already in it (MapPacker's pack_content.py)
-    const saveKey = spawnKey(pack.meta.slug);
-    let saved: { x: number; y: number; h: number } | null = null;
-    try { saved = JSON.parse(localStorage.getItem(saveKey) ?? 'null'); } catch { saved = null; }
-    const at = spawnFromUrl(); // re-read: the menu's "Reset to resort start" may have removed x/y/h
-    let sx = at.x ?? saved?.x ?? start.x;
-    let sy = at.y ?? saved?.y ?? start.y;
-    let sh = at.h ?? saved?.h ?? start.heading;
     const setSpawn = (x: number, y: number, h: number) => {
       sx = x; sy = y; sh = h;
       try { localStorage.setItem(saveKey, JSON.stringify({ x, y, h })); } catch { /* private mode */ }
@@ -385,10 +394,6 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     });
     const saveShot = (dataUrl: string, jpgUrl: string) =>
       saveShotFile({ dataUrl, jpgUrl, eye: cam.eyePose(), spot: spotName, slug: pack.meta.slug, weather: currentWeather(), hosted, toast: (t) => showToast(t) });
-    pack.fine?.request(sx - 600, sy - 600, sx + 600, sy + 600);
-    pack.mid?.request(sx - 20000, sy - 20000, sx + 20000, sy + 20000);
-    pack.far?.request(-1e9, -1e9, 1e9, 1e9);
-    pack.mask?.request(sx - 600, sy - 600, sx + 600, sy + 600);
     // FEAT-140: the press balance meter above the head (the toast when a press ends is in ui/HudEvents.ts)
     const pressMeter = new PressMeter();
     const inputView = new InputView(); // FEAT-049: Settings > Controls > Input display
@@ -506,16 +511,23 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
 
     // FEAT-177: the warm-up streams the trees and rocks where the camera looks when it is off the rider (the menu shot)
     const warmFocus = () => cam.mode === 'eye' || cam.mode === 'free' ? { x: cam.camera.position.x, y: -cam.camera.position.z } : rider;
-    const warmUp = (ls: { set(f: number, label: string): void }) => warmUpWorld(ls, world, pack, warmFocus, renderer, scene, cam.camera);
+    const warmUp = (ls: { set(f: number, label: string): void }) => {
+      frame.snowDay(0); // FEAT-377: the chunks build for the conditions the first frame draws (the menu shot's mogul season)
+      return warmUpWorld(ls, world, pack, warmFocus, renderer, scene, cam.camera);
+    };
     states.add(new LoadingState({
-      pack, rider, lifts, cam, spawn: () => ({ x: sx, y: sy, h: sh }), first: opts.attract ? 'attract' : 'riding', alive: () => alive,
+      pack, rider, lifts, cam, spawn: () => ({ x: sx, y: sy, h: sh }), first: opts.attract ? 'attract' : 'riding', alive: () => alive, built: clouds.ready,
       // ?cam=eye: the menu (shown on Quit) is ready too
       warmUp: loading ? async () => { await warmUp(loading); hideLoading = loading; if (menu) menuWait = { t0: performance.now(), quiet: 0 }; }
         : opts.attract && menu ? async () => { await warmUp({ set: (f, l) => menu.setProgress(f, l) }); menuWait = { t0: performance.now(), quiet: 0 }; }
         : null,
       ready: () => {
+        performance.mark('load: sim ready');
+        setTimeout(() => void expireBuilt(), 5000); // FEAT-377: old built data goes once the first frames are drawn
         status.textContent = '';
         installSimDebug({ env, events, audio, ghosts, menu, shot, rider, riderView, controls, padFx, inputView, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, speedLines, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
+          /** loadperf.mjs --expiry (FEAT-377): a save racing the expiry pass */
+          saveBuilt, expireBuilt,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
           setWeather: (w: string | null) => { weatherOverride = parseWeather(w) ?? initialWeather; applySettings(settings, 'weather'); },
           /** shoot.mjs (FEAT-087): stream the scene round the camera until nothing is loading or building, without stepping the sim */

@@ -34,6 +34,7 @@ import { RiderChair } from '../world/RiderChair';
 import { TrialWorld } from '../world/TrialWorld';
 import { Boundary } from '../sim/Boundary';
 import { BoundaryRope } from '../world/BoundaryRope';
+import { timedStep as step } from '../core/loadSteps';
 
 export type World = ReturnType<typeof buildWorld>;
 
@@ -56,7 +57,7 @@ export function buildWorld(ctx: GameContext) {
   if (params.debugHud && params.debug === 'moguls') terrain.setMogulDebug(true); // BUG-062
   add('terrain', terrain.group);
   const collider = new Collider();
-  const veg = new Vegetation(pack, collider);
+  const veg = step('world: trees', () => new Vegetation(pack, collider));
   kitUniforms.uTrimK.value = params.notrim ? 0 : 1; // FEAT-303: module state, as the other kit uniforms
   setStemClumps(!params.evenstems); // FEAT-337
   const treeFade = new TreeFade();
@@ -77,9 +78,9 @@ export function buildWorld(ctx: GameContext) {
   add('lift markers', lifts.markers);
   const runs = new RunsOverlay(pack);
   add('run lines', runs.group);
-  const buildings = new Buildings(pack, collider);
+  const buildings = step('world: buildings', () => new Buildings(pack, collider));
   add('buildings', buildings.group);
-  const roads = new Roads(pack, settings.roadsOnSnow);
+  const roads = step('world: roads', () => new Roads(pack, settings.roadsOnSnow));
   add('roads', roads.group);
   // BUG-088: props stand at their real heights, so they wait until the terrain under them is real
   rocks.ground = terrain; veg.ground = terrain; buildings.ground = terrain; lifts.ground = terrain;
@@ -87,7 +88,7 @@ export function buildWorld(ctx: GameContext) {
   add('landmarks', landmarks.group);
   const slowSigns = new SlowSigns(pack, collider); // FEAT-306: SLOW signs at the bottom of some green and blue runs
   add('slow signs', slowSigns.group);
-  const bridges = new Bridges(pack, collider, params.bridgeguess); // BUG-022: OSM-tagged bridges and creek-bed dips; ?bridgeguess adds segment chords
+  const bridges = step('world: bridges', () => new Bridges(pack, collider, params.bridgeguess)); // BUG-022: OSM-tagged bridges and creek-bed dips; ?bridgeguess adds segment chords
   add('bridges', bridges.group);
   // FEAT-307: skier pairs and sitting snowboarders on the runs, kept clear of the start, the landmarks and the SLOW signs (FEAT-306)
   // (FEAT-243: a landmark or placed start is already resolved into meta.start by the pipeline)
@@ -141,9 +142,9 @@ export function buildWorld(ctx: GameContext) {
   for (const m of slowSigns.materials) env.registerMaterial(m);
   for (const m of boundaryRope.materials) env.registerMaterial(m);
   env.registerMaterial(people.material);
-  veg.enableImpostors(renderer, !params.noimpostors, params.lowgfx ? 1024 : 2048); // FEAT-156: bakes the LOD2 / impostor atlases either way
+  step('world: tree impostor bake', () => veg.enableImpostors(renderer, !params.noimpostors, params.lowgfx ? 1024 : 2048)); // FEAT-156: bakes the LOD2 / impostor atlases either way
   if (params.lod0 != null) setLod0Reach(params.lod0); // BUG-107
-  if (!params.noclumps) veg.enableClumps(renderer, params.clumpfar ?? undefined); // FEAT-292: the far forest as clump impostors past the drawn trees
+  if (!params.noclumps) step('world: clump impostors', () => veg.enableClumps(renderer, params.clumpfar ?? undefined)); // FEAT-292: the far forest as clump impostors past the drawn trees
   terrain.setTreeShade(veg.shade); // FEAT-171: the drawn trees' shadows past the shadow map
   return {
     zr, env, clouds, snow, terrain, collider, veg, shrubs, treeFade, rocks, lifts, liftLines, resortTop, runs, buildings, roads, landmarks, slowSigns, bridges, people,

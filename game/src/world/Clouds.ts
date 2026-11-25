@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { builtData } from '../core/builtData';
 
 /**
  * Volumetric cumulus, after the Unreal / Nubis approach:
  *  - Shape: a tileable 64^3 Perlin-Worley texture (billowy base) and a low-frequency Worley fbm,
  *    eroded by a 32^3 Worley detail texture (wispy at the base, puffy at the top). Both are
- *    generated once at startup. A large-scale weather lookup decides where clouds are; a
+ *    generated once and kept between loads (FEAT-377). A large-scale weather lookup decides where clouds are; a
  *    cumulus height gradient gives flat bases and rounded tops.
  *  - Lighting: a 6-tap march toward the sun, two-octave multiple-scattering approximation
  *    (extinction, scattering and phase eccentricity halved per octave), dual-lobe
@@ -89,30 +90,33 @@ function worleyFbm(n: number, cells: number, seed: number): Float32Array {
   for (let i = 0; i < a.length; i++) out[i] = a[i] * 0.625 + b[i] * 0.25 + c[i] * 0.125;
   return out;
 }
-function tex3d(n: number, channels: Float32Array[]): THREE.Data3DTexture {
+/** channels 0..1 to bytes, interleaved (the texture's data) */
+function bytes3d(n: number, channels: Float32Array[]): Uint8Array {
   const c = channels.length;
   const data = new Uint8Array(n * n * n * c);
   for (let i = 0; i < n * n * n; i++) for (let k = 0; k < c; k++) data[i * c + k] = Math.max(0, Math.min(255, Math.round(channels[k][i] * 255)));
-  const t = new THREE.Data3DTexture(data, n, n, n);
+  return data;
+}
+function tex3d(n: number, c: number): THREE.Data3DTexture {
+  const t = new THREE.Data3DTexture(new Uint8Array(n * n * n * c), n, n, n);
   t.format = c === 1 ? THREE.RedFormat : THREE.RGFormat;
   t.type = THREE.UnsignedByteType;
   t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;
   t.minFilter = t.magFilter = THREE.LinearFilter;
   t.unpackAlignment = 1;
-  t.needsUpdate = true;
   return t;
 }
-function makeNoise(): { base: THREE.Data3DTexture; detail: THREE.Data3DTexture } {
-  const N = 64;
+const BASE_N = 64, DETAIL_N = 32;
+/** the two noise textures' bytes: base (Perlin-Worley, low Worley fbm) and detail */
+function makeNoise(): { base: Uint8Array; detail: Uint8Array } {
+  const N = BASE_N;
   const perlin = valueFbm(N, 4, 4, 11);
   const wf = worleyFbm(N, 4, 3);
   const pw = new Float32Array(perlin.length);
   // Perlin-Worley: Perlin remapped so Worley cells carve billows into it
   for (let i = 0; i < pw.length; i++) pw[i] = wf[i] + perlin[i] * (1 - wf[i]); // remap(perlin, 0, 1, worley, 1)
   const low = worleyFbm(N, 2, 5);
-  const base = tex3d(N, [pw, low]);
-  const detail = tex3d(32, [worleyFbm(32, 2, 9)]);
-  return { base, detail };
+  return { base: bytes3d(N, [pw, low]), detail: bytes3d(DETAIL_N, [worleyFbm(DETAIL_N, 2, 9)]) };
 }
 
 // ------------------------------------------------------------------ shaders
@@ -246,7 +250,12 @@ export class Clouds {
   private readonly quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly quad: THREE.Mesh;
   private readonly rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false });
-  private readonly noise = makeNoise();
+  private readonly noise = { base: tex3d(BASE_N, 2), detail: tex3d(DETAIL_N, 1) };
+  /** FEAT-377: the noise is in (saved from an earlier load, or built: about 300 ms); the clouds draw nothing before */
+  readonly ready = builtData({ what: 'cloud noise', code: ['world/Clouds.ts'] }, makeNoise).then((b) => {
+    this.noise.base.image.data = b.base; this.noise.detail.image.data = b.detail;
+    this.noise.base.needsUpdate = true; this.noise.detail.needsUpdate = true;
+  });
   private steps = 0;
   private time = Math.random() * 3000;
   private readonly size = new THREE.Vector2();

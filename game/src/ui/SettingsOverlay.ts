@@ -10,6 +10,7 @@ import { KEY_GROUPS, PAD_GROUPS, applyUiScale, defaultSettings, keyName, migrate
 import { CATEGORIES, HELD_FIELDS, SECTIONS, descOf, optsOf, presetLine, rowsOf, type CatId, type Row } from './SettingsRows';
 import { LoadingScreen } from './Loading';
 import { launcherBrowser } from './LauncherBrowser';
+import { builtDataBytes, builtDataChanged, clearBuiltData } from '../core/builtData';
 
 /**
  * FEAT-128 settings screen (layout B): full screen, categories on the left, rows of label and control in
@@ -54,6 +55,11 @@ class SettingsOverlay {
   private armed: { what: CatId | 'all'; t: number } | null = null;
   private fpsTimer = 0;
   private rumbleMsg = '';
+  /** FEAT-377: how much the Keep built resort data setting holds */
+  private builtMsg = '';
+  private showBuiltSize(): void {
+    void builtDataBytes().then((b) => { this.builtMsg = b ? `${(b / 1048576).toFixed(1)} MB saved` : 'Nothing saved'; this.fillAll(); });
+  }
   /** on the MenuNav stack (set after openScreen) */
   private shown = false;
   /** FEAT-285: the held rows (heavy graphics) read and write this copy; `s` keeps the applied values until Apply */
@@ -63,6 +69,7 @@ class SettingsOverlay {
   private readonly leaveScreen: Screen;
 
   constructor(private readonly s: Settings) {
+    builtDataChanged.addEventListener('change', () => { if (this.cat === 'graphics') this.showBuiltSize(); }); // FEAT-377: old data expired
     this.draft = { ...s };
     this.el = document.createElement('div');
     this.el.id = 'settings';
@@ -259,6 +266,7 @@ class SettingsOverlay {
         const st = rowEl.querySelector<HTMLElement>('.status')!;
         st.textContent = r.id === 'hid' ? (dualSense.status || (dualSense.connected ? 'Connected' : 'Not connected')) : r.id === 'rumble-test' ? this.rumbleMsg
           : r.id === 'launcherOther' ? launcherBrowser.status
+          : r.id === 'built-clear' ? this.builtMsg
           : r.id === 'gfx-apply' ? (this.applying ? 'Applying...' : pending ? `${pending} ${pending === 1 ? 'change' : 'changes'} waiting` : 'Nothing to apply') : '';
         if (r.id === 'gfx-apply') { b.disabled = !pending || this.applying; b.classList.toggle('primary', !!pending); }
         return;
@@ -386,6 +394,7 @@ class SettingsOverlay {
     else if (a === 'hid') void (dualSense.connected ? dualSense.disconnect() : dualSense.connect()).then(() => this.fillAll());
     else if (a === 'gfx-apply') void this.apply();
     else if (a === 'launcher-other') void launcherBrowser.other();
+    else if (a === 'built-clear') void clearBuiltData().then(() => this.showBuiltSize());
   }
 
   // ---------------------------------------------------------------- reset
@@ -543,6 +552,7 @@ class SettingsOverlay {
   private openCat(c: CatId, focusFirst: boolean): void {
     this.cat = c;
     if (c === 'credits') this.drawCredits(); // the music list loads after the menu
+    if (c === 'graphics') this.showBuiltSize();
     if (this.searchEl.value) { this.searchEl.value = ''; this.applySearch(); }
     this.el.querySelectorAll<HTMLElement>('.cats button[data-cat]').forEach((b) => b.classList.toggle('on', b.dataset.cat === c));
     this.el.querySelectorAll<HTMLElement>('.page').forEach((p) => p.classList.toggle('shown', p.dataset.cat === c));
