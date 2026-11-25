@@ -6,6 +6,7 @@ import { SPECIES, SPECIES_COUNT, VARIANTS, hash01 } from './species';
 import { rng } from './generate';
 import { crownWidthsOf, openness, openFactor, type CrownWidthsMeta } from './widths';
 import { kitUniforms, farLight, BAYER_HALF_CELL } from './materials';
+import { coverUniforms, syncCover, shareOf, shareOfB, COVER_SHARE_GLSL } from './coverShare';
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 
 /**
@@ -103,15 +104,6 @@ export function standMix(meta: Pick<PackMeta, 'vegetation' | 'lonlat'>): StandMi
   return mixOf(v?.region === 'east' || (!v?.region && meta.lonlat[0] > -100) ? MIX_EAST : MIX_WEST);
 }
 
-/** crown cover (0..COVER_MAX) from a cover level's forest share R (0..1), shader and CPU alike */
-const COVER_LO = 0.02, COVER_HI = 0.75, COVER_MAX = 0.5;
-function shareOf(r: number): number { const t = Math.max(0, Math.min(1, (r - COVER_LO) / (COVER_HI - COVER_LO))); return t * t * (3 - 2 * t) * COVER_MAX; }
-/**
- * Inside the pack the cover's R is a forest mask (nearly 0 or 1 at 4 m), so the density comes from the pack level's B
- * (FEAT-168: where the drawn trees stand, graded per 4 m cell): crown cover = B * COVER_B, at most COVER_MAX.
- */
-const COVER_B = 0.6;
-function shareOfB(b: number): number { return Math.min(COVER_MAX, b * COVER_B); }
 
 /**
  * Each tile is a stand on ground that rises away from the camera by TILT[i], seen from the world elevation EYE: the trees
@@ -380,18 +372,8 @@ export class ClumpCanopy {
   private targets: THREE.WebGLRenderTarget[] = [];
   private textures: THREE.DataTexture[] = [];
   private mat: THREE.RawShaderMaterial | null = null;
-  private readonly cov = {
-    uCov0: { value: null as THREE.Texture | null }, uCov1: { value: null as THREE.Texture | null }, uCov2: { value: null as THREE.Texture | null },
-    uCovRect: { value: [0, 1, 2].map(() => new THREE.Vector4(-1e7, -1e7, -1e7 + 1000, -1e7 + 1000)) },
-    uCovLod: { value: new THREE.Vector3() },
-    /** 1 where the level's B holds the drawn trees (the pack level), read as the density there */
-    uCovB: { value: new THREE.Vector3() },
-    uCovBlend: { value: 500 },
-  };
-  private covSeen = -1;
   private last = { x: NaN, y: NaN, near: 0, far: 0, blocksReady: 0 };
   private blocksReady = 0;
-  private readonly blank: THREE.DataTexture;
   /** the bake in progress (null once done) and whether it waits on a read-back */
   private baking: Generator<BakeStep, void, void> | null;
   private waiting = false;
@@ -406,8 +388,6 @@ export class ClumpCanopy {
     this.mix = standMix(pack.meta);
     this.widths = crownWidthsOf(pack.meta);
     this.conservative = !!renderer.getContext().getExtension('EXT_conservative_depth');
-    this.blank = new THREE.DataTexture(new Uint8Array(4), 1, 1); this.blank.needsUpdate = true;
-    for (const k of ['uCov0', 'uCov1', 'uCov2'] as const) this.cov[k].value = this.blank;
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -589,7 +569,7 @@ export class ClumpCanopy {
       glslVersion: THREE.GLSL3,
       defines: this.conservative ? { CONSERVATIVE: '' } : {},
       uniforms: {
-        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms, ...treeSnowUniforms, ...this.cov,
+        ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms, ...treeSnowUniforms, ...coverUniforms,
         uBand: this.band, uAlbedo: { value: albedo }, uNormal: { value: normal }, uSnowMask: { value: snow },
         uEls: { value: ELS }, uFrames: { value: frames }, uShares: { value: SHARES },
         uSunDir: farLight.sunDir, uSunColor: farLight.sunColor, uHemiSky: farLight.hemiSky, uHemiGround: farLight.hemiGround,
@@ -675,7 +655,6 @@ export class ClumpCanopy {
         uniform mat4 projectionMatrix;
         uniform vec3 uSunDir; uniform vec3 uSunColor; uniform vec3 uHemiSky; uniform vec3 uHemiGround;
         uniform vec2 uFrames[${COLS}];
-        uniform sampler2D uCov0, uCov1, uCov2; uniform vec4 uCovRect[3]; uniform vec3 uCovLod; uniform vec3 uCovB; uniform float uCovBlend;
         #include <tonemapping_pars_fragment>
         #include <colorspace_pars_fragment>
         ${TREE_SNOW_COMMON}
@@ -685,28 +664,7 @@ export class ClumpCanopy {
         varying vec2 vCard; varying vec4 vTile; varying vec3 vR; varying vec3 vB; varying vec3 vWorld; varying float vShare; varying float vTint; varying float vFlip;
         varying float vLodVis; varying float vLodIn; varying float vSeed;
         #include <fog_pars_fragment>
-        float covW(vec2 p, vec4 r) { vec2 d = min(p - r.xy, r.zw - p); return smoothstep(0.0, uCovBlend, min(d.x, d.y)); }
-        vec2 covUV(vec2 p, vec4 r) { return vec2((p.x - r.x) / (r.z - r.x), (r.w - p.y) / (r.w - r.y)); }
-        // a level's crown cover: its B (the drawn trees) where it has them, else its forest share R through shareOf
-        float levelShare(vec4 t, float hasB) {
-          float tt = clamp((t.r - ${COVER_LO.toFixed(3)}) / ${(COVER_HI - COVER_LO).toFixed(3)}, 0.0, 1.0);
-          return hasB > 0.5 ? min(t.b * ${COVER_B.toFixed(3)}, ${COVER_MAX.toFixed(3)}) : tt * tt * (3.0 - 2.0 * tt) * ${COVER_MAX.toFixed(3)};
-        }
-        // (finest level first: well inside a level nothing coarser is read)
-        float coverShare(vec2 p) {
-          float w2 = covW(p, uCovRect[2]);
-          float f2 = w2 > 0.0 ? levelShare(textureLod(uCov2, covUV(p, uCovRect[2]), uCovLod.z), uCovB.z) : 0.0;
-          if (w2 >= 1.0) return f2;
-          float w1 = covW(p, uCovRect[1]);
-          float f1 = w1 > 0.0 ? levelShare(textureLod(uCov1, covUV(p, uCovRect[1]), uCovLod.y), uCovB.y) : 0.0;
-          if (w1 >= 1.0) return mix(f1, f2, w2);
-          float w0 = covW(p, uCovRect[0]);
-          float f0 = w0 > 0.0 ? levelShare(textureLod(uCov0, covUV(p, uCovRect[0]), uCovLod.x), uCovB.x) : 0.0;
-          float f = f0 * w0, c = w0;
-          f = mix(f, f1, w1); c = mix(c, 1.0, w1);
-          f = mix(f, f2, w2); c = mix(c, 1.0, w2);
-          return c > 1e-4 ? f / c : 0.0;
-        }
+        ${COVER_SHARE_GLSL}
         float kGGX(vec3 n, vec3 l, vec3 v) {
           float a = 0.8464, a2 = a * a;
           vec3 h = normalize(l + v);
@@ -818,28 +776,6 @@ export class ClumpCanopy {
     return mat;
   }
 
-  /** hand the loaded cover levels (the finest three, coarsest first, as the terrain) to the shader; true once all are in */
-  private syncCover(): boolean {
-    const cover = this.pack.cover;
-    if (!cover) return true;
-    const loaded = cover.levels.filter((l) => l.loaded && l.texture);
-    if (loaded.length !== this.covSeen) {
-      this.covSeen = loaded.length;
-      const use = loaded.slice(-3);
-      const keys = ['uCov0', 'uCov1', 'uCov2'] as const;
-      for (let i = 0; i < 3; i++) {
-        const l = use[i];
-        this.cov[keys[i]].value = l ? l.texture! : this.blank;
-        if (l) this.cov.uCovRect.value[i].set(...l.rect); else this.cov.uCovRect.value[i].set(-1e7, -1e7, -1e7 + 1000, -1e7 + 1000);
-        // read the share over about 12 m round the crown
-        this.cov.uCovLod.value.setComponent(i, l ? Math.max(0, Math.log2(12 / l.meta.res)) : 0);
-        this.cov.uCovB.value.setComponent(i, l?.hasTrees ? 1 : 0);
-      }
-      this.cov.uCovBlend.value = cover.meta.blend;
-    }
-    return loaded.length === cover.levels.length;
-  }
-
   /** crown cover at (x, y) from the finest loaded cover level there (its texture's bytes, as the shader reads them) */
   private shareAt(x: number, y: number): number {
     const cover = this.pack.cover;
@@ -924,7 +860,7 @@ export class ClumpCanopy {
     if (this.baking) this.stepBake(budgetMs > 0 ? Math.max(2, budgetMs / 3) : 0);
     const t0 = performance.now();
     this.band.value.set(near - fade, near + fade, far - 300, far);
-    const coverIn = this.syncCover();
+    const coverIn = syncCover(this.pack);
     const reach = far + RD;
     const bx0 = Math.floor((cx - reach) / BLOCK), bx1 = Math.floor((cx + reach) / BLOCK);
     const by0 = Math.floor((cy - reach) / BLOCK), by1 = Math.floor((cy + reach) / BLOCK);
@@ -1009,7 +945,6 @@ export class ClumpCanopy {
     this.baking = null;
     for (const rt of this.targets) rt.dispose();
     for (const t of this.textures) t.dispose();
-    this.blank.dispose();
     this.geo.dispose();
     (this.mesh.material as THREE.Material).dispose();
   }

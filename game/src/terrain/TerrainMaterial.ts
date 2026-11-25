@@ -245,9 +245,7 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         uniform vec4 uTreeRect;
         #define AO_POW 2.6
         #define AO_DIRECT 0.6
-        // FEAT-075: forest darkening from FOREST_NEAR (full by FOREST_FULL, m); canopy cover FOREST_LO..FOREST_HI maps to 0..1
-        #define FOREST_NEAR 350.0
-        #define FOREST_FULL 1000.0
+        // canopy cover FOREST_LO..FOREST_HI maps to 0..1
         #define FOREST_LO 0.08
         #define FOREST_HI 0.45
         uniform float uSnowCover;
@@ -547,9 +545,11 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         }
         // distant forest: past the instanced trees, forested ground reads as dark conifer green
         // speckled with snow (real distant Colorado slopes are mostly dark timber, not white)
-        // FEAT-075: forested ground goes dark from just past the instanced trees' detail (350 m, full by
-        // 1 km), not only beyond 2.5 km, so valley forest reads as a dark mass like the photos. The canopy
-        // cover is low in the data (BUG-028), so it is lifted; runs and bowls (no canopy) stay white.
+        // BUG-142: forested ground goes dark only past the drawn trees (the far ranges), where nothing else carries the
+        // forest. Where trees are drawn the snow stays white under them (snow doesn't go away under a forest; the trees
+        // hide it), and the impostors widen with distance to close the canopy (materials.ts FAT_GLSL). Before, the ground
+        // went dark from 350 m (FEAT-075), and showed as dark blotches wherever the drawn trees thinned out.
+        // The canopy cover is low in the data (BUG-028), so it is lifted; runs and bowls (no canopy) stay white.
         // FEAT-153: past COVER_NEAR the forest comes per pixel from the cover levels (already a share of
         // ground under closed canopy, so only a mild S curve keeps mip-averaged trail edges from greying)
         vec2 cov = coverForest(vec2(wp.x, -wp.z), dist);
@@ -563,20 +563,21 @@ export function createTerrainMaterial(): THREE.MeshStandardMaterial {
         // ground adds only what they miss, 1 - ((1 - s) / (1 - rho s))^(1/mu); before this the ground went
         // grey under trees that were already drawn, so sparse stands in the bowls read as grey blobs from
         // the air. Outside the pack's tree instances (uTreeRect) nothing is drawn, so there the ground carries
-        // the forest from the first metre instead of fading in from FOREST_NEAR.
+        // the forest from the first metre.
         vec2 pxyF = vec2(wp.x, -wp.z);
         vec2 trd = min(pxyF - uTreeRect.xy, uTreeRect.zw - pxyF);
         float treeHere = smoothstep(0.0, 300.0, min(trd.x, trd.y));
+        float drawnK = 1.0 - smoothstep(uLiftNear - 800.0, uLiftNear, dist); // inside the drawn trees' reach
         float viewMu = clamp(dot(ngW, normalize(cameraPosition - wp)), 0.12, 1.0);
         // BUG-081: past the generated stems the impostors grow to stand in for them (Vegetation STEM_GROW), so they
         // carry nearly all the canopy there, and the ground no longer lays a flat timber tone between them
         float rho = mix(uForestDrawn, ${FOREST_DRAWN_FAR.toFixed(2)}, smoothstep(uStemReach, uStemReach * 1.5, dist))
-          * treeHere * (1.0 - smoothstep(uLiftNear - 800.0, uLiftNear, dist));
+          * treeHere * drawnK;
         // FEAT-292: past the drawn trees the clump impostors carry the canopy, inside the pack's trees or not
-        if (uClump.w > 0.5) rho = mix(rho, uClump.z, smoothstep(uClump.x - uClump.y, uClump.x + uClump.y, dist) * (1.0 - smoothstep(uLiftNear - 800.0, uLiftNear, dist)));
+        if (uClump.w > 0.5) rho = mix(rho, uClump.z, smoothstep(uClump.x - uClump.y, uClump.x + uClump.y, dist) * drawnK);
         float sK = min(forestK, 0.999);
         float seen = 1.0 - pow((1.0 - sK) / (1.0 - rho * sK), (1.0 + TREE_ASPECT * sqrt(1.0 - viewMu * viewMu)) / viewMu);
-        float fd = mix(1.0, smoothstep(FOREST_NEAR, FOREST_FULL, dist), treeHere) * seen;
+        float fd = (1.0 - treeHere * drawnK) * seen;
         fd *= 1.0 - uDebugFar.x;
         // FEAT-075: conifer canopy in sun is dark (shaded needles and crowns), dark green-black in the photos.
         // FEAT-153: crowns (about 6 m) texture it while a pixel is smaller than a crown and fade to an even
