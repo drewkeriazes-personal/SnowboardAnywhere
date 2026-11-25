@@ -65,7 +65,7 @@ try {
   // ---------------------------------------------------------------- search
   let r = await req('GET', `/api/resorts/search?q=${encodeURIComponent('boston "mills"; rm -rf / && echo $HOME')}`, { token: 'tok-drew' });
   const c = calls.shift();
-  ok(r.status === 200 && JSON.stringify(r.json) === JSON.stringify(SEARCH) && r.json.skipped === 1, 'the maintainer\'s search: 200, resort.py\'s JSON passed through, skipped with it (FEAT-287)');
+  ok(r.status === 200 && JSON.stringify(r.json) === JSON.stringify(SEARCH) && r.json.skipped === 1, 'the maintainer\'s search: 200, resort.py\'s JSON passed through, skipped with it'); // FEAT-287
   ok(c?.cmd === 'python' && c.cwd === mp && c.timeout > 0, 'search runs python in the MapPacker clone, with a time limit');
   ok(JSON.stringify(c?.args) === JSON.stringify([path.join('pipeline', 'resort.py'), 'search', '--json', '--', 'boston "mills"; rm -rf / && echo $HOME']), 'the query reaches Python as one argument, after --');
   ok(r.headers.get('cache-control') === 'no-store' && (r.headers.get('content-type') ?? '').includes('json'), 'the search reply is JSON, no-store');
@@ -80,10 +80,10 @@ try {
   ok(r.status === 502 && r.json?.error === 'search: cannot read the OpenSkiData ski areas index: offline', 'resort.py failing: 502 with its last stderr line');
   answer = () => ({ code: 2, stdout: '', stderr: "usage: resort.py [-h] {resolve,plan,compare,add} ...\nresort.py: error: argument cmd: invalid choice: 'search' (choose from resolve, plan, compare, add)\n" });
   r = await req('GET', '/api/resorts/search?q=boston', { token: 'tok-drew' }); calls.length = 0;
-  ok(r.status === 502 && r.json?.error === `The MapPacker clone at ${mp} has no resort search yet: pull its main.`, 'a clone with no search command (older than FEAT-279): 502 naming the clone and the pull (BUG-119)');
+  ok(r.status === 502 && r.json?.error === `The MapPacker clone at ${mp} has no resort search yet: pull its main.`, 'a clone with no search command: 502 naming the clone and the pull'); // BUG-119
   answer = () => ({ code: 0, stdout: 'usage: resort.py [-h] {resolve,plan,compare,add} ...', stderr: '' });
   r = await req('GET', '/api/resorts/search?q=boston', { token: 'tok-drew' }); calls.length = 0;
-  ok(r.status === 502 && /FEAT-279/.test(r.json?.error), 'an answer that is not the search JSON (a clone older than FEAT-279): 502');
+  ok(r.status === 502 && /out of date/.test(r.json?.error), 'an answer that is not the search JSON (an old clone): 502'); // FEAT-279
   answer = () => ({ code: null, stdout: '', stderr: '', error: { code: 'ENOENT', message: 'spawn python ENOENT' } });
   r = await req('GET', '/api/resorts/search?q=boston', { token: 'tok-drew' }); calls.length = 0;
   ok(r.status === 503 && /Python/.test(r.json?.error), 'no Python: 503 with a one-line reason');
@@ -140,7 +140,7 @@ try {
   ok((await req('GET', '/api/other')).text === 'next', 'any other URL goes on to next()');
 
   // ---------------------------------------------------------------- the pure checks and the real runner
-  ok(buildInputError({ slug: ' brandywine ', name: ' Brandywine ', osm_id: ' 391698033 ' }) === null && buildInputError({ ...BM, osm_id: 'relation/22' }) === null && buildInputError({ ...BM, osm_id: 'skimap/497' }) === null, 'buildInputError: trimmed, a bare way number, a relation and a Skimap.org id (FEAT-286) pass');
+  ok(buildInputError({ slug: ' brandywine ', name: ' Brandywine ', osm_id: ' 391698033 ' }) === null && buildInputError({ ...BM, osm_id: 'relation/22' }) === null && buildInputError({ ...BM, osm_id: 'skimap/497' }) === null, 'buildInputError: trimmed, a bare way number, a relation and a Skimap.org id pass');
   ok(queryError('bos') === null && queryError('bo') !== null && queryError(null) !== null, 'queryError: 3 characters at least');
   {
     const e = await execRun(process.execPath, ['-e', 'process.stdout.write(process.argv[1])', 'a b; echo "c" && d | e']);
@@ -160,7 +160,7 @@ try {
     ok(mapPackerDir({}, wt) === path.join(tmp, 'git', 'MapPacker-SnowboardAnywhere'), 'no SBA_MAPPACKER: MapPacker-SnowboardAnywhere next to the main checkout');
     ok(mapPackerDir({ SBA_MAPPACKER: mp }, wt) === mp && mapPackerDir({ SBA_MAPPACKER: '  ' }, wt) !== '  ', 'SBA_MAPPACKER wins; a blank one does not');
   }
-  ok(typeof routes.route === 'function' && typeof routes.ctx.run === 'function' && routes.ctx.mapPacker() === mp, 'the factory hands out route() and ctx (run, mapPacker) for FEAT-247');
+  ok(typeof routes.route === 'function' && typeof routes.ctx.run === 'function' && routes.ctx.mapPacker() === mp, 'the factory hands out route() and ctx (run, mapPacker)'); // FEAT-247
 
   // ---------------------------------------------------------------- the picker's rows (src/ui/ResortPicker.ts)
   const out = path.join(tmp, 'picker.mjs');

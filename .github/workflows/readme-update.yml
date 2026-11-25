@@ -233,7 +233,7 @@ jobs:
             echo
             echo "## What changed"; echo; cat /tmp/readme-summary.md; echo
             echo "## Covered"; echo; cat /tmp/covered.md; echo
-            echo "Made by the [Update README run]($RUN_URL) (FEAT-227)."
+            echo "Made by the [Update README run]($RUN_URL)."  # FEAT-227
             echo; echo "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
           } > /tmp/pr-body.md
           if ! url=$(gh pr create --repo "$REPO" --base main --head "$branch" \

@@ -135,7 +135,7 @@ const installed = () => { // release 1 of rel, as getPack left it
 installed(); fl = flaky(3, 'EPERM', intoDest); said = [];
 await getPack('rel', { packsDir: packs, catalog: relCat, rename: fl.rename, waits, onProgress: (p) => p.wait && said.push(p) });
 ok(build('rel') === 'r2' && said.length === 3 && said.every((p) => p.phase === 'unzip') && !leftovers().length, `get: incoming refused 3 times (EPERM), then in; the waits are reported as { phase: 'unzip', wait }`);
-ok(JSON.parse(fs.readFileSync(path.join(packs, 'rel', '.catalog.json'), 'utf8')).status === 'ok' && localPacks(packs).rel.status === 'ok', "get: the marker keeps the catalog's status and localPacks lists it (FEAT-248: the Preview badge)");
+ok(JSON.parse(fs.readFileSync(path.join(packs, 'rel', '.catalog.json'), 'utf8')).status === 'ok' && localPacks(packs).rel.status === 'ok', "get: the marker keeps the catalog's status and localPacks lists it (the Preview badge)"); // FEAT-248
 installed(); fl = flaky(99, 'EPERM', intoDest);
 try { await getPack('rel', { packsDir: packs, catalog: relCat, rename: fl.rename, waits }); ok(false, 'get: locked for good gives up'); } catch (e) { ok(/EPERM.*the old pack is back/.test(e.message), `get: locked for good gives up: ${e.message}`); }
 ok(fl.calls() === 4 && build('rel') === 'r1' && fs.existsSync(path.join(packs, 'rel', 'fine', '0_0.png')) && !leftovers().length && !fs.existsSync(path.join(packs, '.rel.download.zip')), 'get: after 4 tries the old pack is back whole, nothing left behind');

@@ -144,7 +144,7 @@ function freePath(pts, dx, dy) {
   return sum / n;
 }
 const vC = quadratVMR(clumped), vE = quadratVMR(even), nnC = nnMean(clumped), fpC = freePath(clumped, 0, -1), fpE = freePath(even, 0, -1), fpX = freePath(clumped, 1, 0);
-check('glade stems clump (FEAT-337)', vC > 1.3 && vC > 2 * vE, `counts in 12 m squares: variance / mean ${vC.toFixed(2)} clumped, ${vE.toFixed(2)} even`);
+check('glade stems clump', vC > 1.3 && vC > 2 * vE, `counts in 12 m squares: variance / mean ${vC.toFixed(2)} clumped, ${vE.toFixed(2)} even`);
 check('glade spacing in the gladed band', nnC >= 3 && nnC <= 10, `mean nearest neighbour ${nnC.toFixed(1)} m`);
 check('longer free paths down the fall line than the even scatter, and than across', fpC > fpE * 1.05 && fpC > fpX * 1.05, `down ${fpC.toFixed(1)} m clumped vs ${fpE.toFixed(1)} m even, across ${fpX.toFixed(1)} m`);
 

@@ -235,7 +235,7 @@ const peak = Math.max(...track.map((t) => t.fine));
 const dist = track.reduce((n, t, i) => n + (i ? Math.hypot(t.x - track[i - 1].x, t.y - track[i - 1].y) : 0), 0);
 const top = Math.max(...track.map((t) => t.speed));
 console.log(`ride: ${f1(dist)} m, top ${f1(top * 3.6)} km/h, crashed in ${track.filter((t) => t.crashed).length} batches, fine resident peak ${peak}, mask peak ${Math.max(...track.map((t) => t.mask))}, dir peak ${Math.max(...track.map((t) => t.dir))}`);
-console.log(`coarse height fallbacks (BUG-100): load to ride start physics ${fbLoad.phys}, other ${fbLoad.other}; ride physics ${fbRide.phys - fbLoad.phys} (${fbRide.coarseSteps - fbLoad.coarseSteps}/${fbRide.steps - fbLoad.steps} steps on a coarser set), other (shadow march, cameras, tracks) ${fbRide.other - fbLoad.other}`);
+console.log(`coarse height fallbacks: load to ride start physics ${fbLoad.phys}, other ${fbLoad.other}; ride physics ${fbRide.phys - fbLoad.phys} (${fbRide.coarseSteps - fbLoad.coarseSteps}/${fbRide.steps - fbLoad.steps} steps on a coarser set), other (shadow march, cameras, tracks) ${fbRide.other - fbLoad.other}`);
 const bms = track.map((t) => t.ms / 15).sort((a, b) => a - b);
 console.log(`ride frame ms (15-frame batch means): median ${f1(bms[bms.length >> 1])}, p95 ${f1(bms[Math.floor(bms.length * 0.95)])}, max ${f1(bms[bms.length - 1])}`);
 // every tile fetched over the whole run, by what ever asked for it

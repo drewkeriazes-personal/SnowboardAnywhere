@@ -145,7 +145,7 @@ function stopMod(deg, v, mod, T = 6, tAt = 1.5) {
   }
   return { r, t: tStop, dist: Math.hypot(r.x - x0, r.y - y0), turnAt, speedAt, turnEnd, side: r.brakeSide };
 }
-console.log('FEAT-133: brake from 10 m/s on 15 deg, steering into the edge, none, and away from it:');
+console.log('brake from 10 m/s on 15 deg, steering into the edge, none, and away from it:'); // FEAT-133
 {
   const into = stopMod(15, 10, 1), plain = stopMod(15, 10, 0), away = stopMod(15, 10, -1);
   for (const [k, s] of [['into', into], ['plain', plain], ['away', away]]) console.log(`  ${k.padEnd(5)}: ${Number.isNaN(s.t) ? 'still going at 6 s' : `stop ${s.t.toFixed(2)} s over ${s.dist.toFixed(1)} m`}, travel turned ${s.turnEnd.toFixed(0)} deg (${s.turnAt.toFixed(0)} deg and ${s.speedAt.toFixed(1)} m/s at 1.5 s), Psi ${(plain.r.brakePsi / D).toFixed(0)}`);

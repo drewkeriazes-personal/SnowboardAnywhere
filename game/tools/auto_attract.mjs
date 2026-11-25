@@ -97,7 +97,7 @@ if (!flag('no-stills')) {
     only = i;
     const s = shots[i];
     const { page, info, errors } = await shotPage();
-    if (info.shot?.id !== s.id) { console.log(`  ${s.id}: the page shows ${info.shot?.id ?? 'no shot'} (is the game build older than FEAT-175?)`); failed++; await page.close(); continue; }
+    if (info.shot?.id !== s.id) { console.log(`  ${s.id}: the page shows ${info.shot?.id ?? 'no shot'} (is the game build out of date? rebuild it)`); failed++; await page.close(); continue; } // FEAT-175
     await page.evaluate(P.poseAt, 0);
     await page.evaluate(() => window.__sim.shotConditions?.());
     const url = await page.evaluate(() => window.__shot());

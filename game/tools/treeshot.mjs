@@ -84,7 +84,7 @@ for (const t of stats.triangles) {
   if (t.lod1 > 96) fails.push(`${t.species} LOD1 ${t.lod1} > 96`);
   if (t.lod2 > 8) fails.push(`${t.species} LOD2 ${t.lod2} > 8`);
 }
-console.log('\nshrub triangles (largest variant; FEAT-159)');
+console.log('\nshrub triangles (largest variant)'); // FEAT-159
 for (const t of stats.shrubs) {
   console.log(`${t.kind.padEnd(20)} ${String(t.tris).padStart(4)}  (budget ${t.budget})`);
   if (t.tris > t.budget) fails.push(`${t.kind} ${t.tris} triangles > ${t.budget}`);
