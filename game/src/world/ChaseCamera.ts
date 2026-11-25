@@ -190,7 +190,7 @@ export class ChaseCamera {
    * Eye camera: stays put unless nudged, so a shot can be matched to a photo. Mouse (pointer lock)
    * or arrow keys look, WASD walk (Shift faster), Q / E lower / raise the eye, [ / ] change the FOV.
    */
-  updateEye(dt: number, keys: Set<string>, mouseDx: number, mouseDy: number): void {
+  updateEye(dt: number, keys: ReadonlySet<string>, mouseDx: number, mouseDy: number): void {
     const turn = dt * (keys.has('ShiftLeft') ? 0.5 : 0.12);
     this.yaw += mouseDx * 0.002 + ((keys.has('ArrowRight') ? 1 : 0) - (keys.has('ArrowLeft') ? 1 : 0)) * turn;
     this.pitch = THREE.MathUtils.clamp(this.pitch - mouseDy * 0.002 + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * turn, -1.5, 1.5);

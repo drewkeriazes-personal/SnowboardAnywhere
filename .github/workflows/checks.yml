@@ -69,7 +69,8 @@ env:
   # Browser check tools that pass on the synthetic pack under SwiftShader within a few minutes
   BROWSER_CHECKS: switchcheck liftboardcheck liftunloadcheck gondolacheck crashcheck glancecheck hardposecheck padcheck accountmenucheck releasecheck clumpcheck favoritescheck skippedcheck collidercheck mazecheck
   # BROWSER_LOCAL (timed on a runner for FEAT-172: they draw every frame, and SwiftShader takes minutes per check):
-  #   powdercheck (over 7 min), menucheck (times out), leadcheck, trailcheck, statecheck (10+ min on SwiftShader), treeshot
+  #   powdercheck (over 7 min), menucheck (times out), leadcheck, trailcheck, statecheck (10+ min on SwiftShader), treeshot,
+  #   mountaincheck (FEAT-054: 10 min on SwiftShader locally, a frame takes over a second in the 3D view)
 
 jobs:
   changes:

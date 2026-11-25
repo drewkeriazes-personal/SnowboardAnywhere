@@ -58,6 +58,8 @@ import { ReplayState } from '../states/ReplayState';
 import { LiftPickState } from '../states/LiftPickState';
 import { LiftPicker } from '../ui/LiftPicker';
 import { MapState } from '../states/MapState';
+import { MountainView } from '../ui/MountainView';
+import { dropZones } from '../world/DropZones';
 import { Modes } from '../modes/Modes';
 import { timedStep } from '../core/loadSteps';
 import { expireBuilt, saveBuilt, setKeepBuiltData } from '../core/builtData';
@@ -265,10 +267,9 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     map.spawnPos = [sx, sy];
     // FEAT-162: the Map state follows the full map, however it opened or closed (M, Esc, a drop-in, the pause menu, a tool)
     map.onOpenChange = (open) => { if (open && states.is('riding')) states.go('map'); else if (!open && states.is('map')) states.go('riding'); };
-    const pickHandler = (x: number, y: number) => {
+    /** a drop-in (the map's click, the mountain view's drop zones): the rider at (x, y) facing h, the new start, the map closed */
+    const dropIn = (x: number, y: number, h: number) => {
       modes.interrupt('Moved');
-      const n = pack.groundNormal(x, y) as number[];
-      const h = Math.hypot(n[0], n[1]) > 0.02 ? Math.atan2(n[0], n[1]) : 0;
       setSpawn(x, y, h);
       map.spawnPos = [x, y];
       liftRide.cancel();
@@ -279,6 +280,11 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       cam.snapTo(rider);
       map.close();
       controls.padMute(); // FEAT-137: the Cross that dropped in is not a jump
+    };
+    /** the 2D map's click: facing downhill there */
+    const pickHandler = (x: number, y: number) => {
+      const n = pack.groundNormal(x, y) as number[];
+      dropIn(x, y, Math.hypot(n[0], n[1]) > 0.02 ? Math.atan2(n[0], n[1]) : 0);
     };
     map.onPick = pickHandler;
 
@@ -419,6 +425,13 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       modes, map, labels, sun, keyLabels, pressMeter, inputView, fps, sky, look, draw, showToast, saveShot, conditions,
     });
     if (settings.keysNote) { frame.boardNote = 'New default key layout available: Settings > Controls > Reset keys'; settings.keysNote = false; saveSettings(settings); }
+    // FEAT-054: the map's 3D mode; a drop zone drops in as the 2D map's click does (and a trial start rides that course)
+    const mountain = new MountainView({
+      pack, cam, rider, liftRide, lifts: lifts.all, runs: world.runs, zones: dropZones(pack, lifts.all, world.courses), metric: () => settings.units === 'metric',
+      busy: streamBusy, blocked: () => (map.onPick ? null : 'during Outrun'), onToggle: () => mapState.toggle3d(),
+      drop: (z, x, y, h) => { dropIn(x, y, h); if (z.course) modes.rideCourse(z.course.id); },
+    });
+    const mapState = new MapState({ controls, touch, map, mountain, settings, keyLabels, audio, frame, onClosed: () => modes.mapClosed() }, states);
     const restartRing = new RestartRing();
     const liftPicker = new LiftPicker(keyLabels); // FEAT-323: two or more lifts in range
     const rewind = new RewindState({ controls, touch, rider, liftRide, modes, replay, pack, frame, rewindTo }, states);
@@ -430,7 +443,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       .add(rewind)
       .add(new PausedState({ controls, touch, pause, audio, fps, pauseInfo, draw }, states))
       .add(new ReplayState({ controls, touch, rider, replay, replayBar, pack, cam, settings, modes, audio, frame, debugHud, applySun, replayBlockedReason, saveTake }, states))
-      .add(new MapState({ controls, touch, map, settings, keyLabels, audio, frame, onClosed: () => modes.mapClosed() }, states))
+      .add(mapState)
       .add(new LiftPickState({ controls, touch, rider, liftRide, picker: liftPicker, frame, dist: (m) => settings.units === 'metric' ? `${m.toFixed(0)} m` : `${(m * 3.28084).toFixed(0)} ft` }, states)); // FEAT-323
     const attract = menu ? new AttractState({ menu, shot, ghosts, cam, pack, settings, controls, rider, runCard, map, look, frame, startLabel, menuCourses: () => modes.trials.list(), holdShotConditions, shotFromStart }) : null;
     if (attract) states.add(attract);
@@ -446,7 +459,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
       window.removeEventListener('resize', onResize);
       controls.dispose();
       touch?.destroy();
-      map.destroy();
+      map.destroy(); mountain.dispose();
       pause.destroy();
       labels.destroy();
       tracks.dispose(); deform.dispose(); wells.dispose(); pack.wells = null;
@@ -480,8 +493,12 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
     void ghosts.loaded.then(() => { ghostsIn = true; });
     const MENU_WAIT_MS = 8000;
     /** something in the backdrop shot is still downloading or building */
-    const shotBusy = (): boolean => !ghostsIn || terrain.pending > 0 || veg.pending > 0 || world.rocks.pending > 0 || world.shrubs.pending > 0
-      || [pack.fine, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.traffic].some((t) => (t?.inFlight ?? 0) > 0);
+    const shotBusy = (): boolean => !ghostsIn || streamBusy();
+    /** the terrain, the tiles, the trees or the rocks are still downloading or building (the menu's settle, FEAT-054's drop) */
+    function streamBusy(): boolean {
+      return terrain.pending > 0 || veg.pending > 0 || world.rocks.pending > 0 || world.shrubs.pending > 0
+        || [pack.fine, pack.mid, pack.far, pack.mask, pack.ao, pack.dir, pack.traffic].some((t) => (t?.inFlight ?? 0) > 0);
+    }
     /** every display frame, drawn or skipped by the 30 fps cap */
     function everyFrame(): void {
       if (hideLoading && ++loadFrames >= HIDE_AFTER_FRAMES) { hideLoading.hide(); hideLoading = null; }
@@ -525,7 +542,7 @@ export function createSession(ctx: GameContext, opts: SessionOpts): Session {
         performance.mark('load: sim ready');
         setTimeout(() => void expireBuilt(), 5000); // FEAT-377: old built data goes once the first frames are drawn
         status.textContent = '';
-        installSimDebug({ env, events, audio, ghosts, menu, shot, rider, riderView, controls, padFx, inputView, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, speedLines, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
+        installSimDebug({ env, events, audio, ghosts, menu, shot, rider, riderView, controls, padFx, inputView, trialWorld, terrain, pack, cam, veg, shrubs: world.shrubs, rocks: world.rocks, collider, slowSigns: world.slowSigns, treeBrush: world.treeBrush, riderChair: world.riderChair, people: world.people, map, mountain, liftRide, lifts, liftLines, setSpawn, settings, bootprints, tracks, deform, renderer, scene, eyeAt, outrun: modes.outrun.sim, speedLines, monsters, egg: modes.egg, boundary: world.boundary, boundaryRope: world.boundaryRope, startOutrun: () => modes.outrun.start(), stopOutrun: () => modes.outrun.end(), treeFadeUniforms,
           /** loadperf.mjs --expiry (FEAT-377): a save racing the expiry pass */
           saveBuilt, expireBuilt,
           /** shoot_spots.mjs: a spot's weather, or null for the page's own (?weather= else the setting) */
