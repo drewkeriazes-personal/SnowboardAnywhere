@@ -3,6 +3,7 @@ import { treeFadeUniforms, TREE_FADE_VERT, TREE_FADE_FRAG_HEAD, TREE_FADE_FRAG_B
 import { treeSnowUniforms, TREE_SNOW_VERT, TREE_SNOW_COMMON, TREE_SNOW_LIGHT } from './snow';
 import { TRIM, TRIM_GLSL } from './trim';
 import { LEAN_GLSL } from './lineCanopy';
+import { coverUniforms, COVER_SHARE_GLSL } from './coverShare';
 import { TRUNK_ROOT } from '../TreeWells';
 
 /**
@@ -57,6 +58,28 @@ const THIN_GLSL = /* glsl */ `
     if (keep >= 1.0) return g;
     vLodVis *= clamp((keep - h) * 12.0 / max(keep, 1e-4), 0.0, 1.0);
     return d <= uThin ? g : g * d / uThin;
+  }
+`;
+
+/**
+ * BUG-142: the ground under the drawn trees stays snow (TerrainMaterial), so far off the impostors carry the canopy alone:
+ * past FAT_NEAR they widen (not taller) up to FAT_MAX times by FAT_FULL m, and shrink back to their own width as you come
+ * closer, so a stand reads as a closed forest from afar and as single trees near. Less next to an opening: where the least
+ * crown cover (coverShare) at the tree and FAT_EDGE m round it is open (FAT_OPEN), a tree widens only to FAT_MAX_OPEN, so the
+ * trees along a run, a glade or a clearing soften the cut line less while the forest away from them fills in fully
+ * (Drew's pick over full width everywhere, which blurred the runs from the air, and natural width there, which thinned it).
+ */
+const FAT_NEAR = 400, FAT_FULL = 2500, FAT_MAX = 2.5, FAT_MAX_OPEN = 1.75, FAT_EDGE = 15, FAT_OPEN = [0.02, 0.08], FAT_EDGE_K = (FAT_MAX_OPEN - 1) / (FAT_MAX - 1);
+const FAT_GLSL = /* glsl */ `
+  float fatTree(vec3 o) {
+    float k = smoothstep(${FAT_NEAR.toFixed(1)}, ${FAT_FULL.toFixed(1)}, distance(o.xz, uLodCam.xz));
+    if (k > 0.0) {
+      vec2 p = vec2(o.x, -o.z), e = vec2(${FAT_EDGE.toFixed(1)}, 0.0);
+      float c = min(coverShare(p), min(min(coverShare(p + e), coverShare(p - e)), min(coverShare(p + e.yx), coverShare(p - e.yx))));
+      // no cover data at the tree (a pack without levels, outside them, or before they load) is not an opening: full width
+      k *= mix(1.0, mix(${FAT_EDGE_K.toFixed(2)}, 1.0, smoothstep(${FAT_OPEN[0]}, ${FAT_OPEN[1]}, c)), coverKnown(p));
+    }
+    return 1.0 + ${(FAT_MAX - 1).toFixed(2)} * k;
   }
 `;
 
@@ -358,7 +381,7 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
   return new THREE.ShaderMaterial({
     defines: billboard ? { BILLBOARD: '' } : {},
     uniforms: {
-      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms,
+      ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...kitUniforms, ...coverUniforms,
       ...treeSnowUniforms,
       uLodBand: band, uAlbedo: { value: albedo }, uNormal: { value: normal }, uSnowMask: { value: snow },
       uHalfW: { value: halfW }, uAngles: { value: angles }, uRows: { value: rows },
@@ -376,6 +399,8 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
       ${TREE_SNOW_VERT}
       #ifdef BILLBOARD
         ${THIN_GLSL}
+        ${COVER_SHARE_GLSL}
+        ${FAT_GLSL}
       #endif
       void main() {
         { float isIn; vLodVis = lodVis(iPos, isIn); vLodIn = isIn; }
@@ -386,7 +411,7 @@ export function farMaterial(albedo: THREE.Texture, normal: THREE.Texture, snow: 
         vec3 world;
         #ifdef BILLBOARD
           float grow = thinTree(iPos, fract(iSpec) / 0.98, iGrow);
-          hw *= grow;
+          hw *= grow * fatTree(iPos);
           vec3 toCam = cameraPosition - iPos;
           float viewYaw = atan(toCam.x, toCam.z);
           vec3 right = vec3(cos(viewYaw), 0.0, -sin(viewYaw));
