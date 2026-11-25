@@ -42,7 +42,7 @@ Replies (and a "yes" PR comment for items only in the `## Review` summary) are a
    gh api repos/drewkeriazes-personal/SnowboardAnywhere/pulls/<N>/comments/<id>/replies \
      -f body="[pr-feedback] Done in <sha>: <one line on what changed>."
    ```
-   Write the full sha; GitHub turns it into a link to the commit. For skipped ones: `"[pr-feedback] Skipped, per Drew."` or `"[pr-feedback] Not applied: <reason>."`
+   Write the full sha; GitHub turns it into a link to the commit. For skipped ones: `"[pr-feedback] Skipped, per Drew."` or `"[pr-feedback] Not applied: <reason>."` Replies post under Drew's login: the outcome only, no thanks, praise or "good catch".
 11. Tell Drew in chat: applied n, skipped n, the commit, and anything you pushed back on.
 
 ## Rules

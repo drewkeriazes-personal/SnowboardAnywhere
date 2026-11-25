@@ -137,6 +137,7 @@ jobs:
             Finally write ONE line to /tmp/summary.txt:
               - what you changed, plain words, no em dashes (e.g. "named the drag constant and moved it to physics.ts"), or
               - "NOT_APPLIED: <reason>" if nothing should change, and leave the code unchanged.
+            The line is posted under Drew's name: the outcome only, no thanks, praise or pleasantries.
           claude_args: |
             --allowedTools "Read,Edit,Write,Grep,Glob,Bash(npx tsc:*)"
 
