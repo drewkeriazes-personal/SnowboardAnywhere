@@ -1,6 +1,6 @@
 # Code architecture: readable code, lean comments, one job per file (FEAT-390)
 
-Card: FEAT-390, [SnowboardAnywhere#871](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/871) and its twin [MapPacker-SnowboardAnywhere#259](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/issues/259). Built by: FEAT-391 ([#872](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/872), MapPacker-SnowboardAnywhere#260). Folded in: FEAT-359 ([#820](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/820), the `Vegetation.ts` / `clumps.ts` split). Left to its own document: FEAT-389 (MapPacker-SnowboardAnywhere#255, `docs/research/build-order.md` in MapPacker, the inside of `build_pack.py`).
+Card: FEAT-390, [SnowboardAnywhere#871](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/871) and its twin [MapPacker-SnowboardAnywhere#259](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/issues/259). Built by: FEAT-391 ([#872](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/872), MapPacker-SnowboardAnywhere#260). Folded in: FEAT-359 ([#820](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/820), the `Vegetation.ts` / `clumps.ts` split). Left to its own document: FEAT-389 (MapPacker-SnowboardAnywhere#255, PR [MapPacker-SnowboardAnywhere#263](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/pull/263), `docs/research/build-order.md` in MapPacker, the inside of `build_pack.py`). The two documents are reconciled: see [Reconciled with FEAT-389](#reconciled-with-feat-389) and [Cross-repo](#cross-repo).
 
 Status: **draft for Drew's review.** Nothing in either repo changes until Drew approves. The rules below are a proposal; once agreed they go into both repos' `CLAUDE.md` and the `lean` skill (step 2 of the card), and the plan is built PR by PR under FEAT-391.
 
@@ -19,8 +19,8 @@ Today the only structural rule is FEAT-352's 1,000-line cap per file. These woul
 7. **Folders by domain, imported where used.** New code goes in the domain folder of the layouts below. No new file at the top of `game/src/world/`, `game/tools/` or `pipeline/` once those layouts exist.
 8. **One home per helper.** Math (`clamp`, `clamp01`, `lerp`, `smoothstep`, seeded `rng`, `hash01`, segment and polygon tests), HTML escaping, time formatting, pack readers (tile lookups, mask and height reads), JSON and path helpers each have one module per repo. Use three.js `MathUtils`, the standard library or numpy first. The lean skill's rung 2 names these modules.
 9. **Lines under 140 characters.** Long one-line functions and trailing comments push the reader sideways; break them.
-10. **Python modules do nothing on import.** Work happens in functions; a script ends in `if __name__ == "__main__": main()`. No module-level state shared through globals.
-11. **A move PR only moves and renames.** Behaviour changes get their own PR and card. A move PR proves nothing changed: game, the physics and synth-pack checks pass and render budgets match `main`; pipeline, synth and Vail packs byte-identical and the same build time.
+10. **Python modules do nothing on import.** Work happens in functions; a script ends in `if __name__ == "__main__": main()`. No module-level state shared through globals. `build_pack.py` is the one exception until FEAT-389's split (P11) is done: its stages leave module level one PR at a time, and the shared state becomes FEAT-389's `Frame` and `Grids`.
+11. **A move PR only moves and renames.** Behaviour changes get their own PR and card. A move PR proves nothing changed: game, the physics and synth-pack checks pass and render budgets match `main`; pipeline, synth and Vail packs byte-identical and the same build time. Code moved verbatim may carry a function past rule 4's 150 lines or a file past rule 5's 600 (a stage's inline block will); the PR lists them as findings for a later split. The 1,000-line cap still holds.
 12. **No performance loss.** Game frame cost by GPU timer queries (`perf-check`), pipeline build time and output bytes. A change that moves either says why in the PR.
 13. **A comment or wrap pass proves it changed no code.** Game: the `vite build` bundle is byte-identical to `main`'s (minified output carries no comments or line breaks; text inside shader strings is code, so a comment pass leaves it alone). Pipeline: every module's `ast.dump` with docstrings stripped is identical to `main`'s.
 
@@ -211,14 +211,48 @@ pipeline/
 tools/ci/       could split into build/ and checks/ later; at 15 files it can stay flat
 ```
 
-The inside of `build_pack.py` (its stage modules, the stage interface and the order, including whether the traffic map moves earlier) belongs to **FEAT-389**, `docs/research/build-order.md` in MapPacker (branch `issue-255-build-order`, not yet pushed when this was written). This layout only gives it a home, `building/stages/`, and the `shared/` modules it can import. If FEAT-389 picks a different home, this section follows it.
+The inside of `build_pack.py` (its stage modules, the stage interface and the order, including whether the traffic map moves earlier) belongs to **FEAT-389**: [`docs/research/build-order.md` > Q5](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/issue-255-build-order/docs/research/build-order.md#q5-split-build_packpy-into-stage-modules) in [MapPacker-SnowboardAnywhere#263](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/pull/263). This layout gives it a home, `building/stages/`, and the `shared/` modules it can import.
+
+### Reconciled with FEAT-389
+
+FEAT-389's Q5 layout was written before this document and marked provisional. Where the two differ, this is the answer:
+
+| Point | FEAT-389 (#263) | Here | Answer and why |
+|---|---|---|---|
+| Package for the stages | `pipeline/build/` | `building/stages/` | **This document's.** `pipeline/` is on `sys.path`, so a `build/` folder there shadows PyPA's `build` package for any code run with `pipeline/` on the path, and reads as the build output folder. #263's files move over one for one: `building/stages/frame.py`, `stage.py`, `terrain.py`, `canopy_height.py`, `naip.py`, `landfire.py`, `features.py`, `masks.py`, `moguls_stage.py`, `trees.py`, `shrubs_rocks.py`, `meta.py`, `post.py`. |
+| Stage module names | as above | none proposed | **#263's**, kept as they are. Stage modules are named by stage, domain modules by domain (`building/moguls.py` the scoring, `building/stages/moguls_stage.py` the stage that calls it), so the `_stage` suffix stays to tell the two apart in imports and tracebacks. |
+| Where domain modules go | "stay where they are until FEAT-390 says" | `forest/`, `routes/`, `building/` (P2 to P4) | **This document's.** The stage modules import them from their package: `forest.cover`, `routes.tree_lines`, `routes.traffic`, `building.moguls`, `building.packwriter`. |
+| The frame's transforms (`to_local`, `to_ll`) | in `Frame` | `to_local` to `shared/geom.py` (P1) | **Both:** `shared/geom.py` holds the function (it also serves `cover.py`), `Frame` holds the box and calls it. One home per helper (rule 8). |
+| Rule 10 (nothing on import) and the runner | stages run through a runner; stages 1 to 9 "stay inline, run as one stage" in #263's PR 1 | rule 10 | **Agree.** #263's `Stage` / `Grids` / runner is how `build_pack.py` meets rule 10; rule 10 now names `build_pack.py` as the exception until the split ends. #263's PR 1 still has to say how the inline block runs "as one stage" while its 25 top-level defs read module globals (`X0`, `W`, `SOURCES`, `REL`): left at module level, it runs on import. |
+| File and function size | not addressed | rules 4 and 5 | **This document's**, with rule 11's carve-out: a stage moved verbatim may be over 150 lines (stage 8 will be); the PR lists it, a later PR splits it. Every stage module stays under the 1,000-line cap. |
+| Move proof | per-folder byte compare, a new `tools/pack_bytes.py`; two `main` builds for the noise | `tools/ci/pack_content_key.py` key; two runs each | **#263's tool, built on the existing key.** `pack_bytes.py` names the folders that differ, `pack_content_key.py` stays the one-number gate; both skip the same `meta.json` stamps (`publish_pack.STAMPS`), so `pack_bytes.py` imports `content_key`'s file walk rather than its own. It becomes the proof of every P PR, not only P11. |
+| Per-stage timing | in `meta.json` `build.stages` | not addressed | **Changed here: not in `meta.json`.** `meta.build` is a string stamp (`"20261110T171500Z-3fa2c1"`) the game keys its saved resort data and its menu stills on (`core/builtData.ts`, `session/warmUp.ts`, `attract/index.json` `looks.<id>.pack`), so it can't become an object. A new top-level key would change every build's content key (only `build` and `pipeline` are in `publish_pack.STAMPS`). The timings go to `debug/stages.json`, which the zip and the content key leave out, and the build log; `pack_report.py` and `build_resort.py` read them there. |
+| P11's place in the order | after FEAT-390's rules | "beside any of the above" | **Changed here:** P11 runs after P1 to P4, so its new stage modules are written once with their final imports (rule: a file moves once). |
+
+P11 in the plan below is FEAT-389's 7 PRs, in its order, plus one deletion PR in front of them.
+
+### FEAT-389's follow-ups and this plan
+
+#263's "Follow-ups for Drew to pick from":
+
+| # | Follow-up | Here |
+|---:|---|---|
+| 1 | rough traffic at 7b feeding the tree line seeds | not in this plan: a behaviour card, after P11 (rule 11) |
+| 2 | the mogul traffic term | not in this plan: a behaviour card, after P11 |
+| 3 | the `build_pack.py` split | **covered: P11** |
+| 4 | one cat-track rule for `moguls.py` and `traffic.py` | not a dedupe: the two rules disagree on unnamed tracks, so merging them changes output. Its own card, after P3 and P4 put both modules in place |
+| 5 | stage 12 beside 9b, 10 and 11 | not in this plan: a build-time change, after P11 |
+| 6 | delete `piste_polys` and `snowfield` | **covered: P11.0**, the deletion PR before the split |
+| 7 | `tree_lines.py`'s docstring | **covered: P13** (the `routes/` comment pass) |
+| 8 | a pack byte-compare tool and the build-time noise | **covered:** `tools/pack_bytes.py` is the first commit of FEAT-391's pipeline side, next to the code stats tool, and the proof of every P PR |
+| 9 | `treelinecheck.mjs` fails on Vail | filed as BUG-182, [SnowboardAnywhere#878](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/878); G5's proof allows for it (below) |
 
 ## Refactor plan (step 3, built under FEAT-391)
 
 Ordered so the cheapest wins for a reader come first, one area per PR. Four kinds of PR, each with its proof:
 
 - **Dedupe**: copies replaced by one helper. Proof as a move.
-- **Move**: files to folders, imports updated, nothing edited inside. Proof, game: CI's physics and synth-pack checks pass and `render-budgets` matches `main`, plus `tsc`. Pipeline: `python -m pytest pipeline/tests`; then synth and Vail built on Drew's PC from `main` and from the branch give the same `tools/ci/pack_content_key.py` key (it hashes the pack leaving out `meta.json`'s stamps), the same file list and sizes, and build times within the run-to-run spread (two runs each).
+- **Move**: files to folders, imports updated, nothing edited inside. Proof, game: CI's physics and synth-pack checks pass and `render-budgets` matches `main`, plus `tsc`. Pipeline: `python -m pytest pipeline/tests`; then synth and Vail built on Drew's PC from `main` and from the branch give the same `tools/ci/pack_content_key.py` key (it hashes the pack leaving out `meta.json`'s stamps) and no folder differs in `tools/pack_bytes.py` (FEAT-389's per-folder compare), and build times within the run-to-run spread (two runs each).
 - **Split**: one file into a folder of modules, code moved verbatim. Proof as a move.
 - **Comment pass**: rules 1, 2 and 9 applied to one area, history moved to the card or `docs/research/` first (rule 3). Proof: rule 13.
 
@@ -232,7 +266,7 @@ Two PRs in the same area go in order; PRs in different areas can run in parallel
 | G2 | split | FEAT-359: `world/Vegetation.ts` | `world/trees/vegetation/`: `reach.ts` (LOD and reach settings and setters), `cells.ts` (cell records, loading, stand stems), `nearSets.ts` (near LODs and culling), `farPack.ts` (impostor packing), `queries.ts` (`trunkAt`, `forEachTree`, `crownContact`, burial, `setSolid`), `Vegetation.ts` (the class and `update`) | `standcheck`, `clumpcheck`, `treefadecheck` |
 | G3 | split | FEAT-359: `world/trees/clumps.ts` | `world/trees/clumps/`: `standMix.ts`, `patch.ts`, `clumps.glsl.ts`, `bake.ts`, `ClumpCanopy.ts`. Closes #820 with G2. | `clumpcheck` |
 | G4 | split | `terrain/TerrainMaterial.ts` | `terrain/material/`: `uniforms.ts`, `terrain.glsl.ts` (each patch a named export), `TerrainMaterial.ts` (the factory, under 100 lines). Shader strings come out character for character. | CI's shader compile check; the patched shader source from `onBeforeCompile` identical to `main`'s (a one-off dump) |
-| G5 | split | `pack/treeLines.ts` | `pack/treeLines/`: `constants.ts`, `geometry.ts`, `plan.ts`, `TreeLines.ts` | `treelinecheck` |
+| G5 | split | `pack/treeLines.ts` | `pack/treeLines/`: `constants.ts`, `geometry.ts`, `plan.ts`, `TreeLines.ts` | `treelinecheck` output identical to `main`'s on the same synth and Vail packs (Vail fails one check on `main` today, BUG-182 #878, so "passes" is not the bar) |
 | G6 | move + dedupe | pack tile sets | the six tile files to `pack/tiles/`, and one tiled-set base for `HeightSet` / `MaskSet` (`request`, `key`, `contains`) | `packcachecheck`; `tileperf` on Drew's GPU |
 | G7 | split | `session/Session.ts` | one module per section marker (spawn, sun clock, settings application, modes, news, menu, scene, frame), with a typed session context in place of the closure's shared locals. The riskiest split: closure variables become parameters. | `statecheck`, `menucheck`, `ridecheck`; a Vail load on Drew's PC |
 | G8 | move | `world/` | the subfolders of the target layout | none |
@@ -240,7 +274,7 @@ Two PRs in the same area go in order; PRs in different areas can run in parallel
 | G10 | move | `sim/` | `input/`, `lift/`, `ground/`, `challenges/` | none beyond the physics checks |
 | G11 | split | `audio/Audio.ts` | `Music.ts`, `Sfx.ts`, `Audio.ts` as the mixer | a headed listen on Drew's PC (no check covers sound) |
 | G12 | split | `terrain/Terrain.ts`, `world/trees/generate.ts` | `chunkBuild.ts`, `proceduralForest.ts`; `world/trees/geometry/` (builder and shapes, plans, LODs) | `standcheck` |
-| G13 | move | `game/tools/` | the tools layout, every path in workflows, docs, skills and `package.json` updated in the same PR | CI runs every check from its new path |
+| G13 | move | `game/tools/` | the tools layout, every path in workflows, docs, skills and `package.json` updated in the same PR. MapPacker calls several of these tools by path (see [Cross-repo](#cross-repo)), so a MapPacker PR that finds each at its old or new path merges first | CI runs every check from its new path; MapPacker's `render-budgets` and a `build_resort.py` `attract` run find the moved tools |
 | G14 to G20 | comment pass | one per area: `sim/` (first `rider/tuning.ts` and `Rider.ts`), `world/trees/`, `terrain/`, `pack/`, `session/` with `states/` and `core/`, `ui/`, the rest of `world/` | rule 13 |
 | G21 | comment pass | `game/tools/` and `tools/` | tools aren't bundled, so rule 13 doesn't apply: `node --check` and CI's checks |
 
@@ -258,7 +292,7 @@ Two PRs in the same area go in order; PRs in different areas can run in parallel
 | P8 | split | `pack_report.py` | `checks/pack_report/`: readers to `shared/packread`, run geometry, tree density, one module per checklist group, `Report` as the table | `pack_report.py packs/vail` byte-identical report |
 | P9 | split | `gen_content.py` | `content/`: `start`, `shots`, `files` | Vail's start and menu shots byte-identical |
 | P10 | split + move | `publishing/` | `publish_pack`, `publish_check`, `publish_merge` (the pure decision apart from the GitHub calls), `release_zip`, `releases` | pytest (`test_publish_merge.py` covers the decision) |
-| P11 | split | `build_pack.py` | **as FEAT-389's document lays out**, into `building/stages/` | its own |
+| P11 | split | `build_pack.py` | P11.0 deletes the dead `piste_polys` and `snowfield` (proof as a move). P11.1 to P11.7 are [FEAT-389's "PRs in order"](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/blob/issue-255-build-order/docs/research/build-order.md#prs-in-order-each-a-pure-move-feat-391), in its order, into `building/stages/` ([reconciled above](#reconciled-with-feat-389)) | as FEAT-389 gives per PR; stage 8's PR also compares `trees/`, `stands/`, `shrubs/`, `rocks/` |
 | P12 to P16 | comment pass | one per package: `forest/`, `routes/`, `planning/`, `checks/` with `content/`, `publishing/` with `running/` and `tools/ci/`; module docstrings over 6 lines moved to `docs/` first | rule 13 (AST) |
 
 ### Order across both repos
@@ -268,10 +302,32 @@ Two PRs in the same area go in order; PRs in different areas can run in parallel
 3. G2 and G3 (FEAT-359): the only file over the cap.
 4. The splits, by how often each area is edited: G4, G5, P4, P5, P6, G7, P8, then the rest.
 5. The folder moves (G8 to G10, G13, P2, P3, P7, P10) after their big files are split, so a file moves once.
-6. P11 once FEAT-389's document is approved. It can run beside any of the above: it touches only `build_pack.py` and `building/stages/`.
+6. P11 once FEAT-389's document is approved, after P1 to P4 (its stage modules import `shared/`, `forest/`, `routes/` and `building/`), and beside any of the rest: it touches only `build_pack.py` and `building/stages/`. FEAT-389's behaviour cards (rough traffic at 7b, the mogul term, the tree line seeds, stage 12 in parallel) follow it.
 7. The comment passes last in each area, after its moves, so git's rename detection keeps the history readable and the passes cut text that is already in its final place.
 
-37 PRs in all (game G1 to G21, pipeline P1 to P16, each comment pass one PR), plus the two rules PRs. The first three: **G1** (game helpers), **P1** (pipeline `shared/`), **G2** (FEAT-359, `Vegetation.ts`).
+37 rows (game G1 to G21, pipeline P1 to P16, each comment pass one PR); with P11 as its 8 PRs, 44 PRs, plus the two rules PRs. The first three: **G1** (game helpers), **P1** (pipeline `shared/`), **G2** (FEAT-359, `Vegetation.ts`).
+
+## Cross-repo
+
+What one repo's plan changes for the other. None changes the pack format (`PACK_FORMAT` / `FORMAT_VERSION`); the ones marked **look** change what a rider sees on a rebuilt pack.
+
+From FEAT-389 ([#263](https://github.com/drewkeriazes-personal/MapPacker-SnowboardAnywhere/pull/263)) to the game:
+
+- **Old tracks (FEAT-380), look.** `terrain/oldTracks.ts` draws from the pack's `traffic/` layer, read through `pack/MaskSet.ts`. The tree line seeds from 7b change 68 of Vail's 144 traffic tiles (traffic follows the tree lines), so the tracks move where the lines moved. G6 (one tiled-set base for `HeightSet` / `MaskSet`) touches that reader; its proof should load a pack with `traffic/`.
+- **Moguls, look.** `terrain/Moguls.ts` draws `moguls/`; `pack/types.ts` and `ui/ResortMap.ts` read `features.json` `mogulScore`. The traffic term moves 48 of Vail's 121 scores and 39 tiles. `mogulcheck.mjs` runs on synth in CI; a Vail run after that card is what shows the change.
+- **Tree lines, look.** `pack/treeLines.ts` `takeBaked` reads `treeLines.json` (FEAT-334) and the game moves its stems out of the trenches, so new seeds move near trees though `trees/` and `stands/` stay byte-identical. G5 splits this file; it must land independent of the seed card (G5 is a move, proven on a fixed pack). The game's own planner (`planRuns`, G5's `plan.ts`) is the fallback for packs without `treeLines.json` and does not follow the seeds; whether it can go once every published pack has baked lines is a question for Drew, not part of G5.
+- **`treelinecheck.mjs` on Vail.** Fails "the piles ease up, never a wall" on `main` today: BUG-182, [#878](https://github.com/drewkeriazes-personal/SnowboardAnywhere/issues/878). G5's proof is "same output as `main`", not "passes"; #263's tree line checks use it the same way.
+- **Per-stage timings (#263's `meta.json` `build.stages`).** As written it turns `meta.build`, a string the game keys saved resort data and menu stills on, into an object: a pack format change for no rider-facing gain. In `debug/stages.json` (reconciled above) neither the game nor publishing sees it.
+
+From this plan to the game:
+
+- **Pipeline module paths named in game code.** 15 game files point at pipeline modules in comments (`pack/treeLines.ts`, `tools/treelinecheck.mjs` name `pipeline/tree_lines.py`; `world/trees/stands.ts`, `widths.ts`, `clumps.ts` name `stands.py`, `species.py`, `widths.py`; `format.ts`, `get_pack.mjs` name `packwriter.py`). P2 to P4 move those modules; the game's comment passes (G14 to G20) update the pointers, or the P PR lists them for the game. Entry scripts stay put, so `tools/resort_build_routes.mjs`'s `python pipeline/resort.py search` call keeps working.
+
+From this plan to MapPacker:
+
+- **Game files the contract reads.** `pipeline/contract.py` reads `game/src/pack/format.ts`, `pack/treeline.ts`, `world/trees/species.ts` and `world/trees/widths.ts` by path. The game layout above keeps all four where they are; any later game PR that moves one needs the MapPacker change first, or both together.
+- **Game tools MapPacker runs.** `build_resort.py` (`GAME_TOOL`: `game/tools/auto_attract.mjs`, `tools/propose_spots.py`), `resort.py` `ride` (`game/tools/shoot.mjs`), `checks.yml` and `tools/ci/render_budgets_lib.mjs` (`tools/cishot.mjs`, the game's `tools/ci/render_report.py`), `format-check` (`get_pack.mjs`), and `build-pack.yml`'s job name that `build_progress.mjs` reads. G13 moves the first five; the MapPacker side lands first (G13's row).
+- **Mirrored formulas.** `world/trees/stands.ts`, `widths.ts` and `species.ts` mirror `stands.py`, `widths.py` and `species.py` across the two languages. Rule 8's "one home" holds within a repo; across repos the pair stays, held by `contract.py`, and a split on either side keeps the mirrored function whole.
 
 ## Method, scripts and what was not measured
 
