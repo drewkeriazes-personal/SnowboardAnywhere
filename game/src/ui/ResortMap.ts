@@ -2,6 +2,7 @@ import { packLandmarks } from '../world/Landmarks';
 import type { Pack } from '../pack/Pack';
 import type { Difficulty, RunFeature } from '../pack/types';
 import { hotSwap } from '../core/hot';
+import { esc } from './esc';
 
 /**
  * 2D map of the resort drawn once to an offscreen canvas (hillshade from the mid height set,
@@ -483,11 +484,11 @@ export class ResortMap {
       dot(this.hover[0], this.hover[1], 'rgba(255,255,255,.5)', 5);
       const h = this.pack.groundHeight(this.hover[0], this.hover[1]);
       const near = this.nearestRun(this.hover[0], this.hover[1]);
-      this.fullInfo.innerHTML = `<b>${this.pack.meta.name}</b> &middot; ${help}<br>` +
-        `${this.hover[0].toFixed(0)}, ${this.hover[1].toFixed(0)} m &middot; ${this.metric ? `${h.toFixed(0)} m` : `${(h * 3.28084).toFixed(0)} ft`}` + (near ? ` &middot; ${near.name}` : '') +
+      this.fullInfo.innerHTML = `<b>${esc(this.pack.meta.name)}</b> &middot; ${help}<br>` +
+        `${this.hover[0].toFixed(0)}, ${this.hover[1].toFixed(0)} m &middot; ${this.metric ? `${h.toFixed(0)} m` : `${(h * 3.28084).toFixed(0)} ft`}` + (near ? ` &middot; ${esc(near.name ?? '')}` : '') +
         (near && (near.mogulScore ?? 0) > 0 ? ` &middot; moguls ${near.mogulScore!.toFixed(2)}` : '');
     } else {
-      this.fullInfo.innerHTML = `<b>${this.pack.meta.name}</b> &middot; ${help}`;
+      this.fullInfo.innerHTML = `<b>${esc(this.pack.meta.name)}</b> &middot; ${help}`;
     }
   }
 

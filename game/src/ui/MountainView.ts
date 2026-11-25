@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { sightClear } from './Labels';
+import { esc } from './esc';
 import type { Pack } from '../pack/Pack';
 import type { ChaseCamera } from '../world/ChaseCamera';
 import type { Rider } from '../sim/Rider';
@@ -207,7 +208,9 @@ export class MountainView {
       const s = this.project(m.x, m.y, m.z + 3);
       if (!s) { m.sx = NaN; continue; }
       m.sx = s[0]; m.sy = s[1];
-      if (recheck) m.seen = sightClear(this.p.pack, cp.x, -cp.z, cp.y, m.x, m.y, m.z + 3);
+      // run names are drawn only zoomed in; far off they skip the test (and wait for the next one when the zoom comes in)
+      if (m.kind === 'run' && this.dist >= RUN_NAMES_DIST) m.seen = false;
+      else if (recheck) m.seen = sightClear(this.p.pack, cp.x, -cp.z, cp.y, m.x, m.y, m.z + 3);
     }
     // lifts: red lines station to station
     ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(215,38,61,.95)'; ctx.lineWidth = 2.5;
@@ -305,7 +308,7 @@ export class MountainView {
     const z = f.zone;
     this.request(z.x, z.y);
     f.quiet = this.p.busy() ? 0 : f.quiet + 1;
-    this.msg = `Dropping in at ${z.name}...`;
+    this.msg = `Dropping in at ${esc(z.name)}...`;
     if (f.quiet < 3 && f.t < WAIT_MAX_S) return;
     if (f.phase === 'wait') {
       // the trees are in: the spot on the snow, then down to the chase camera's pose behind it
@@ -396,8 +399,8 @@ export class MountainView {
   private helpLine(help: string): void {
     const z = this.focus >= 0 ? this.p.zones[this.focus] : this.hover;
     const kind = z ? { lift: 'top of the lift', peak: 'peak', run: 'top of the run', trial: 'time trial start' }[z.kind] : '';
-    const what = z ? `<br><b>${z.name}</b> &middot; ${kind} &middot; ${this.height(z.z)}${z.also.length ? ` &middot; also ${z.also.slice(0, 4).join(', ')}${z.also.length > 4 ? ` +${z.also.length - 4}` : ''}` : ''}` : '';
-    this.info.innerHTML = `<b>${this.p.pack.meta.name}</b> &middot; ${help}${what}${this.msg ? `<br>${this.msg}` : ''}`;
+    const what = z ? `<br><b>${esc(z.name)}</b> &middot; ${kind} &middot; ${this.height(z.z)}${z.also.length ? ` &middot; also ${esc(z.also.slice(0, 4).join(', '))}${z.also.length > 4 ? ` +${z.also.length - 4}` : ''}` : ''}` : '';
+    this.info.innerHTML = `<b>${esc(this.p.pack.meta.name)}</b> &middot; ${help}${what}${this.msg ? `<br>${this.msg}` : ''}`;
   }
 
   // ---------------------------------------------------------------- the mouse, the keys, touch
