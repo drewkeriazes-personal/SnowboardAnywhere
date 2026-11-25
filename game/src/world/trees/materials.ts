@@ -76,7 +76,8 @@ const FAT_GLSL = /* glsl */ `
     if (k > 0.0) {
       vec2 p = vec2(o.x, -o.z), e = vec2(${FAT_EDGE.toFixed(1)}, 0.0);
       float c = min(coverShare(p), min(min(coverShare(p + e), coverShare(p - e)), min(coverShare(p + e.yx), coverShare(p - e.yx))));
-      k *= mix(${FAT_EDGE_K.toFixed(2)}, 1.0, smoothstep(${FAT_OPEN[0]}, ${FAT_OPEN[1]}, c));
+      // no cover data at the tree (a pack without levels, outside them, or before they load) is not an opening: full width
+      k *= mix(1.0, mix(${FAT_EDGE_K.toFixed(2)}, 1.0, smoothstep(${FAT_OPEN[0]}, ${FAT_OPEN[1]}, c)), coverKnown(p));
     }
     return 1.0 + ${(FAT_MAX - 1).toFixed(2)} * k;
   }

@@ -55,6 +55,8 @@ export const COVER_SHARE_GLSL = /* glsl */ `
     float tt = clamp((t.r - ${COVER_LO.toFixed(3)}) / ${(COVER_HI - COVER_LO).toFixed(3)}, 0.0, 1.0);
     return hasB > 0.5 ? min(t.b * ${COVER_B.toFixed(3)}, ${COVER_MAX.toFixed(3)}) : tt * tt * (3.0 - 2.0 * tt) * ${COVER_MAX.toFixed(3)};
   }
+  // how much of p the loaded levels cover (0: no data there, or none loaded yet), so a 0 share can be told from no data
+  float coverKnown(vec2 p) { return max(covW(p, uCovRect[0]), max(covW(p, uCovRect[1]), covW(p, uCovRect[2]))); }
   float coverShare(vec2 p) {
     float w2 = covW(p, uCovRect[2]);
     float f2 = w2 > 0.0 ? levelShare(textureLod(uCov2, covUV(p, uCovRect[2]), uCovLod.z), uCovB.z) : 0.0;
