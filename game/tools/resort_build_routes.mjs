@@ -194,7 +194,7 @@ export function resortBuildRoutes(o) {
     if (r.code !== 0) return reply(res, 502, { error: lastLine(r.stderr) || `resort.py search exited ${r.code}` });
     let parsed;
     try { parsed = JSON.parse(r.stdout); } catch { parsed = null; }
-    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.matches)) return reply(res, 502, { error: 'resort.py search did not answer JSON (is the MapPacker clone older than FEAT-279?)' });
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.matches)) return reply(res, 502, { error: 'resort.py search did not answer JSON (is the MapPacker clone out of date? pull its main)' });
     return reply(res, 200, r.stdout.trim());
   });
 

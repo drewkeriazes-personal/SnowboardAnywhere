@@ -121,7 +121,7 @@ check('no hang at the crossover (board keeps coming round)', xs.hang < 0.12 && x
   // slow: the pivot turn at 3 m/s is the same as before (FEAT-127 unchanged)
   const s = turn(10, 3, false, 1, 0.5);
   console.log(`slow pivot at 3 m/s: ${s.peak.toFixed(2)} rad/s`);
-  check('slow pivot turn unchanged (about 1.7 rad/s, as before BUG-053)', s.peak > 1.5 && s.peak < 1.9, `${s.peak.toFixed(2)} rad/s`);
+  check('slow pivot turn unchanged (about 1.7 rad/s)', s.peak > 1.5 && s.peak < 1.9, `${s.peak.toFixed(2)} rad/s`); // BUG-053
 }
 {
   // straight-lining: no steer, no turn

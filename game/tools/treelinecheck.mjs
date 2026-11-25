@@ -212,7 +212,7 @@ const g = { px, size, res, minX: bx, minY: by, zBase: 0, zScale: 1, hStep: 0.25 
 const place = (x, y, out) => tl.placeStem(x, y, out);
 const all = generateStems(g, 1), kept = generateStems(g, 1, null, place);
 const keptFull = tl.withoutIndex(() => generateStems(g, 1, null, place));
-check('the stems stand where they did without the near index (FEAT-335)', keptFull.length === kept.length && keptFull.every((v, i) => v === kept[i]), `${keptFull.length / 6} and ${kept.length / 6} stems`);
+check('the stems stand where they did without the near index', keptFull.length === kept.length && keptFull.every((v, i) => v === kept[i]), `${keptFull.length / 6} and ${kept.length / 6} stems`);
 let inTrench = 0, nearBank = 0, banked = 0;
 for (let i = 0; i < kept.length; i += 6) {
   const t = tl.trenchAt(kept[i], kept[i + 1]);
