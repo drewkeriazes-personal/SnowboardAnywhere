@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { type Pack, MOGUL_MAX_RES } from '../pack/Pack';
 
 export interface Exposure { rock: number; scree: number }
+/** the shortest distance the ridge test compares a point's height over, m */
+export const RIDGE_D = 12;
 
 /**
  * Rock and scree vertex weights at a point.
@@ -16,9 +18,11 @@ export interface Exposure { rock: number; scree: number }
  * @param res vertex spacing of the chunk the point is drawn on
  * @param fo forest weight (no ridge scour under trees)
  * @param rock, scree the mask's weights
+ * @param around FEAT-377: the heights res m east, west, north and south of the point, when the caller has them and
+ *   they are the ones the ridge test reads (`res` >= RIDGE_D and >= the mogul chunks' auxiliary spacing, the chunk grid)
  * @returns rock, and scree already cut by rock (as the vertex colour carries it)
  */
-export function exposure(pack: Pack, x: number, y: number, h: number, nxp: number, nyp: number, res: number, fo: number, rock: number, scree: number, out: Exposure): Exposure {
+export function exposure(pack: Pack, x: number, y: number, h: number, nxp: number, nyp: number, res: number, fo: number, rock: number, scree: number, out: Exposure, around?: readonly number[]): Exposure {
   const resB = Math.max(res, MOGUL_MAX_RES * 2); // auxiliary samples without the mogul bumps
   const slope = Math.acos(1 / Math.hypot(nxp, nyp, 1)); // radians
   // Steep faces: weight 0.5 at about 45 deg near the rider; coarse chunks average slopes down,
@@ -26,8 +30,9 @@ export function exposure(pack: Pack, x: number, y: number, h: number, nxp: numbe
   const steepLo = 0.68 - 0.022 * Math.log2(Math.max(1, res));
   const steep = THREE.MathUtils.smoothstep(slope, steepLo, steepLo + 0.2);
   // wind-scoured convex ridges above about 3,250 m: relief over the mean of four neighbours d away
-  const d = Math.max(12, res);
-  const relief = h - 0.25 * (pack.height(x + d, y, resB) + pack.height(x - d, y, resB) + pack.height(x, y + d, resB) + pack.height(x, y - d, resB));
+  const d = Math.max(RIDGE_D, res);
+  const relief = h - 0.25 * (around ? around[0] + around[1] + around[2] + around[3]
+    : pack.height(x + d, y, resB) + pack.height(x - d, y, resB) + pack.height(x, y + d, resB) + pack.height(x, y - d, resB));
   const scour = THREE.MathUtils.smoothstep(relief / d, 0.06, 0.2) * THREE.MathUtils.smoothstep(h, 3250, 3550) * (1 - fo);
   rock = Math.max(rock, steep, scour * 0.8);
   // talus apron at the foot of steep faces: the line to a point 15 m uphill is steeper than about

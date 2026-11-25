@@ -177,6 +177,7 @@ export class ChaseCamera {
     this.mode = 'eye';
     this.eyeX = x; this.eyeY = y; this.eyeHeight = Math.max(0.3, height); this.eyeFov = fovDeg;
     this.yaw = headingDeg * Math.PI / 180; this.pitch = pitchDeg * Math.PI / 180;
+    this.placeEye(); // FEAT-377: there at once, so the loading screen's warm-up streams this view, not the last one
   }
 
   /** The current eye pose in the units of the URL params (degrees, pack metres). */
@@ -201,6 +202,10 @@ export class ChaseCamera {
     const rise = ((keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0)) * dt * 2;
     if (rise !== 0) this.eyeHeight = THREE.MathUtils.clamp(this.eyeHeight + rise, 0.3, Math.max(EYE_KEY_MAX, this.eyeHeight));
     this.eyeFov = THREE.MathUtils.clamp(this.eyeFov + ((keys.has('BracketRight') ? 1 : 0) - (keys.has('BracketLeft') ? 1 : 0)) * dt * 20, 10, 120);
+    this.placeEye();
+  }
+
+  private placeEye(): void {
     const g = this.pack.groundHeight(this.eyeX, this.eyeY);
     this.camera.position.set(this.eyeX, (Number.isFinite(g) ? g : 0) + this.eyeHeight, -this.eyeY);
     // same convention as first person: yaw clockwise from north is a rotation of -yaw about +Y

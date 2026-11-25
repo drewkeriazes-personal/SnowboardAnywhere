@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { CoverLevelMeta, CoverMeta } from './types';
-import { decodeRGBA } from './MaskSet';
+import { decodeRGBAAsync } from './MaskSet';
 import { packFetch } from './fetch';
 
 /**
@@ -37,7 +37,7 @@ export class CoverLevel {
     if (!resp.ok) throw new Error(`cover ${this.meta.file}: HTTP ${resp.status}`);
     const bmp = await createImageBitmap(await resp.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
     const { w, h } = this.meta;
-    const px = decodeRGBA(bmp, w, h);
+    const px = await decodeRGBAAsync(bmp, w, h);
     bmp.close();
     // GPU: R = the forest as seen from far off, G = from near, where single trees show (BUG-069: only the
     // closed stands of drawn trees; the same as R for a level without a `stands` image)
@@ -47,7 +47,7 @@ export class CoverLevel {
         const r2 = await packFetch(`${baseUrl}/${this.meta.stands}`);
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
         const b2 = await createImageBitmap(await r2.blob(), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
-        near = decodeRGBA(b2, w, h);
+        near = await decodeRGBAAsync(b2, w, h);
         b2.close();
       } catch (e) { console.warn(`cover ${this.meta.stands} not loaded`, e); }
     }

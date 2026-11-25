@@ -320,22 +320,15 @@ export class RideFrame {
     deform.update(renderer, rider.x, rider.z, -rider.y, rider.vx, -rider.vy);
   }
 
-  /** 11. Streaming around the rider (or the camera when detached), the snow on the ground, lifts and landmarks, the live sun */
-  private streaming(dt: number): void {
-    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, buildings, sky, snow, settings, sun, params, zr, resortTop, roads, riderChair, lifts, bridges, liftLines, landmarks, slowSigns, people, map, boundaryRope, wells } = this.p;
-    const onLift = this.onLift, detached = this.detached;
+  /**
+   * The snow of the day on the ground, the trees and the shrubs, from the conditions drawn: new snow piling up in a storm
+   * (dt s of it), the groomers skied out, the mogul fields' season, the snowpack. FEAT-377: the loading screen's warm-up
+   * runs it once (`snowDay(0)`) before it builds the terrain, so the first frame does not rebuild every mogul chunk.
+   * Returns the snow cover.
+   */
+  snowDay(dt: number): number {
+    const { terrain, rider, pack, veg, shrubs, sky, snow, sun, params, zr, resortTop, wells } = this.p;
     const cond = this.p.conditions();
-    const cp = cam.camera.position;
-    terrain.update(cp.x, -cp.z, cp.y);
-    const fx = this.fx = detached ? cp.x : rider.x, fy = this.fy = detached ? -cp.z : rider.y;
-    // terrain, mask and instance tiles stream ahead along the direction of travel
-    const liftTop = this.liftTop = onLift && liftRide.lift ? liftRide.lift.top : null;
-    prefetch.update(pack, fx, fy, dt, liftTop);
-    veg.update(fx, fy, prefetch.ax, prefetch.ay, cp);
-    rocks.update(fx, fy, prefetch.ax, prefetch.ay);
-    buildings.update(); // BUG-088
-    shrubs.update(fx, fy, prefetch.ax, prefetch.ay, cp);
-    wells.update(fx, fy); // FEAT-216
     if (sky.weather === 'storm') sky.snowCover = Math.min(1, sky.snowCover + dt / 600);
     else if (sky.weather === 'flurries') sky.snowCover = Math.min(1, sky.snowCover + dt / 3000);
     const snowCover = sky.snowCover;
@@ -370,6 +363,25 @@ export class RideFrame {
       terrain.setSnowpack(sp);
       wells.setSnow(sp, cond.snowDay ?? 'mid');
     }
+    return snowCover;
+  }
+
+  /** 11. Streaming around the rider (or the camera when detached), the snow on the ground, lifts and landmarks, the live sun */
+  private streaming(dt: number): void {
+    const { cam, terrain, rider, liftRide, prefetch, pack, veg, shrubs, rocks, buildings, snow, sun, roads, riderChair, lifts, bridges, liftLines, landmarks, slowSigns, people, map, boundaryRope, wells } = this.p;
+    const onLift = this.onLift, detached = this.detached;
+    const cp = cam.camera.position;
+    terrain.update(cp.x, -cp.z, cp.y);
+    const fx = this.fx = detached ? cp.x : rider.x, fy = this.fy = detached ? -cp.z : rider.y;
+    // terrain, mask and instance tiles stream ahead along the direction of travel
+    const liftTop = this.liftTop = onLift && liftRide.lift ? liftRide.lift.top : null;
+    prefetch.update(pack, fx, fy, dt, liftTop);
+    veg.update(fx, fy, prefetch.ax, prefetch.ay, cp);
+    rocks.update(fx, fy, prefetch.ax, prefetch.ay);
+    buildings.update(); // BUG-088
+    shrubs.update(fx, fy, prefetch.ax, prefetch.ay, cp);
+    wells.update(fx, fy); // FEAT-216
+    const snowCover = this.snowDay(dt);
     rocks.setSnow(Math.min(1, snowCover * 3), snow.wind.x, snow.wind.y); // boulder tops fill three times faster than the slopes
     roads.update(fx, fy);
     boundaryRope.update(dt, fx, fy); // FEAT-305
